@@ -1,2 +1,2 @@
 [workspace]
-members = ["octamed","octamedic_core", "octamedic_gui"]
+members = ["octamed", "octamed_cli","octamedic_core", "octamedic_gui"]

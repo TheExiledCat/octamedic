@@ -7,6 +7,13 @@ name = "octamed"
 version = "0.1.0"
 
 [[package]]
+name = "octamed_cli"
+version = "0.1.0"
+dependencies = [
+ "octamed",
+]
+
+[[package]]
 name = "octamedic_core"
 version = "0.1.0"
 
