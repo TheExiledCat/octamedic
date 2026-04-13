@@ -1,4 +1,4 @@
-use std::{ f32::consts::E, fmt::Display };
+use std::fmt::Display;
 
 use crate::utility::bytes::{ Byte, Offset, UByte, ULong, UWord, Word, bit_mask };
 
@@ -46,17 +46,17 @@ impl Display for OctamedMMD0HeaderFlags {
 impl Display for OctamedMMD0Header {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "OctaMED File Header")?;
-        writeln!(f, "{}", (0..20).map(|_| "_").collect::<String>());
+        writeln!(f, "{}", (0..20).map(|_| "_").collect::<String>())?;
 
         let id_bytes = self.id.0.to_be_bytes();
         let id_text = str::from_utf8(&id_bytes).unwrap();
-        writeln!(f, "Format: {}", id_text);
-        writeln!(f, "Module Length: {} Bytes", self.module_length);
-        writeln!(f, "Song struct Pointer: {}", self.song_ptr);
-        writeln!(f, "Pattern blocks table Pointer: {}", self.block_array_ptr);
-        writeln!(f, "Flags: {}", self.flags);
-        writeln!(f, "Sample Array Pointer: {}", self.sample_array_ptr);
-        writeln!(f, "Expansion Data Offset: {}", self.expansion_data_ptr);
+        writeln!(f, "Format: {}", id_text)?;
+        writeln!(f, "Module Length: {} Bytes", self.module_length)?;
+        writeln!(f, "Song struct Pointer: {}", self.song_ptr)?;
+        writeln!(f, "Pattern blocks table Pointer: {}", self.block_array_ptr)?;
+        writeln!(f, "Flags: {}", self.flags)?;
+        writeln!(f, "Sample Array Pointer: {}", self.sample_array_ptr)?;
+        writeln!(f, "Expansion Data Offset: {}", self.expansion_data_ptr)?;
         return writeln!(f, "Extra songs count: {}", self.extra_songs);
     }
 }
@@ -65,6 +65,7 @@ pub struct OctamedMMD0 {
     pub song: OctamedMMD0Song,
     pub block_table: OctamedMMD0BlockTable,
     pub sample_table: OctamedMMD0SampleTable,
+    pub expansion_data: OctamedMMD0ExpansionData,
 }
 
 pub struct OctamedMMD0Song {
@@ -137,14 +138,47 @@ impl OctamedMMD0Sample {
     }
 }
 pub struct OctamedMMD0BlockTable {}
-pub struct OctamedMMD0SampleTable {}
-pub struct OctamedMMD0ExpansionData {}
-pub enum MMDKind {
-    MMD0(),
-    MMD1(),
-    MMD2(),
-    MMD3(),
+pub struct OctamedMMD0SampleHeader {
+    sample_length: ULong,
+    sample_type: OctamedMMD0InstrumentType,
 }
+pub struct OctamedMMD0SampleTable {
+    headers: OctamedMMD0SampleHeader,
+    samples: Vec<Vec<u8>>,
+}
+#[repr(i8)]
+pub enum OctamedMMD0InstrumentType {
+    Hybrid = -2,
+    Synth,
+    Sample,
+    SampleOct5,
+    SampleOct3,
+    SampleOct2,
+    SampleOct4,
+    SampleOct6,
+    SampleOct7,
+    ExtSample,
+}
+
+impl OctamedMMD0InstrumentType {
+    pub fn from_i8(byte: i8) -> Self {
+        match byte {
+            -2 => OctamedMMD0InstrumentType::Hybrid,
+            -1 => OctamedMMD0InstrumentType::Synth,
+            0 => OctamedMMD0InstrumentType::Sample,
+            1 => OctamedMMD0InstrumentType::SampleOct5,
+            2 => OctamedMMD0InstrumentType::SampleOct3,
+            3 => OctamedMMD0InstrumentType::SampleOct2,
+            4 => OctamedMMD0InstrumentType::SampleOct4,
+            5 => OctamedMMD0InstrumentType::SampleOct6,
+            6 => OctamedMMD0InstrumentType::SampleOct7,
+            7 => OctamedMMD0InstrumentType::ExtSample,
+            _ => panic!(),
+        }
+    }
+}
+pub struct OctamedMMD0ExpansionData {}
+
 pub struct OctamedMMD0SongFlags {
     pub filter_is_on: bool,
     pub jumping_is_on: bool,

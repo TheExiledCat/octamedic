@@ -4,40 +4,44 @@ use crate::{
     mmd0::module::{
         OctamedMMD0,
         OctamedMMD0BlockTable,
+        OctamedMMD0ExpansionData,
         OctamedMMD0Header,
         OctamedMMD0Sample,
         OctamedMMD0SampleTable,
         OctamedMMD0Song,
         OctamedMMD0SongFlags,
     },
-    utility::{ bytes::{ Byte, Offset, UByte, ULong, UWord, Word } },
+    utility::bytes::{ Byte, Offset, UByte, ULong, UWord, Word },
 };
 
 type Result<T> = std::io::Result<T>;
 pub struct OctamedMMD0Parser;
 
 impl OctamedMMD0Parser {
-    pub fn parse_module<R: Read + Seek>(stream: &mut R) -> Result<OctamedMMD0> {
+    pub fn parse_module<R: Read + Seek>(stream: &mut R, offset: Offset) -> Result<OctamedMMD0> {
+        stream.seek(offset.into())?;
         let header = Self::parse_header_mmd0(stream)?;
 
         let song = Self::parse_song_mmd0(header.song_ptr, stream)?;
 
         let block_table = Self::parse_blocks(header.block_array_ptr, stream)?;
         let sample_table = Self::parse_sample_table(header.sample_array_ptr, stream)?;
-
-        return Ok(OctamedMMD0 { song, block_table, header, sample_table });
+        let expansion_data = Self::parse_expansion_data(header.expansion_data_ptr, stream)?;
+        return Ok(OctamedMMD0 { song, block_table, header, sample_table, expansion_data });
     }
 
     pub fn parse_file(path: &Path) -> Result<Vec<OctamedMMD0>> {
         let mut file = File::open(path)?;
         let mut modules = vec![];
-        let module = Self::parse_module(&mut file)?;
+        let mut module = Self::parse_module(&mut file, Offset(0))?;
         loop {
+            let extra_songs = module.header.extra_songs.0;
             modules.push(module);
 
-            if &module.header.extra_songs.0 > 0 {
+            if extra_songs > 0 {
                 //todo parse others
                 // module = Self:: etc.
+                module = Self::parse_module(&mut file, Offset(1))?;
             } else {
                 break;
             }
@@ -65,6 +69,11 @@ impl OctamedMMD0Parser {
         stream.read_exact(&mut bytes)?;
 
         return Ok(UByte(u8::from_be_bytes(bytes)));
+    }
+    fn parse_byte<R: Read>(stream: &mut R) -> Result<Byte> {
+        let ubyte = Self::parse_ubyte(stream)?;
+        let byte = Byte(ubyte.0.cast_signed());
+        return Ok(byte);
     }
     fn parse_word<R: Read>(stream: &mut R) -> Result<Word> {
         let mut bytes = [0 as u8; 2];
@@ -203,8 +212,14 @@ impl OctamedMMD0Parser {
     }
     fn parse_sample_table<R: Read + Seek>(
         sample_offset: Offset,
+        song: &OctamedMMD0Song,
         stream: &mut R
     ) -> Result<OctamedMMD0SampleTable> {
+        stream.seek(sample_offset.into())?;
+        for i in 0..song.sample_count.0 {
+            let sample_length = Self::parse_ulong(stream)?;
+            let sample_type: Byte = Self::parse_byte(stream).into();
+        }
         return Ok(OctamedMMD0SampleTable {});
         todo!()
     }
@@ -213,6 +228,13 @@ impl OctamedMMD0Parser {
         stream: &mut R
     ) -> Result<OctamedMMD0BlockTable> {
         return Ok(OctamedMMD0BlockTable {});
+        todo!()
+    }
+    fn parse_expansion_data<R: Read + Seek>(
+        expansion_offset: Offset,
+        stream: &mut R
+    ) -> Result<OctamedMMD0ExpansionData> {
+        return Ok(OctamedMMD0ExpansionData {});
         todo!()
     }
 }
