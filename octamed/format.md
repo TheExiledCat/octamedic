@@ -169,6 +169,7 @@ on every module file. This structure is for MMD0/MMD1 only! The MMD2 struct
 is documented below.
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+```c
 struct MMD0song {
     struct MMD0sample sample[63];   /* 63 * 8 bytes = 504 bytes */
     UWORD   numblocks;      /* offs: 504 */
@@ -183,13 +184,14 @@ struct MMD0song {
     UBYTE   mastervol;      /* offs: 786 */
     UBYTE   numsamples;     /* offs: 787 */
 }; /* length = 788 bytes */
-
+```
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 sample
 ------
 Contains some basic info about each sample. The structure looks like this:
 
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+```c
     struct MMD0sample {
         UWORD rep,replen;   /* offs: 0(s), 2(s) */
         UBYTE midich;       /* offs: 4(s) */
@@ -197,7 +199,7 @@ Contains some basic info about each sample. The structure looks like this:
         UBYTE svol;         /* offs: 6(s) */
         BYTE strans;        /* offs: 7(s) */
     };
-
+```
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     rep         repeat start offset, shifted right one bit (as in
                 Protracker).
