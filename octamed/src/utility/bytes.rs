@@ -54,3 +54,7 @@ impl Into<SeekFrom> for Offset {
         return SeekFrom::Start(self.0 as u64);
     }
 }
+
+pub fn bit_mask(byte: UByte, mask: u8) -> bool {
+    return (byte.0 & mask) != 0;
+}

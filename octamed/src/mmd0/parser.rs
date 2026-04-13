@@ -8,33 +8,41 @@ use crate::{
         OctamedMMD0Sample,
         OctamedMMD0SampleTable,
         OctamedMMD0Song,
+        OctamedMMD0SongFlags,
     },
-    utility::{ bytes::{ Byte, Offset, UByte, ULong, UWord, Word }, logger::Logger },
+    utility::{ bytes::{ Byte, Offset, UByte, ULong, UWord, Word } },
 };
 
 type Result<T> = std::io::Result<T>;
 pub struct OctamedMMD0Parser;
 
 impl OctamedMMD0Parser {
-    pub fn parse_module<R: Read + Seek, L: Logger>(
-        stream: &mut R,
-        logger: L
-    ) -> Result<OctamedMMD0> {
-        let header = Self::parse_header(stream, &logger)?;
+    pub fn parse_module<R: Read + Seek>(stream: &mut R) -> Result<OctamedMMD0> {
+        let header = Self::parse_header_mmd0(stream)?;
 
-        logger.log(&header.to_string());
-        let song = Self::parse_song_mmd0(header.song_ptr, stream, &logger)?;
+        let song = Self::parse_song_mmd0(header.song_ptr, stream)?;
 
-        logger.log(&song.to_string());
-        let block_table = Self::parse_blocks(header.block_array_ptr, stream, &logger)?;
-        let sample_table = Self::parse_sample_table(header.sample_array_ptr, stream, &logger)?;
+        let block_table = Self::parse_blocks(header.block_array_ptr, stream)?;
+        let sample_table = Self::parse_sample_table(header.sample_array_ptr, stream)?;
 
         return Ok(OctamedMMD0 { song, block_table, header, sample_table });
-        todo!()
     }
-    pub fn parse_file<L: Logger>(path: &Path, logger: L) -> Result<OctamedMMD0> {
+
+    pub fn parse_file(path: &Path) -> Result<Vec<OctamedMMD0>> {
         let mut file = File::open(path)?;
-        return Self::parse_module(&mut file, logger);
+        let mut modules = vec![];
+        let module = Self::parse_module(&mut file)?;
+        loop {
+            modules.push(module);
+
+            if &module.header.extra_songs.0 > 0 {
+                //todo parse others
+                // module = Self:: etc.
+            } else {
+                break;
+            }
+        }
+        return Ok(modules);
     }
     fn parse_ulong<R: Read>(stream: &mut R) -> Result<ULong> {
         let mut bytes = [0 as u8; 4];
@@ -70,10 +78,7 @@ impl OctamedMMD0Parser {
 
         return Ok(bytes.to_vec());
     }
-    pub fn parse_header<R: Read + Seek, L: Logger>(
-        stream: &mut R,
-        logger: &L
-    ) -> Result<OctamedMMD0Header> {
+    pub fn parse_header_mmd0<R: Read + Seek>(stream: &mut R) -> Result<OctamedMMD0Header> {
         let id = Self::parse_ulong(stream)?;
         let length = Self::parse_ulong(stream)?;
 
@@ -82,7 +87,7 @@ impl OctamedMMD0Parser {
         let player_sequence = Self::parse_uword(stream)?;
 
         let block_array_ptr: Offset = Self::parse_offset(stream)?;
-        let mmdflags = Self::parse_ubyte(stream)?;
+        let flags = super::module::OctamedMMD0HeaderFlags::from_byte(Self::parse_ubyte(stream)?);
         let reserved = Self::parse_exact(stream, 3)?;
         let mut reserved_buffer = [0 as u8; 3];
         for (i, byte) in reserved.iter().enumerate() {
@@ -109,7 +114,7 @@ impl OctamedMMD0Parser {
             player_seconds_num,
             player_sequence,
             block_array_ptr,
-            flags: mmdflags,
+            flags,
             reserved,
             sample_array_ptr,
             reserved2,
@@ -125,15 +130,13 @@ impl OctamedMMD0Parser {
         };
         return Ok(header);
     }
-    fn parse_song_mmd0<R: Read + Seek, L: Logger>(
+    fn parse_song_mmd0<R: Read + Seek>(
         song_offset: Offset,
-        stream: &mut R,
-        logger: &L
+        stream: &mut R
     ) -> Result<OctamedMMD0Song> {
-        logger.log("Loading song data...");
-        stream.seek(song_offset.into());
+        stream.seek(song_offset.into())?;
         let mut samples = [OctamedMMD0Sample::new(); 63];
-        Self::parse_samples(&mut samples, stream, logger)?;
+        Self::parse_samples(&mut samples, stream)?;
         let block_count = Self::parse_uword(stream)?;
         let song_length = Self::parse_uword(stream)?;
         let mut player_sequence_list_bytes = [0 as u8; 256];
@@ -147,6 +150,7 @@ impl OctamedMMD0Parser {
         let global_transpose: Byte = Self::parse_ubyte(stream)?.into();
         let flags_byte = Self::parse_ubyte(stream)?;
         let flags2_byte = Self::parse_ubyte(stream)?;
+        let flags = OctamedMMD0SongFlags::from_bytes(flags_byte, flags2_byte);
         let pulses_per_line = Self::parse_ubyte(stream)?;
         let mut track_volumes = [UByte(0); 16];
         for i in 0..track_volumes.len() {
@@ -162,18 +166,16 @@ impl OctamedMMD0Parser {
             player_sequence_list,
             default_song_tempo,
             global_transpose,
-            flags_byte,
-            flags2_byte,
+            flags,
             pulses_per_line,
             track_volumes,
             master_volume,
             sample_count,
         });
     }
-    fn parse_samples<R: Read + Seek, L: Logger>(
+    fn parse_samples<R: Read + Seek>(
         buf: &mut [OctamedMMD0Sample; 63],
-        stream: &mut R,
-        logger: &L
+        stream: &mut R
     ) -> Result<()> {
         for i in 0..63 {
             let mut buffer = [0 as u8; 8];
@@ -199,18 +201,18 @@ impl OctamedMMD0Parser {
         }
         return Ok(());
     }
-    fn parse_sample_table<R: Read + Seek, L: Logger>(
+    fn parse_sample_table<R: Read + Seek>(
         sample_offset: Offset,
-        stream: &mut R,
-        logger: &L
+        stream: &mut R
     ) -> Result<OctamedMMD0SampleTable> {
+        return Ok(OctamedMMD0SampleTable {});
         todo!()
     }
-    fn parse_blocks<R: Read + Seek, L: Logger>(
+    fn parse_blocks<R: Read + Seek>(
         blocks_offset: Offset,
-        stream: &mut R,
-        logger: &L
+        stream: &mut R
     ) -> Result<OctamedMMD0BlockTable> {
+        return Ok(OctamedMMD0BlockTable {});
         todo!()
     }
 }
