@@ -49,7 +49,7 @@ impl OctamedMMD0Parser {
         return Ok(());
         todo!()
     }
-    fn parse_file<L: Logger>(path: &Path, logger: L) -> Result<()> {
+    pub fn parse_file<L: Logger>(path: &Path, logger: L) -> Result<()> {
         let mut file = File::open(path)?;
         return Self::parse_module(&mut file, logger);
     }
