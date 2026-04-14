@@ -139,12 +139,12 @@ impl OctamedMMD0Sample {
 }
 pub struct OctamedMMD0BlockTable {}
 pub struct OctamedMMD0SampleHeader {
-    sample_length: ULong,
-    sample_type: OctamedMMD0InstrumentType,
+    pub sample_length: ULong,
+    pub sample_type: OctamedMMD0InstrumentType,
 }
 pub struct OctamedMMD0SampleTable {
-    headers: OctamedMMD0SampleHeader,
-    samples: Vec<Vec<u8>>,
+    pub headers: Vec<OctamedMMD0SampleHeader>,
+    pub samples: Vec<Vec<u8>>,
 }
 #[repr(i8)]
 pub enum OctamedMMD0InstrumentType {

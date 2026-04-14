@@ -7,6 +7,7 @@ use crate::{
         OctamedMMD0ExpansionData,
         OctamedMMD0Header,
         OctamedMMD0Sample,
+        OctamedMMD0SampleHeader,
         OctamedMMD0SampleTable,
         OctamedMMD0Song,
         OctamedMMD0SongFlags,
@@ -216,12 +217,18 @@ impl OctamedMMD0Parser {
         stream: &mut R
     ) -> Result<OctamedMMD0SampleTable> {
         stream.seek(sample_offset.into())?;
+        let mut sample_table = OctamedMMD0SampleTable { headers: vec![], samples: vec![] };
         for i in 0..song.sample_count.0 {
             let sample_length = Self::parse_ulong(stream)?;
-            let sample_type: Byte = Self::parse_byte(stream).into();
+            let sample_type: Byte = Self::parse_byte(stream)?;
+            let sample_type = crate::mmd0::module::OctamedMMD0InstrumentType::from_i8(
+                sample_type.0
+            );
+            let samples = Self::parse_exact(stream, sample_length.0 as usize)?;
+            sample_table.headers.push(OctamedMMD0SampleHeader { sample_length, sample_type });
+            sample_table.samples.push(samples);
         }
-        return Ok(OctamedMMD0SampleTable {});
-        todo!()
+        return Ok(sample_table);
     }
     fn parse_blocks<R: Read + Seek>(
         blocks_offset: Offset,
