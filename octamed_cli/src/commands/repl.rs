@@ -1,11 +1,11 @@
-use std::iter;
+use std::{ iter, path::PathBuf };
 
 use clap::{ CommandFactory, Parser };
 use clap_derive::Subcommand;
 use clap_repl::{ ClapEditor, reedline::DefaultCompleter };
 use figlet_rs::Toilet;
 use inquire::{ Autocomplete, Text, autocompletion::Replacement };
-use octamed::mmd0::module::OctamedMMD0;
+use octamed::mmd0::{ module::OctamedMMD0, parser::OctamedMMD0Parser };
 
 use crate::commands::{
     self,
@@ -29,8 +29,11 @@ impl CommandError {
         }
     }
 }
-
-pub struct MMDRepl;
+#[derive(Parser)]
+#[command(name = "mmd")]
+pub struct MMDRepl {
+    module_file: PathBuf,
+}
 #[derive(Parser)]
 #[command(name = "")]
 pub struct MMDCommand {
@@ -55,7 +58,12 @@ impl MMDCommandKind {
     }
 }
 impl MMDRepl {
-    pub fn start(mmd: &mut OctamedMMD0) {
+    pub fn start(path: PathBuf) {
+        println!("Parsing file {}", path.to_string_lossy());
+
+        let mut mmd = OctamedMMD0Parser::parse_file(&path).unwrap().into_iter().next().unwrap();
+        println!("Module parsed\nStarting Repl...");
+
         let future_font = Toilet::future().unwrap();
         println!("{}", future_font.convert("MMD CLI").unwrap());
         println!("Octamed file loaded");
@@ -75,7 +83,7 @@ impl MMDRepl {
 
             match command {
                 Ok(mut command) => {
-                    let res = command.command.run(mmd);
+                    let res = command.command.run(&mut mmd);
 
                     match res {
                         Ok(_) => (),
