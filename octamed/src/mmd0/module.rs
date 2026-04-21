@@ -84,6 +84,8 @@ pub struct OctamedMMD0Song {
 impl Display for OctamedMMD0Song {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "Song Metadata")?;
+        writeln!(f, "{}", (0..20).map(|_| "_").collect::<String>())?;
+
         writeln!(f, "Block count: {}", self.block_count)?;
         writeln!(f, "Song Length: {}", self.song_length)?;
         writeln!(f, "Default Tempo: {}", self.default_song_tempo)?;
@@ -100,18 +102,18 @@ impl Display for OctamedMMD0Song {
         )?;
         writeln!(f)?;
         writeln!(f, "Sample info")?;
-        for i in 0..self.sample_count.0 as usize {
-            let sample = self.samples[i];
-            writeln!(f, "Sample: {}", i)?;
-            writeln!(f, "Loop point: {}", sample.repeat)?;
-            writeln!(f, "Loop Length: {}", sample.repeat_length)?;
-            writeln!(f, "Midi Channel: {}", sample.midi_channel)?;
-            writeln!(f, "Midi Preset: {}", sample.midi_preset)?;
-            writeln!(f, "Volume: {}", sample.sample_volume)?;
-            writeln!(f, "Transpose: {}", sample.sample_transpose)?;
+        // for i in 0..self.sample_count.0 as usize {
+        //     let sample = self.samples[i];
+        //     writeln!(f, "Sample: {}", i)?;
+        //     writeln!(f, "Loop point: {}", sample.repeat)?;
+        //     writeln!(f, "Loop Length: {}", sample.repeat_length)?;
+        //     writeln!(f, "Midi Channel: {}", sample.midi_channel)?;
+        //     writeln!(f, "Midi Preset: {}", sample.midi_preset)?;
+        //     writeln!(f, "Volume: {}", sample.sample_volume)?;
+        //     writeln!(f, "Transpose: {}", sample.sample_transpose)?;
 
-            writeln!(f)?;
-        }
+        //     writeln!(f)?;
+        // }
 
         return Ok(());
     }
@@ -141,10 +143,12 @@ pub struct OctamedMMD0BlockTable {}
 pub struct OctamedMMD0SampleHeader {
     pub sample_length: ULong,
     pub sample_type: OctamedMMD0InstrumentType,
+    pub is_16_bit: bool,
+    pub is_stereo: bool,
 }
 pub struct OctamedMMD0SampleTable {
-    pub headers: Vec<OctamedMMD0SampleHeader>,
-    pub samples: Vec<Vec<u8>>,
+    pub headers: Vec<Option<OctamedMMD0SampleHeader>>,
+    pub samples: Vec<Option<Vec<Byte>>>,
 }
 #[repr(i8)]
 pub enum OctamedMMD0InstrumentType {
@@ -161,8 +165,8 @@ pub enum OctamedMMD0InstrumentType {
 }
 
 impl OctamedMMD0InstrumentType {
-    pub fn from_i8(byte: i8) -> Self {
-        match byte {
+    pub fn from_word(word: Word) -> Self {
+        match word.0 {
             -2 => OctamedMMD0InstrumentType::Hybrid,
             -1 => OctamedMMD0InstrumentType::Synth,
             0 => OctamedMMD0InstrumentType::Sample,
@@ -173,80 +177,78 @@ impl OctamedMMD0InstrumentType {
             5 => OctamedMMD0InstrumentType::SampleOct6,
             6 => OctamedMMD0InstrumentType::SampleOct7,
             7 => OctamedMMD0InstrumentType::ExtSample,
-            _ => panic!(),
+            _ => panic!("Instrument type {} not known", word.0),
         }
     }
 }
 pub struct OctamedMMD0ExpansionData {}
 
-pub struct OctamedMMD0SongFlags {
-    pub filter_is_on: bool,
-    pub jumping_is_on: bool,
-    pub jump_every_eight_lines: bool,
-    pub song_samples_indicator: bool,
-    pub volumes_are_hex: bool,
-    pub use_st_sliding: bool,
-    pub is_8_channels: bool,
-    pub is_hq_v2_compatability: bool,
-    pub bpm_beat_length: UByte,
-    pub is_bpm_mode: bool,
-    pub mixing_enabled: bool,
-}
+pub struct OctamedMMD0SongFlags(UByte, UByte);
 
 impl OctamedMMD0SongFlags {
     pub fn from_bytes(byte1: UByte, byte2: UByte) -> Self {
-        let filter_is_on = bit_mask(byte1, 0x01);
-        let jumping_is_on = bit_mask(byte1, 0x02);
-        let jump_every_eight_lines = bit_mask(byte1, 0x04);
-        let song_samples_indicator = bit_mask(byte1, 0x08);
-        let volumes_are_hex = bit_mask(byte1, 0x10);
-        let use_st_sliding = bit_mask(byte1, 0x20);
-        let is_8_channels = bit_mask(byte1, 0x40);
-        let is_hq_v2_compatability = bit_mask(byte1, 0x80);
-        let bpm_beat_length = UByte(byte2.0 & 0x1f);
-        let is_bpm_mode = bit_mask(byte2, 0x20);
-        let mixing_enabled = bit_mask(byte2, 0x80);
+        return Self(byte1, byte2);
+    }
 
-        return Self {
-            filter_is_on,
-            jumping_is_on,
-            jump_every_eight_lines,
-            song_samples_indicator,
-            volumes_are_hex,
-            use_st_sliding,
-            is_8_channels,
-            is_hq_v2_compatability,
-            bpm_beat_length,
-            is_bpm_mode,
-            mixing_enabled,
-        };
+    pub fn filter_is_on(&self) -> bool {
+        return bit_mask(self.0, 0x01);
+    }
+    pub fn jumping_is_on(&self) -> bool {
+        return bit_mask(self.0, 0x02);
+    }
+    pub fn jump_every_eight_lines(&self) -> bool {
+        return bit_mask(self.0, 0x04);
+    }
+    pub fn song_samples_indicator(&self) -> bool {
+        return bit_mask(self.0, 0x08);
+    }
+    pub fn volumes_are_hex(&self) -> bool {
+        return bit_mask(self.0, 0x10);
+    }
+    pub fn use_st_sliding(&self) -> bool {
+        return bit_mask(self.0, 0x20);
+    }
+    pub fn is_8_channels(&self) -> bool {
+        return bit_mask(self.0, 0x40);
+    }
+    pub fn is_hq_v2_compatability(&self) -> bool {
+        return bit_mask(self.0, 0x80);
+    }
+    pub fn bpm_beat_length(&self) -> UByte {
+        return UByte(self.1.0 & 0x1f);
+    }
+    pub fn is_bpm_mode(&self) -> bool {
+        return bit_mask(self.1, 0x20);
+    }
+    pub fn mixing_enabled(&self) -> bool {
+        return bit_mask(self.1, 0x80);
     }
 }
 
 impl Display for OctamedMMD0SongFlags {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.filter_is_on {
+        if self.filter_is_on() {
             writeln!(f, "FILTER_ON")?;
         }
-        if self.jumping_is_on {
+        if self.jumping_is_on() {
             writeln!(f, "JUMPING_ON")?;
         }
-        if self.jump_every_eight_lines {
+        if self.jump_every_eight_lines() {
             writeln!(f, "JUMP_8")?;
         }
-        if self.song_samples_indicator {
+        if self.song_samples_indicator() {
             writeln!(f, "SNG_SAMPLES")?;
         }
-        if self.volumes_are_hex {
+        if self.volumes_are_hex() {
             writeln!(f, "VOL_HEX")?;
         }
-        if self.use_st_sliding {
+        if self.use_st_sliding() {
             writeln!(f, "ST_SLIDING")?;
         }
-        if self.is_8_channels {
+        if self.is_8_channels() {
             writeln!(f, "8_CHANNELS")?;
         }
-        if self.is_hq_v2_compatability {
+        if self.is_hq_v2_compatability() {
             writeln!(f, "HQ_v2-v4")?;
         }
 

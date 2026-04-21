@@ -4,7 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+clap = "4.6.1"
+clap-repl = "0.3.2"
+clap_derive = "4.6.1"
+clearscreen = "4.0.6"
 figlet-rs = "1.0.0"
 hound = "3.5.1"
 inquire = "0.9.4"
 octamed = {path="../octamed"}
+progress_bar = "1.4.0"

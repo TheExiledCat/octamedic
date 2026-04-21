@@ -1,57 +1,150 @@
+use std::iter;
+
+use clap::{ CommandFactory, Parser };
+use clap_derive::Subcommand;
+use clap_repl::{ ClapEditor, reedline::DefaultCompleter };
 use figlet_rs::Toilet;
-use inquire::Text;
+use inquire::{ Autocomplete, Text, autocompletion::Replacement };
 use octamed::mmd0::module::OctamedMMD0;
 
-use crate::commands::inspect::InspectCommand;
-
+use crate::commands::{
+    self,
+    clear::ClearCommand,
+    exit::ExitCommand,
+    inspect::InspectCommand,
+    wavexport::WavExportCommand,
+};
+pub type CommandResult = Result<(), CommandError>;
 pub trait Command {
-    fn help(&self) -> (String, String);
-    fn run(&self, mmd: &mut OctamedMMD0);
-}
-pub struct MMDRepl {
-    mmd: OctamedMMD0,
-    commands: Vec<Box<dyn Command>>,
+    fn run(&self, mmd: &mut OctamedMMD0) -> CommandResult;
 }
 
-impl MMDRepl {
-    pub fn new(mmd: OctamedMMD0) -> Self {
-        return Self { mmd, commands: vec![Box::new(InspectCommand::new())] };
+pub enum CommandError {
+    Generic(String),
+}
+impl CommandError {
+    pub fn print(&self) {
+        match self {
+            CommandError::Generic(e) => println!("{}", e),
+        }
     }
+}
 
-    pub fn start(&mut self) {
+pub struct MMDRepl;
+#[derive(Parser)]
+#[command(name = "")]
+pub struct MMDCommand {
+    #[command(subcommand)]
+    command: MMDCommandKind,
+}
+#[derive(Subcommand)]
+pub enum MMDCommandKind {
+    Inspect(InspectCommand),
+    Exit(ExitCommand),
+    ExportWav(WavExportCommand),
+    Clear(ClearCommand),
+}
+impl MMDCommandKind {
+    pub fn run(&mut self, mmd: &mut OctamedMMD0) -> CommandResult {
+        match self {
+            MMDCommandKind::Inspect(c) => c.run(mmd),
+            MMDCommandKind::Exit(c) => c.run(mmd),
+            MMDCommandKind::ExportWav(c) => c.run(mmd),
+            MMDCommandKind::Clear(c) => c.run(mmd),
+        }
+    }
+}
+impl MMDRepl {
+    pub fn start(mmd: &mut OctamedMMD0) {
         let future_font = Toilet::future().unwrap();
         println!("{}", future_font.convert("MMD CLI").unwrap());
         println!("Octamed file loaded");
         println!("Use 'help' to see commands");
         println!("Use 'exit' to leave");
+        let autocompleter = MMDReplCompleter::new(
+            MMDCommand::command()
+                .get_subcommands()
+                .map(|c| c.get_name().to_owned())
+                .chain(iter::once("help".into()))
+                .collect::<Vec<String>>()
+        );
         loop {
-            let command = self.read_line().trim().to_owned();
+            let input = Self::read_line(&autocompleter).trim().to_owned();
+            let args = iter::once("").chain(input.split_whitespace());
+            let command = MMDCommand::try_parse_from(args);
 
-            if command == "help" {
-                self.help();
-            } else if command == "exit" {
-                break;
-            } else if self.commands.iter().any(|c| c.help().0 == command) {
-                self.commands
-                    .iter()
-                    .find(|c| c.help().0 == command)
-                    .unwrap()
-                    .run(&mut self.mmd);
-            } else {
+            match command {
+                Ok(mut command) => {
+                    let res = command.command.run(mmd);
+
+                    match res {
+                        Ok(_) => (),
+                        Err(e) => e.print(),
+                    }
+                }
+                Err(e) => {
+                    e.print().unwrap();
+                }
             }
-        }
-    }
-    fn help(&self) {
-        println!("commands:");
-        for command in &self.commands {
-            let help = command.help();
-            println!("{} - {}", help.0, help.1);
-        }
 
-        println!();
-        println!("use 'help [command]' to see command details");
+            // if command == "help" {
+            //     self.help();
+            // } else if command == "exit" {
+            //     break;
+            // } else if self.commands.iter().any(|c| c.help().0 == command) {
+            //     self.commands
+            //         .iter()
+            //         .find(|c| c.help().0 == command)
+            //         .unwrap()
+            //         .run(&mut self.mmd);
+            // } else {
+            // }
+        }
     }
-    fn read_line(&mut self) -> String {
-        return Text::new("").prompt().unwrap();
+
+    fn read_line(completer: &MMDReplCompleter) -> String {
+        return Text::new("").with_autocomplete(completer.clone()).prompt().unwrap();
+    }
+}
+#[derive(Clone)]
+struct MMDReplCompleter {
+    command_list: Vec<String>,
+}
+impl MMDReplCompleter {
+    pub fn new(commands: Vec<String>) -> Self {
+        return Self { command_list: commands };
+    }
+}
+impl Autocomplete for MMDReplCompleter {
+    fn get_suggestions(&mut self, input: &str) -> Result<Vec<String>, inquire::CustomUserError> {
+        let input = input.split_whitespace().last().unwrap_or("");
+        let sug = self.command_list
+            .iter()
+            .filter(|c| c.starts_with(input))
+            .take(5)
+            .map(|s| s.to_owned());
+
+        return Ok(sug.collect::<Vec<String>>());
+    }
+
+    fn get_completion(
+        &mut self,
+        input: &str,
+        highlighted_suggestion: Option<String>
+    ) -> Result<inquire::autocompletion::Replacement, inquire::CustomUserError> {
+        Ok(match highlighted_suggestion {
+            Some(s) => {
+                let mut tokens = input
+                    .split_whitespace()
+                    .map(|t| t.to_owned())
+                    .collect::<Vec<String>>();
+
+                tokens.pop();
+                tokens.push(s);
+
+                Replacement::Some(tokens.join(" "))
+            }
+            None => Replacement::None,
+        })
     }
 }

@@ -1,3 +1,4 @@
+use core::panic;
 use std::{ fs::File, io::{ Read, Seek }, path::Path };
 
 use crate::{
@@ -6,13 +7,14 @@ use crate::{
         OctamedMMD0BlockTable,
         OctamedMMD0ExpansionData,
         OctamedMMD0Header,
+        OctamedMMD0InstrumentType,
         OctamedMMD0Sample,
         OctamedMMD0SampleHeader,
         OctamedMMD0SampleTable,
         OctamedMMD0Song,
         OctamedMMD0SongFlags,
     },
-    utility::bytes::{ Byte, Offset, UByte, ULong, UWord, Word },
+    utility::bytes::{ Byte, Offset, UByte, ULong, UWord, Word, bit_mask },
 };
 
 type Result<T> = std::io::Result<T>;
@@ -22,11 +24,18 @@ impl OctamedMMD0Parser {
     pub fn parse_module<R: Read + Seek>(stream: &mut R, offset: Offset) -> Result<OctamedMMD0> {
         stream.seek(offset.into())?;
         let header = Self::parse_header_mmd0(stream)?;
-
+        if
+            header.song_ptr.is_null() ||
+            header.block_array_ptr.is_null() ||
+            header.sample_array_ptr.is_null() ||
+            header.expansion_data_ptr.is_null()
+        {
+            panic!("Null pointer in file");
+        }
         let song = Self::parse_song_mmd0(header.song_ptr, stream)?;
 
         let block_table = Self::parse_blocks(header.block_array_ptr, stream)?;
-        let sample_table = Self::parse_sample_table(header.sample_array_ptr, stream)?;
+        let sample_table = Self::parse_sample_table(header.sample_array_ptr, &song, stream)?;
         let expansion_data = Self::parse_expansion_data(header.expansion_data_ptr, stream)?;
         return Ok(OctamedMMD0 { song, block_table, header, sample_table, expansion_data });
     }
@@ -217,16 +226,39 @@ impl OctamedMMD0Parser {
         stream: &mut R
     ) -> Result<OctamedMMD0SampleTable> {
         stream.seek(sample_offset.into())?;
+        let mut instrument_ptrs = vec![];
+        for _ in 0..song.sample_count.0 {
+            let offset = Self::parse_offset(stream)?;
+            instrument_ptrs.push(offset);
+        }
         let mut sample_table = OctamedMMD0SampleTable { headers: vec![], samples: vec![] };
-        for i in 0..song.sample_count.0 {
+        for offset in instrument_ptrs {
+            stream.seek(offset.into())?;
             let sample_length = Self::parse_ulong(stream)?;
-            let sample_type: Byte = Self::parse_byte(stream)?;
-            let sample_type = crate::mmd0::module::OctamedMMD0InstrumentType::from_i8(
-                sample_type.0
+            let sample_type: Word = Self::parse_word(stream)?;
+            let is_stereo = bit_mask(sample_type, 0x20);
+            let is_16_bit = bit_mask(sample_type, 0x10);
+            let is_sample = sample_type.0 >= 0;
+            let sample_length = if !is_stereo { sample_length } else { ULong(sample_length.0 * 2) };
+            if sample_length.0 == 0 && is_sample {
+                //null instrument
+                sample_table.headers.push(None);
+                sample_table.samples.push(None);
+                continue;
+            }
+            let sample_type = OctamedMMD0InstrumentType::from_word(sample_type);
+            let samples = Self::parse_exact(stream, sample_length.0 as usize)?
+                .iter()
+                .map(|s| Byte(*s as i8))
+                .collect();
+            sample_table.headers.push(
+                Some(OctamedMMD0SampleHeader { sample_length, sample_type, is_16_bit, is_stereo })
             );
-            let samples = Self::parse_exact(stream, sample_length.0 as usize)?;
-            sample_table.headers.push(OctamedMMD0SampleHeader { sample_length, sample_type });
-            sample_table.samples.push(samples);
+            if is_sample {
+                sample_table.samples.push(Some(samples));
+            } else {
+                //todo where are synths stored
+            }
         }
         return Ok(sample_table);
     }
