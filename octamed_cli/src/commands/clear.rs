@@ -3,7 +3,7 @@ use clap_derive::Args;
 use crate::commands::repl::{ Command, CommandResult };
 
 #[derive(Args, Debug, Clone)]
-#[command(name = "clear", about = "Clears the terminal for readability")]
+#[command(about = "Clears the terminal for readability")]
 pub struct ClearCommand {}
 
 impl Command for ClearCommand {

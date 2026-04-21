@@ -5,7 +5,7 @@ use clap_derive::Args;
 use crate::commands::repl::{ Command, CommandResult };
 
 #[derive(Args, Debug, Clone)]
-#[command(name = "exit", about = "Exit the command line interface")]
+#[command(about = "Exit the command line interface")]
 pub struct ExitCommand {}
 
 impl Command for ExitCommand {

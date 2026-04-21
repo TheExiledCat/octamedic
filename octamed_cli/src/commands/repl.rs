@@ -9,6 +9,7 @@ use octamed::mmd0::{ module::OctamedMMD0, parser::OctamedMMD0Parser };
 
 use crate::commands::{
     self,
+    blocks::{ InspectBlockCommand, InspectBlocksCommand },
     clear::ClearCommand,
     exit::ExitCommand,
     inspect::InspectCommand,
@@ -42,10 +43,12 @@ pub struct MMDCommand {
 }
 #[derive(Subcommand)]
 pub enum MMDCommandKind {
-    Inspect(InspectCommand),
-    Exit(ExitCommand),
-    ExportWav(WavExportCommand),
-    Clear(ClearCommand),
+    #[command(name = "inspect")] Inspect(InspectCommand),
+    #[command(name = "exit")] Exit(ExitCommand),
+    #[command(name = "wavexport")] ExportWav(WavExportCommand),
+    #[command(name = "clear")] Clear(ClearCommand),
+    #[command(name = "block")] InspectBlock(InspectBlockCommand),
+    #[command(name = "blocks")] InspectBlocks(InspectBlocksCommand),
 }
 impl MMDCommandKind {
     pub fn run(&mut self, mmd: &mut OctamedMMD0) -> CommandResult {
@@ -54,6 +57,8 @@ impl MMDCommandKind {
             MMDCommandKind::Exit(c) => c.run(mmd),
             MMDCommandKind::ExportWav(c) => c.run(mmd),
             MMDCommandKind::Clear(c) => c.run(mmd),
+            MMDCommandKind::InspectBlock(c) => c.run(mmd),
+            MMDCommandKind::InspectBlocks(c) => c.run(mmd),
         }
     }
 }

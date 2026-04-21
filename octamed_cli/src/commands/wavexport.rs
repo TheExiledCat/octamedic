@@ -15,7 +15,7 @@ use progress_bar::{
 use crate::commands::repl::{ Command, CommandError, CommandResult };
 
 #[derive(Args, Debug, Clone)]
-#[command(name = "wavexport", about = "Export a sample to wav file")]
+#[command(about = "Export a sample to wav file")]
 pub struct WavExportCommand {
     sample_number: usize,
     #[arg(help = "The output file to write to. creates a new file if needed")]
@@ -23,7 +23,7 @@ pub struct WavExportCommand {
     #[arg(
         short,
         long,
-        help = "The sampling frequency in Amiga PAL Periods. Defaults to 214 (about 16.5khz)",
+        help = "The sampling frequency in Amiga PAL Periods. (default is about 16.5khz)",
         default_value = "214"
     )]
     periods: u16,

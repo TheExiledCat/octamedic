@@ -3,7 +3,7 @@ use clap_derive::Args;
 use crate::commands::repl::{ Command, CommandResult };
 
 #[derive(Args, Debug, Clone)]
-#[command(name = "inspect", about = "Inspect the loaded mmd module.")]
+#[command(about = "Inspect the loaded mmd module.")]
 pub struct InspectCommand {}
 
 impl Command for InspectCommand {
