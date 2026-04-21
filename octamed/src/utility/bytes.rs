@@ -60,8 +60,19 @@ impl Into<SeekFrom> for Offset {
     }
 }
 
-pub fn bit_mask(byte: impl IntoByte, mask: u8) -> bool {
-    return (byte.as_byte().0 & mask) != 0;
+pub fn bit_flag(byte: impl IntoByte, mask: u8) -> bool {
+    return bit_mask(byte, mask).0 != 0;
+}
+pub fn bit_mask(byte: impl IntoByte, mask: u8) -> UByte {
+    return UByte(byte.as_byte().0 & mask);
+}
+pub fn bit_slice(byte: impl IntoByte, start: u8, end: u8) -> UByte {
+    assert!(start < end && end <= 8);
+
+    let mask = (1u8 << (end - start)) - 1;
+    let value = (byte.as_byte().0 >> start) & mask;
+
+    UByte(value)
 }
 
 pub trait IntoByte {

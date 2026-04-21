@@ -1,9 +1,12 @@
 use core::panic;
-use std::{ fs::File, io::{ Read, Seek }, path::Path };
+use std::{ collections::HashMap, fs::File, io::{ Read, Seek }, path::Path };
 
 use crate::{
     mmd0::module::{
         OctamedMMD0,
+        OctamedMMD0Block,
+        OctamedMMD0BlockHeader,
+        OctamedMMD0BlockLine,
         OctamedMMD0BlockTable,
         OctamedMMD0ExpansionData,
         OctamedMMD0Header,
@@ -13,8 +16,9 @@ use crate::{
         OctamedMMD0SampleTable,
         OctamedMMD0Song,
         OctamedMMD0SongFlags,
+        OctamedMMD0TrackLine,
     },
-    utility::bytes::{ Byte, Offset, UByte, ULong, UWord, Word, bit_mask },
+    utility::bytes::{ Byte, Offset, UByte, ULong, UWord, Word, bit_flag },
 };
 
 type Result<T> = std::io::Result<T>;
@@ -34,7 +38,7 @@ impl OctamedMMD0Parser {
         }
         let song = Self::parse_song_mmd0(header.song_ptr, stream)?;
 
-        let block_table = Self::parse_blocks(header.block_array_ptr, stream)?;
+        let block_table = Self::parse_blocks(header.block_array_ptr, stream, &song)?;
         let sample_table = Self::parse_sample_table(header.sample_array_ptr, &song, stream)?;
         let expansion_data = Self::parse_expansion_data(header.expansion_data_ptr, stream)?;
         return Ok(OctamedMMD0 { song, block_table, header, sample_table, expansion_data });
@@ -236,8 +240,8 @@ impl OctamedMMD0Parser {
             stream.seek(offset.into())?;
             let sample_length = Self::parse_ulong(stream)?;
             let sample_type: Word = Self::parse_word(stream)?;
-            let is_stereo = bit_mask(sample_type, 0x20);
-            let is_16_bit = bit_mask(sample_type, 0x10);
+            let is_stereo = bit_flag(sample_type, 0x20);
+            let is_16_bit = bit_flag(sample_type, 0x10);
             let is_sample = sample_type.0 >= 0;
             let sample_length = if !is_stereo { sample_length } else { ULong(sample_length.0 * 2) };
             if sample_length.0 == 0 && is_sample {
@@ -264,10 +268,38 @@ impl OctamedMMD0Parser {
     }
     fn parse_blocks<R: Read + Seek>(
         blocks_offset: Offset,
-        stream: &mut R
+        stream: &mut R,
+        song: &OctamedMMD0Song
     ) -> Result<OctamedMMD0BlockTable> {
-        return Ok(OctamedMMD0BlockTable {});
-        todo!()
+        stream.seek(blocks_offset.into())?;
+        let mut block_pointers = vec![];
+        for _ in 0..song.block_count.0 {
+            let offset = Self::parse_offset(stream)?;
+            block_pointers.push(offset);
+        }
+        let mut table = OctamedMMD0BlockTable { blocks: vec![], headers: vec![] };
+        for ptr in block_pointers {
+            stream.seek(ptr.into())?;
+            let track_count = Self::parse_ubyte(stream)?;
+            let line_count = Self::parse_ubyte(stream)?;
+            let header = OctamedMMD0BlockHeader { track_count, line_count };
+            let mut block = OctamedMMD0Block { lines: vec![] };
+            for i in 0..line_count.0 {
+                let mut block_line = OctamedMMD0BlockLine { tracks: vec![] };
+                for track in 0..track_count.0 {
+                    let byte1 = Self::parse_ubyte(stream)?;
+                    let byte2 = Self::parse_ubyte(stream)?;
+                    let byte3 = Self::parse_ubyte(stream)?;
+                    let track_line = OctamedMMD0TrackLine::from_bytes(byte1, byte2, byte3);
+                    block_line.tracks.push(track_line);
+                }
+                block.lines.push(block_line);
+            }
+            table.headers.push(header);
+            table.blocks.push(block);
+            //todo
+        }
+        return Ok(table);
     }
     fn parse_expansion_data<R: Read + Seek>(
         expansion_offset: Offset,

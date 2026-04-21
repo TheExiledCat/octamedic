@@ -1,6 +1,9 @@
-use std::fmt::Display;
+use std::{ collections::HashMap, fmt::Display };
 
-use crate::utility::bytes::{ Byte, Offset, UByte, ULong, UWord, Word, bit_mask };
+use crate::utility::{
+    bytes::{ Byte, Offset, UByte, ULong, UWord, Word, bit_flag, bit_slice },
+    note,
+};
 
 pub struct OctamedMMD0Header {
     pub id: ULong,
@@ -28,7 +31,7 @@ pub struct OctamedMMD0HeaderFlags {
 }
 impl OctamedMMD0HeaderFlags {
     pub fn from_byte(byte: UByte) -> Self {
-        return Self { load_to_fast_memory: bit_mask(byte, 0x1) };
+        return Self { load_to_fast_memory: bit_flag(byte, 0x1) };
     }
 }
 impl Display for OctamedMMD0HeaderFlags {
@@ -139,7 +142,51 @@ impl OctamedMMD0Sample {
         };
     }
 }
-pub struct OctamedMMD0BlockTable {}
+pub struct OctamedMMD0BlockTable {
+    pub headers: Vec<OctamedMMD0BlockHeader>,
+    pub blocks: Vec<OctamedMMD0Block>,
+}
+pub struct OctamedMMD0Block {
+    pub lines: Vec<OctamedMMD0BlockLine>,
+}
+pub struct OctamedMMD0BlockLine {
+    pub tracks: Vec<OctamedMMD0TrackLine>,
+}
+pub struct OctamedMMD0TrackLine {
+    pub note_number: UByte,
+    pub instrument_number: UByte,
+    pub command_number: UByte,
+    pub command_value: UByte,
+}
+
+impl OctamedMMD0TrackLine {
+    pub fn from_bytes(byte1: UByte, byte2: UByte, byte3: UByte) -> Self {
+        let command_value = byte3;
+        let command_number = UByte(byte2.0 & 0x0f);
+        let note_number = UByte(byte1.0 & 0x3f);
+        let xy = (byte1.0 >> 6) << 4;
+        let iiii = byte2.0 >> 4;
+        let instrument_number = UByte(xy | iiii);
+
+        return Self { note_number, instrument_number, command_number, command_value };
+    }
+}
+impl Display for OctamedMMD0TrackLine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{:3} {:01X}{:02X}{:02X}",
+            note::MidiNote::from_octamed_note_number(self.note_number),
+            self.instrument_number.0,
+            self.command_number.0,
+            self.command_value.0
+        )
+    }
+}
+pub struct OctamedMMD0BlockHeader {
+    pub track_count: UByte,
+    pub line_count: UByte,
+}
 pub struct OctamedMMD0SampleHeader {
     pub sample_length: ULong,
     pub sample_type: OctamedMMD0InstrumentType,
@@ -191,37 +238,37 @@ impl OctamedMMD0SongFlags {
     }
 
     pub fn filter_is_on(&self) -> bool {
-        return bit_mask(self.0, 0x01);
+        return bit_flag(self.0, 0x01);
     }
     pub fn jumping_is_on(&self) -> bool {
-        return bit_mask(self.0, 0x02);
+        return bit_flag(self.0, 0x02);
     }
     pub fn jump_every_eight_lines(&self) -> bool {
-        return bit_mask(self.0, 0x04);
+        return bit_flag(self.0, 0x04);
     }
     pub fn song_samples_indicator(&self) -> bool {
-        return bit_mask(self.0, 0x08);
+        return bit_flag(self.0, 0x08);
     }
     pub fn volumes_are_hex(&self) -> bool {
-        return bit_mask(self.0, 0x10);
+        return bit_flag(self.0, 0x10);
     }
     pub fn use_st_sliding(&self) -> bool {
-        return bit_mask(self.0, 0x20);
+        return bit_flag(self.0, 0x20);
     }
     pub fn is_8_channels(&self) -> bool {
-        return bit_mask(self.0, 0x40);
+        return bit_flag(self.0, 0x40);
     }
     pub fn is_hq_v2_compatability(&self) -> bool {
-        return bit_mask(self.0, 0x80);
+        return bit_flag(self.0, 0x80);
     }
     pub fn bpm_beat_length(&self) -> UByte {
         return UByte(self.1.0 & 0x1f);
     }
     pub fn is_bpm_mode(&self) -> bool {
-        return bit_mask(self.1, 0x20);
+        return bit_flag(self.1, 0x20);
     }
     pub fn mixing_enabled(&self) -> bool {
-        return bit_mask(self.1, 0x80);
+        return bit_flag(self.1, 0x80);
     }
 }
 
