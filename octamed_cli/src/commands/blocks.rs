@@ -1,5 +1,3 @@
-use std::fmt::format;
-
 use clap_derive::Args;
 
 use crate::commands::repl::{ Command, CommandError, CommandResult };
@@ -41,6 +39,10 @@ impl Command for InspectBlockCommand {
             .get(self.block_number)
             .ok_or(CommandError::Generic(format!("Failed to find block: {}", self.block_number)))?;
         let header = mmd.block_table.headers.get(self.block_number).unwrap();
+        let tempo = mmd.song.get_tempo();
+        println!("Tempo ({}): {} \n", if tempo.is_bpm_mode() { "BPM" } else { "SPD" }, tempo);
+
+        println!("Line count: {} (0-{})", header.line_count.0 + 1, header.line_count.0);
         println!(
             "    {}",
             (0..8)

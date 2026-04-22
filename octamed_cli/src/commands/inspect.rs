@@ -9,6 +9,14 @@ pub struct InspectCommand {}
 impl Command for InspectCommand {
     fn run(&self, mmd: &mut octamed::mmd0::module::OctamedMMD0) -> CommandResult {
         println!("{}\n{}", mmd.header, mmd.song);
+        match &mmd.expansion_data {
+            Some(e) => {
+                println!("Song name: {}", e.song_name);
+                println!("Comment: {}", e.annotation);
+            }
+            None => (),
+        }
+
         return Ok(());
     }
 }

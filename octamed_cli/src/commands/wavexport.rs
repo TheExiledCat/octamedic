@@ -1,4 +1,4 @@
-use std::{ fs::File, path::PathBuf };
+use std::path::PathBuf;
 
 use clap_derive::Args;
 use hound::{ WavSpec, WavWriter };
@@ -15,15 +15,16 @@ use progress_bar::{
 use crate::commands::repl::{ Command, CommandError, CommandResult };
 
 #[derive(Args, Debug, Clone)]
-#[command(about = "Export a sample to wav file")]
+#[command(about = "Export a sample to wav file. Does not take into account sample transpose.")]
 pub struct WavExportCommand {
+    #[arg(help = "The sample number to export.  Use 'instruments' to see possible values")]
     sample_number: usize,
     #[arg(help = "The output file to write to. creates a new file if needed")]
     output: PathBuf,
     #[arg(
         short,
         long,
-        help = "The sampling frequency in Amiga PAL Periods. (default is about 16.5khz)",
+        help = "The sampling frequency in Amiga PAL Periods. (default is about 16.5khz or the C-3 note)",
         default_value = "214"
     )]
     periods: u16,

@@ -13,6 +13,7 @@ use crate::commands::{
     clear::ClearCommand,
     exit::ExitCommand,
     inspect::InspectCommand,
+    instruments::InstrumentsCommand,
     wavexport::WavExportCommand,
 };
 pub type CommandResult = Result<(), CommandError>;
@@ -49,6 +50,7 @@ pub enum MMDCommandKind {
     #[command(name = "clear")] Clear(ClearCommand),
     #[command(name = "block")] InspectBlock(InspectBlockCommand),
     #[command(name = "blocks")] InspectBlocks(InspectBlocksCommand),
+    #[command(name = "instruments")] Instruments(InstrumentsCommand),
 }
 impl MMDCommandKind {
     pub fn run(&mut self, mmd: &mut OctamedMMD0) -> CommandResult {
@@ -59,6 +61,7 @@ impl MMDCommandKind {
             MMDCommandKind::Clear(c) => c.run(mmd),
             MMDCommandKind::InspectBlock(c) => c.run(mmd),
             MMDCommandKind::InspectBlocks(c) => c.run(mmd),
+            MMDCommandKind::Instruments(c) => c.run(mmd),
         }
     }
 }

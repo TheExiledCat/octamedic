@@ -8,9 +8,17 @@ use crate::{
         OctamedMMD0BlockHeader,
         OctamedMMD0BlockLine,
         OctamedMMD0BlockTable,
-        OctamedMMD0ExpansionData,
+        OctamedMMD0ColorPallete,
+        OctamedMMD0Dump,
+        OctamedMMD0Expansion,
+        OctamedMMD0ExpansionHeader,
         OctamedMMD0Header,
+        OctamedMMD0Info,
+        OctamedMMD0InstrumentInfo,
         OctamedMMD0InstrumentType,
+        OctamedMMD0MidiCommands,
+        OctamedMMD0NotationInfo,
+        OctamedMMD0Rexx,
         OctamedMMD0Sample,
         OctamedMMD0SampleHeader,
         OctamedMMD0SampleTable,
@@ -187,10 +195,10 @@ impl OctamedMMD0Parser {
             block_count,
             song_length,
             player_sequence_list,
-            default_song_tempo,
+            primary_tempo: default_song_tempo,
             global_transpose,
             flags,
-            pulses_per_line,
+            secondary_tempo: pulses_per_line,
             track_volumes,
             master_volume,
             sample_count,
@@ -284,7 +292,7 @@ impl OctamedMMD0Parser {
             let line_count = Self::parse_ubyte(stream)?;
             let header = OctamedMMD0BlockHeader { track_count, line_count };
             let mut block = OctamedMMD0Block { lines: vec![] };
-            for i in 0..line_count.0 {
+            for i in 0..line_count.0 + 1 {
                 let mut block_line = OctamedMMD0BlockLine { tracks: vec![] };
                 for track in 0..track_count.0 {
                     let byte1 = Self::parse_ubyte(stream)?;
@@ -304,8 +312,152 @@ impl OctamedMMD0Parser {
     fn parse_expansion_data<R: Read + Seek>(
         expansion_offset: Offset,
         stream: &mut R
-    ) -> Result<OctamedMMD0ExpansionData> {
-        return Ok(OctamedMMD0ExpansionData {});
-        todo!()
+    ) -> Result<Option<OctamedMMD0Expansion>> {
+        if expansion_offset.is_null() {
+            return Ok(None);
+        }
+        stream.seek(expansion_offset.into())?;
+        let header = Self::parse_expansion_data_header(stream)?;
+
+        let annotation = {
+            if
+                header.annotation_text_char_array_ptr.is_null() ||
+                header.annotation_text_length.0 <= 1
+            {
+                "N/A".into()
+            } else {
+                stream.seek(header.annotation_text_char_array_ptr.into())?;
+                let mut text = String::with_capacity(
+                    (header.annotation_text_length.0 - 1) as usize
+                );
+                for i in 0..header.annotation_text_length.0 - 1 {
+                    let c = Self::parse_ubyte(stream)?.as_char();
+                    text.push(c);
+                }
+                text
+            }
+        };
+        let color_pallete = {
+            stream.seek(header.rgb_table_ptr.into())?;
+            let mut pallete = [UWord(0); 8];
+            for i in 0..pallete.len() {
+                let color = Self::parse_uword(stream)?;
+                pallete[i] = color;
+            }
+            OctamedMMD0ColorPallete::from_bytes(pallete)
+        };
+        let external_instruments = vec![];
+        let instrument_infos = {
+            if header.instrument_info_ptr.is_null() {
+                vec![]
+            } else {
+                stream.seek(header.instrument_info_ptr.into())?;
+                let mut infos = Vec::new();
+                if header.instrument_info_struct_size.0 != 40 {
+                    panic!("instrument_info struct size: {}", header.instrument_info_struct_size);
+                }
+                for i in 0..header.instrument_info_array_length.0 {
+                    let mut info = OctamedMMD0InstrumentInfo { name: String::with_capacity(40) };
+                    for j in 0..header.instrument_info_struct_size.0 - 1 {
+                        let c = Self::parse_ubyte(stream)?.as_char();
+                        info.name.push(c);
+                    }
+                    Self::parse_byte(stream)?; // \0
+                    infos.push(info);
+                }
+                infos
+            }
+        };
+        let mmd_dump = OctamedMMD0Dump {};
+        let mmd_info = OctamedMMD0Info {};
+        let mmd_midi_commands = OctamedMMD0MidiCommands {};
+        let mmd_rexx = OctamedMMD0Rexx {};
+        let notation_info = OctamedMMD0NotationInfo {};
+        let song_name = {
+            if header.song_name_char_array_ptr.is_null() || header.song_name_length.0 <= 1 {
+                "N/A".into()
+            } else {
+                let mut name = String::with_capacity((header.song_name_length.0 - 1) as usize);
+                stream.seek(header.song_name_char_array_ptr.into())?;
+                for i in 0..header.song_name_length.0 - 1 {
+                    let c = Self::parse_ubyte(stream)?.as_char();
+                    name.push(c);
+                }
+                name
+            }
+        };
+
+        return Ok(
+            Some(OctamedMMD0Expansion {
+                header,
+                annotation,
+                color_pallete,
+                external_instruments,
+                instrument_infos,
+                mmd_dump,
+                mmd_info,
+                mmd_midi_commands,
+                mmd_rexx,
+                notation_info,
+                song_name,
+            })
+        );
+    }
+    fn parse_expansion_data_header<R: Read + Seek>(
+        stream: &mut R
+    ) -> Result<OctamedMMD0ExpansionHeader> {
+        let next_module_ptr = Self::parse_offset(stream)?;
+        let expanded_instruments_array_ptr = Self::parse_offset(stream)?;
+        let expanded_instruments_array_length = Self::parse_uword(stream)?;
+        let extpanded_instruments_struct_size = Self::parse_uword(stream)?;
+        let annotation_text_char_array_ptr = Self::parse_offset(stream)?;
+        let annotation_text_length = Self::parse_ulong(stream)?;
+        let instrument_info_ptr = Self::parse_offset(stream)?;
+        let instrument_info_array_length = Self::parse_uword(stream)?;
+        let instrument_info_struct_size = Self::parse_uword(stream)?;
+        let jump_mask = Self::parse_ulong(stream)?;
+        let rgb_table_ptr = Self::parse_offset(stream)?;
+        let channel_split: [UByte; 4] = Self::parse_exact(stream, 4)?
+            .iter()
+            .map(|b| UByte(*b))
+            .collect::<Vec<UByte>>()
+            .try_into()
+            .unwrap();
+        let notation_info_ptr = Self::parse_offset(stream)?;
+        let song_name_char_array_ptr = Self::parse_offset(stream)?;
+        let song_name_length = Self::parse_ulong(stream)?;
+        let mmd_dump_ptr = Self::parse_offset(stream)?;
+        let mmd_info_ptr = Self::parse_offset(stream)?;
+        let mmd_rexx_ptr = Self::parse_offset(stream)?;
+        let mmd_midi_commands_ptr = Self::parse_offset(stream)?;
+        let mut reserved = [ULong(0); 3];
+        for i in 0..reserved.len() {
+            reserved[i] = Self::parse_ulong(stream)?;
+        }
+        let tag_end = Self::parse_ulong(stream)?;
+
+        return Ok(OctamedMMD0ExpansionHeader {
+            next_module_ptr,
+            expanded_instruments_array_ptr,
+            expanded_instruments_array_length,
+            extpanded_instruments_struct_size,
+            annotation_text_char_array_ptr,
+            annotation_text_length,
+            instrument_info_ptr,
+            instrument_info_array_length,
+            instrument_info_struct_size,
+            jump_mask,
+            rgb_table_ptr,
+            channel_split,
+            notation_info_ptr,
+            song_name_char_array_ptr,
+            song_name_length,
+            mmd_dump_ptr,
+            mmd_info_ptr,
+            mmd_rexx_ptr,
+            mmd_midi_commands_ptr,
+            reserved,
+            tag_end,
+        });
     }
 }
