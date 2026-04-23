@@ -6,7 +6,7 @@ A faithful clone of OctaMED Professional v4
 
 ## Features
 
-- Faithful recreation of the 8 bit sound engine
+- Faithful recreation of the 8 bit sound engine written in Rust using pix_engine for rendering and cpal for audio playback
 - Works with original MMD0, MMD1, and MMD2 modules, configs and samples
 - All the original settings, keybinds and plugin support
 - Full Midi support
@@ -46,3 +46,13 @@ To install download a release or an installer from the right hand bar for your p
 It is also possible to build from source using the rust cargo toolchain. This way you get the newest changes (but also the breaking ones!) immediately.
 
 When using the installer, automatic updates are also added. Whenever you startup OctaMEDIC it will check if there are any new versions available and give you an update prompt.
+
+## In this repo
+- octamed
+    - parser and structs for original octamed files
+- octamed_cli
+    - cli tool for reading octamed mmds and extracting wav files
+- octamedic_core
+    - core library for octamedic, including the playback engine
+- octamedic_gui
+    - pix engine implementation of the octamed editor
