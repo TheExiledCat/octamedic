@@ -55,4 +55,4 @@ When using the installer, automatic updates are also added. Whenever you startup
 - octamedic_core
     - core library for octamedic, including the playback engine
 - octamedic_gui
-    - pix engine implementation of the octamed editor
+    - full octamed clone made using ggez
