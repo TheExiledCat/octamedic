@@ -4,5 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+display-info = "0.5.9"
 pix-engine = "0.8.0"
 
