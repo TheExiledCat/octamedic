@@ -1,47 +1,81 @@
-use pix_engine::{ shape::Rect, state::PixState };
+use ggez::{ Context, GameResult, graphics::{ Canvas, Rect } };
+use taffy::{ Layout, NodeId, TaffyResult, TaffyTree };
 
-use crate::app::app::App;
+use crate::framework::input::InputEvent;
 
+pub struct WidgetCore {
+    pub node: NodeId,
+    pub rect: Rect,
+    pub disabled: bool,
+    pub hovered: bool,
+    pub pressed: bool,
+}
+impl WidgetCore {
+    pub fn new(node: NodeId) -> Self {
+        Self {
+            node,
+            rect: Default::default(),
+            disabled: Default::default(),
+            hovered: Default::default(),
+            pressed: Default::default(),
+        }
+    }
+}
 pub trait Widget {
-    fn init(
-        &mut self,
-        s: &mut PixState,
-        app: &mut App,
-        rect: Rect
-    ) -> pix_engine::prelude::PixResult<()> {
+    fn core(&self) -> &WidgetCore;
+    fn core_mut(&mut self) -> &mut WidgetCore;
+    fn handle_event(&mut self, event: &InputEvent) -> bool {
+        if handle_mouse_event(self.core_mut(), event) {
+            return true;
+        }
+        return false;
+    }
+
+    fn layout(&mut self, taffy: &TaffyTree) -> TaffyResult<()> {
+        let layout = taffy.layout(self.core().node)?;
+        self.core_mut().rect = layout.into_rect();
         return Ok(());
     }
-    fn render(&self, s: &mut PixState, app: &App, rect: Rect) -> pix_engine::prelude::PixResult<()>;
-    fn get_rect(&self, s: &mut PixState, app: &mut App) -> pix_engine::prelude::PixResult<Rect>;
-}
-pub trait ContainerWidget: Widget {
-    fn get_children(&self) -> &Vec<WidgetKind>;
-    fn add_child(&mut self, child: WidgetKind);
-    fn resize(&mut self, s: &mut PixState, width: u32, height: u32);
-}
+    fn render(&self, ctx: &mut Context, canvas: &mut Canvas) -> GameResult;
 
-pub enum WidgetKind {
-    Container(Box<dyn ContainerWidget>),
-    Leaf(Box<dyn Widget>),
-}
-
-impl Widget for WidgetKind {
-    fn render(
-        &self,
-        s: &mut PixState,
-        app: &App,
-        rect: Rect
-    ) -> pix_engine::prelude::PixResult<()> {
-        match self {
-            WidgetKind::Container(container_widget) => container_widget.render(s, app, rect),
-            WidgetKind::Leaf(widget) => widget.render(s, app, rect),
-        }
+    fn boxed(self) -> Box<Self> where Self: Sized {
+        return Box::new(self);
     }
+}
 
-    fn get_rect(&self, s: &mut PixState, app: &mut App) -> pix_engine::prelude::PixResult<Rect> {
-        match self {
-            WidgetKind::Container(container_widget) => container_widget.get_rect(s, app),
-            WidgetKind::Leaf(widget) => widget.get_rect(s, app),
+fn handle_mouse_event(core: &mut WidgetCore, event: &InputEvent) -> bool {
+    match event {
+        InputEvent::MouseMove { x, y, dx, dy } => {
+            core.hovered = core.rect.contains([*x as f32, *y as f32]);
         }
+        InputEvent::MouseDown { x, y, button } => {
+            if !core.disabled && core.rect.contains([*x as f32, *y as f32]) {
+                core.pressed = true;
+                return true;
+            }
+        }
+        InputEvent::MouseUp { x, y, button } => {
+            if !core.disabled && core.pressed && core.rect.contains([*x as f32, *y as f32]) {
+                core.pressed = false;
+                return true;
+            }
+            core.pressed = false;
+        }
+        _ => (),
+    }
+    return false;
+}
+
+trait IntoRect {
+    fn into_rect(&self) -> Rect;
+}
+impl IntoRect for Layout {
+    fn into_rect(&self) -> Rect {
+        return Rect {
+            x: self.location.x,
+            y: self.location.y,
+            w: self.size.width,
+            h: self.size.height,
+        };
     }
 }

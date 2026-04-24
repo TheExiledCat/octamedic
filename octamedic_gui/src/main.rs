@@ -1,26 +1,17 @@
-use display_info::DisplayInfo;
-use pix_engine::{ engine::Engine, prelude::* };
+use ggez::{ ContextBuilder, GameResult, conf::WindowMode, event };
+use taffy::TaffyTree;
 
 use crate::app::app::App;
 
 mod app;
 mod framework;
-mod util;
-fn main() -> PixResult<()> {
-    let display = DisplayInfo::all().unwrap();
-    let display = display
-        .into_iter()
-        .find(|d| d.is_primary)
-        .unwrap();
-    let mut engine = Engine::builder()
-        .fullscreen()
-        .dimensions(display.width, display.height)
-        .borderless()
-        .title("OctaMEDIC")
-        .show_frame_rate()
-
+fn main() -> GameResult<()> {
+    let (ctx, event_loop) = ContextBuilder::new("OctaMEDIC", "Amano Rosuko")
+        .backend(ggez::conf::Backend::Vulkan)
+        .window_mode(WindowMode { maximized: true, ..Default::default() })
         .build()?;
-    let mut app = App::new();
+    let taffy = TaffyTree::new();
+    let app = App::new(taffy);
 
-    return engine.run(&mut app);
+    event::run(ctx, event_loop, app);
 }
