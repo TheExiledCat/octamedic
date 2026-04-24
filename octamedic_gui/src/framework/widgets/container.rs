@@ -1,87 +1,56 @@
-use pix_engine::{
-    color::Color,
-    image::PixelFormat,
-    rect,
-    shape::{ Point, Rect },
-    texture::TextureId,
-};
+use ggez::graphics::{ Color, DrawMode, DrawParam, Mesh };
+use rand::RngExt;
+use taffy::{ NodeId, Size, Style, TaffyTree, prelude::length };
 
-use crate::framework::widget::{ ContainerWidget, Widget, WidgetKind };
+use crate::framework::widget::{ Widget, WidgetCore };
 
 pub struct Container {
-    children: Vec<WidgetKind>,
-    color: Color,
-    texture: Option<TextureId>,
-    rect: Rect,
+    core: WidgetCore,
+    children: Vec<Box<dyn Widget>>,
 }
 impl Container {
-    pub fn new(rect: Rect, color: Color) -> Self {
-        Self { children: vec![], color, texture: None, rect }
-    }
-    fn create_texture(
-        &mut self,
-        s: &mut pix_engine::prelude::PixState
-    ) -> pix_engine::prelude::PixResult<()> {
-        if self.texture.is_some() {
-            s.delete_texture(self.texture.unwrap())?;
-        }
-        self.texture = Some(
-            s.create_texture(
-                self.rect.width() as u32,
-                self.rect.height() as u32,
-                PixelFormat::Rgba
-            )?
-        );
-        return Ok(());
+    pub fn new(taffy: &mut TaffyTree, children: Vec<Box<dyn Widget>>) -> Self {
+        let child_nodes: Vec<NodeId> = children
+            .iter()
+            .map(|c| c.core().node)
+            .collect();
+        let node = taffy
+            .new_with_children(
+                Style {
+                    flex_direction: taffy::FlexDirection::Row,
+                    gap: Size {
+                        height: length(8.0),
+                        width: length(0.0),
+                    },
+                    ..Default::default()
+                },
+                &child_nodes
+            )
+            .unwrap();
+        return Self { core: WidgetCore::new(node), children };
     }
 }
 impl Widget for Container {
-    fn init(
-        &mut self,
-        s: &mut pix_engine::prelude::PixState,
-        app: &mut crate::app::app::App,
-        rect: pix_engine::prelude::Rect
-    ) -> pix_engine::prelude::PixResult<()> {
-        self.create_texture(s)?;
-        return Ok(());
+    fn core(&self) -> &WidgetCore {
+        &self.core
     }
+
+    fn core_mut(&mut self) -> &mut WidgetCore {
+        &mut self.core
+    }
+
     fn render(
         &self,
-        s: &mut pix_engine::prelude::PixState,
-        app: &crate::app::app::App,
-        rect: pix_engine::prelude::Rect
-    ) -> pix_engine::prelude::PixResult<()> {
-        let tex = self.texture.unwrap();
-        s.set_texture_target(tex)?;
-        s.background(self.color);
-        s.clear()?;
-        for child in &self.children {
-            child.render(s, app, self.rect)?;
-        }
-        s.clear_texture_target();
-        s.texture(tex, None, self.rect)?;
+        ctx: &mut ggez::Context,
+        canvas: &mut ggez::graphics::Canvas
+    ) -> ggez::GameResult {
+        let mut ran = rand::rng();
+        let r = ran.random_range(0..255);
+        let g = ran.random_range(0..255);
+        let b = ran.random_range(0..255);
+        let color = Color::from_rgb(r, g, b);
+        let rect = Mesh::new_rectangle(ctx, DrawMode::fill(), self.core.rect, color)?;
+        canvas.draw(&rect, DrawParam::default());
         return Ok(());
-    }
-
-    fn get_rect(
-        &self,
-        s: &mut pix_engine::prelude::PixState,
-        app: &mut crate::app::app::App
-    ) -> pix_engine::prelude::PixResult<pix_engine::prelude::Rect> {
-        return Ok(self.rect);
-    }
-}
-impl ContainerWidget for Container {
-    fn get_children(&self) -> &Vec<WidgetKind> {
-        return &self.children;
-    }
-
-    fn add_child(&mut self, child: WidgetKind) {
-        self.children.push(child);
-    }
-
-    fn resize(&mut self, s: &mut pix_engine::prelude::PixState, width: u32, height: u32) {
-        self.rect = self.rect.resize(width as i32, height as i32);
-        self.create_texture(s).unwrap();
     }
 }
