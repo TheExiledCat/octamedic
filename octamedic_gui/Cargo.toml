@@ -9,3 +9,13 @@ ggez = { version = "0.9.3", default-features = false }
 rand = "0.10.1"
 taffy = "0.10.1"
 
+
+[profile.dev]
+debug = "line-tables-only"
+opt-level = "z"
+[profile.dev.package."*"]
+debug = false
+
+[profile.debugging]
+inherits = "dev"
+debug = true
