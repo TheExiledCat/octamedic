@@ -1,5 +1,5 @@
 use crate::app::app::TOPAZ_FONT_KEY;
-use crate::framework::widget::{Widget, WidgetCore};
+use crate::framework::widget::{DefaultStyle, Widget, WidgetCore};
 use ggez::graphics::{Canvas, DrawParam, Text};
 use ggez::{Context, GameResult};
 use taffy::prelude::{auto, length};
@@ -11,16 +11,18 @@ pub struct Label {
     font_size: f32,
 }
 impl Label {
-    pub fn new(taffy: &mut TaffyTree, text: &str, font_size: f32) -> Self {
+    pub fn new(taffy: &mut TaffyTree, text: impl ToString, font_size: f32) -> Self {
         let node = taffy.new_leaf(Self::default_style()).unwrap();
 
-        let core = WidgetCore::new(node);
+        let mut core = WidgetCore::new(node);
+        core.disabled = true;
         return Self {
-            text: text.to_owned(),
+            text: text.to_string(),
             font_size,
             core,
         };
     }
+
     fn text(&self) -> Text {
         let mut text = Text::new(&self.text);
         text.set_wrap(false)
@@ -62,7 +64,12 @@ impl Widget for Label {
 
         return Ok(());
     }
+    fn set_text(&mut self, text: &str) {
+        self.text = text.to_string()
+    }
+}
 
+impl DefaultStyle for Label {
     fn default_style() -> Style
     where
         Self: Sized,

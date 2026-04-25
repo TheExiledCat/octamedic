@@ -1,18 +1,21 @@
+use ggez::mint::Point2;
+
 pub enum InputEvent {
     MouseMove {
-        x: f32,
-        y: f32,
-        dx: f32,
-        dy: f32,
+        pos: Point2<f32>,
+        delta: Point2<f32>,
     },
     MouseDown {
-        x: f32,
-        y: f32,
-        button: usize,
+        pos: Point2<f32>,
+        button: MouseButton,
     },
     MouseUp {
-        x: f32,
-        y: f32,
-        button: usize,
+        pos: Point2<f32>,
+        button: MouseButton,
     },
+}
+#[derive(Eq, PartialEq)]
+pub enum MouseButton {
+    Left,
+    Right,
 }

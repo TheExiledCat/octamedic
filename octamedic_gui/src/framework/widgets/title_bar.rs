@@ -1,35 +1,35 @@
-use crate::framework::widget::{Widget, WidgetCore};
+use crate::framework::input::MouseButton;
+use crate::framework::widget::{Component, DefaultStyle, Widget, WidgetSignal};
 use crate::framework::widgets::button::Button;
 use crate::framework::widgets::container::Container;
 use crate::framework::widgets::Label::Label;
-use ggez::graphics::{Canvas, Color};
+use ggez::graphics::Color;
 use ggez::{Context, GameResult};
+use std::time::Instant;
 use taffy::prelude::{auto, length, percent};
-use taffy::{AlignItems, Layout, Rect, Size, Style, TaffyResult, TaffyTree};
+use taffy::{AlignItems, NodeId, Rect, Size, Style, TaffyTree};
 
 pub struct TitleBar {
-    core: WidgetCore,
     container: Container,
-    //timer: TimerWidget
+    button_node: NodeId,
+    time_start: Instant,
 }
 
 impl TitleBar {
     pub fn new(taffy: &mut TaffyTree) -> Self {
-        let timer_text = Label::new(taffy, "TIMER", 16.0).boxed();
-        let timer_button = Button::new(taffy, "00:00", 16.0, || {}).boxed();
-        let title = Label::new(taffy, "OctaMEDIC Professional (v4.00)", 16.0)
+        let timer_text = Label::new(taffy, "TIMER", 24.0).boxed();
+        let timer_button = Button::new(taffy, "00:00", 24.0, || {}).boxed();
+        let button_node = timer_button.core().node;
+        let title = Label::new(taffy, "+-OctaMEDIC Professional (v4.00)", 28.0)
             .with_style(
                 taffy,
                 Style {
-                    margin: Rect {
-                        left: length(10.0),
-                        ..Rect::zero()
-                    },
+                    margin: Rect { ..Rect::zero() },
                     ..Label::default_style()
                 },
             )
             .boxed();
-        let author = Label::new(taffy, "By Amano Rosuko", 16.0)
+        let author = Label::new(taffy, "By Amano Rosuko", 18.0)
             .with_style(
                 taffy,
                 Style {
@@ -48,34 +48,42 @@ impl TitleBar {
             .with_style(taffy, Self::default_style())
             .with_colors(Color::WHITE, Color::BLACK);
         return Self {
-            core: WidgetCore::new(container.core().node),
             container,
+            time_start: Instant::now(),
+            button_node,
         };
     }
 }
 
-impl Widget for TitleBar {
-    fn core(&self) -> &WidgetCore {
-        &self.core
+impl Component for TitleBar {
+    fn container(&self) -> &Container {
+        &self.container
     }
 
-    fn core_mut(&mut self) -> &mut WidgetCore {
-        &mut self.core
+    fn container_mut(&mut self) -> &mut Container {
+        &mut self.container
     }
     fn update(&mut self, ctx: &mut Context, taffy: &mut TaffyTree) -> GameResult {
-        self.container.update(ctx, taffy)
+        let total_seconds = self.time_start.elapsed().as_secs();
+        let minutes = total_seconds / 60;
+        let seconds = total_seconds % 60;
+        self.container
+            .child_mut(1)
+            .set_text((&format!("{:02}:{:02}", minutes, seconds)));
+        return Ok(());
     }
-    fn layout(&mut self, taffy: &TaffyTree) -> TaffyResult<Layout> {
-        let layout = self.container.layout(taffy)?;
-        self.core = *self.container.core();
-        return Ok(layout);
+    fn handle_signals(&mut self, signals: &Vec<WidgetSignal>) {
+        self.container_mut().handle_signals(signals);
+        if self.node_clicked(signals, self.button_node, MouseButton::Left) {
+            self.time_start = Instant::now();
+        }
     }
-    fn render(&self, ctx: &mut Context, canvas: &mut Canvas) -> GameResult {
-        let w = self.container.core();
-        return self.container.render(ctx, canvas);
-        
+    fn on_mount(&mut self, ctx: &mut Context, taffy: &mut TaffyTree) -> GameResult {
+        self.time_start = Instant::now();
+        return Ok(());
     }
-
+}
+impl DefaultStyle for TitleBar {
     fn default_style() -> Style
     where
         Self: Sized,
@@ -85,16 +93,14 @@ impl Widget for TitleBar {
                 width: percent(1.0),
                 height: auto(),
             },
-            gap: Size {
-                width: length(20.0),
-                height: length(0.0),
-            },
+
             align_items: Some(AlignItems::Center),
+            gap: Size::length(1.0),
             padding: Rect {
-                left: length(20.0),
-                right: length(20.0),
-                top: length(0.0),
-                bottom: length(0.0),
+                left: length(3.0),
+                right: length(3.0),
+                top: length(2.0),
+                bottom: length(2.0),
             },
             ..Container::default_style()
         };
