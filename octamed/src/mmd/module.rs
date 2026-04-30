@@ -69,7 +69,7 @@ impl Display for OctamedMMD0Header {
         return writeln!(f, "Extra songs count: {}", self.extra_songs);
     }
 }
-pub struct OctamedMMD0 {
+pub struct OctamedMMD {
     pub header: OctamedMMD0Header,
     pub song: OctamedMMD0Song,
     pub block_table: OctamedMMDBlockTable,
@@ -272,7 +272,7 @@ pub struct OctamedMMD1BlockInfo {
     pub header: OctamedMMD1BlockInfoHeader,
     pub block_name: String,
     pub highlight_mask: OctamedMMD1HighlightMask,
-    pub page_table: OctamedMMD1BlockCommandPageTable, //octamed v6
+    pub page_table: OctamedMMD2BlockCommandPageTable, //octamed v6
 }
 pub struct OctamedMMD1BlockInfoHeader {
     pub highlight_mask_array_ptr: Offset,
@@ -283,7 +283,7 @@ pub struct OctamedMMD1BlockInfoHeader {
 }
 //todo
 pub struct OctamedMMD1HighlightMask {}
-pub struct OctamedMMD1BlockCommandPageTable {}
+pub struct OctamedMMD2BlockCommandPageTable {}
 pub struct OctamedMMD0SampleHeader {
     pub sample_length: ULong,
     pub sample_type: OctamedMMD0InstrumentType,
@@ -442,11 +442,13 @@ impl OctamedMMD0Color {
     }
 }
 
+//TODO
 pub struct OctamedMMD0NotationInfo {}
 pub struct OctamedMMD0Dump {}
 pub struct OctamedMMD0Info {}
 pub struct OctamedMMD0Rexx {}
 pub struct OctamedMMD0MidiCommands {}
+//
 pub struct OctamedMMD0SongFlags(UByte, UByte);
 
 impl OctamedMMD0SongFlags {

@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use crate::{
-    mmd0::module::OctamedMMD0Song,
+    mmd::module::OctamedMMD0Song,
     utility::{ bytes::{ UByte, UWord, ValueMap }, frequency::Frequency },
 };
 

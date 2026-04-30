@@ -6,7 +6,7 @@ use crate::commands::repl::Command;
 pub struct ShowSequenceCommand;
 
 impl Command for ShowSequenceCommand {
-    fn run(&self, mmd: &mut octamed::mmd0::module::OctamedMMD0) -> super::repl::CommandResult {
+    fn run(&self, mmd: &mut octamed::mmd::module::OctamedMMD) -> super::repl::CommandResult {
         let sequence_length = mmd.song.song_length;
         println!("Sequence length: {} Blocks", sequence_length);
         for seq in 0..sequence_length.0 as usize {
