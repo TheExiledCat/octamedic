@@ -172,39 +172,90 @@ pub struct OctamedMMD1Block {
     pub info: Option<OctamedMMD1BlockInfo>,
 }
 pub struct OctamedMMD0BlockLine {
-    pub tracks: Vec<OctamedMMD0TrackLine>,
+    pub tracks: Vec<OctamedMMDTrackLine>,
 }
-pub struct OctamedMMD0TrackLine {
+pub struct OctamedMMDTrackLine {
     pub note_number: UByte,
     pub instrument_number: UByte,
     pub command_number: UByte,
     pub command_value: UByte,
 }
 
-const BLOCK_LINE_COMMAND_NUMBER_MASK: u8 = 0x0f;
-const BLOCK_LINE_NOTE_NUMBER_MASK: u8 = 0x3f;
-impl OctamedMMD0TrackLine {
-    pub fn from_bytes(byte1: UByte, byte2: UByte, byte3: UByte) -> Self {
+impl OctamedMMDTrackLine {
+    const BLOCK_LINE_COMMAND_NUMBER_MASK_MMD0: u8 = 0x0f;
+    const BLOCK_LINE_NOTE_NUMBER_MASK_MMD0: u8 = 0x3f;
+
+    const BLOCK_LINE_INSTRUMENT_NUMBER_MASK_MMD1: u8 = 0x3f;
+    const BLOCK_LINE_NOTE_NUMBER_MASK_MMD1: u8 = 0x7f;
+    pub fn from_bytes_mmd0(byte1: UByte, byte2: UByte, byte3: UByte) -> Self {
         let command_value = byte3;
-        let command_number = UByte(byte2.0 & BLOCK_LINE_COMMAND_NUMBER_MASK);
-        let note_number = UByte(byte1.0 & BLOCK_LINE_NOTE_NUMBER_MASK);
+        let command_number = UByte(byte2.0 & Self::BLOCK_LINE_COMMAND_NUMBER_MASK_MMD0);
+        let note_number = UByte(byte1.0 & Self::BLOCK_LINE_NOTE_NUMBER_MASK_MMD0);
         let xy = (byte1.0 >> 6) << 4; // leftmost 2 bits of byte 1 need to be prepended to byte 2 to get the value for the instrument number
         let iiii = byte2.0 >> 4;
         let instrument_number = UByte(xy | iiii);
 
         return Self { note_number, instrument_number, command_number, command_value };
     }
+    pub fn from_bytes_mmd1(byte1: UByte, byte2: UByte, byte3: UByte, byte4: UByte) -> Self {
+        let command_value = byte4;
+        let command_number = byte3;
+        let note_number = UByte(byte1.0 & Self::BLOCK_LINE_NOTE_NUMBER_MASK_MMD1);
+
+        let instrument_number = UByte(byte2.0 & Self::BLOCK_LINE_INSTRUMENT_NUMBER_MASK_MMD1);
+
+        return Self { note_number, instrument_number, command_number, command_value };
+    }
 }
-impl Display for OctamedMMD0TrackLine {
+impl Display for OctamedMMDTrackLine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{:3} {:01X}{:02X}{:02X}",
+            "{:3}{}{:02X}{:02X}",
             note::MidiNote::from_octamed_note_number(self.note_number),
-            self.instrument_number.0,
+            self.instrument_number.as_inst_string(),
             self.command_number.0,
             self.command_value.0
         )
+    }
+}
+
+trait AsInstrumentString {
+    fn as_inst_string(&self) -> String;
+}
+impl AsInstrumentString for UByte {
+    fn as_inst_string(&self) -> String {
+        let val = self.0;
+        let ascii_start = 65;
+        let mut text = String::with_capacity(2);
+        match val {
+            0..=31 => {
+                text.push(' ');
+
+                if val < 10 {
+                    text.push(*val.to_string().chars().collect::<Vec<char>>().first().unwrap());
+                } else {
+                    let index = val - 10;
+                    let c = char::from_u32((ascii_start as u32) + (index as u32)).unwrap();
+                    text.push(c);
+                }
+            }
+            32..=63 => {
+                text.push('1');
+                let val = val - 31;
+                if val < 10 {
+                    text.push(*val.to_string().chars().collect::<Vec<char>>().first().unwrap());
+                } else {
+                    let index = val - 10;
+                    let c = char::from_u32((ascii_start as u32) + (index as u32)).unwrap();
+                    text.push(c);
+                }
+            }
+            _ => {
+                panic!();
+            }
+        }
+        return text;
     }
 }
 pub struct OctamedMMD0BlockHeader {

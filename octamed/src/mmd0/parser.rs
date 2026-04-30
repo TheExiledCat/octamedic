@@ -23,7 +23,7 @@ use crate::{
         OctamedMMD0SampleTable,
         OctamedMMD0Song,
         OctamedMMD0SongFlags,
-        OctamedMMD0TrackLine,
+        OctamedMMDTrackLine,
         OctamedMMD1Block,
         OctamedMMD1BlockCommandPageTable,
         OctamedMMD1BlockHeader,
@@ -353,7 +353,11 @@ impl OctamedMMDParser {
                             let byte1 = Self::parse_ubyte(stream)?;
                             let byte2 = Self::parse_ubyte(stream)?;
                             let byte3 = Self::parse_ubyte(stream)?;
-                            let track_line = OctamedMMD0TrackLine::from_bytes(byte1, byte2, byte3);
+                            let track_line = OctamedMMDTrackLine::from_bytes_mmd0(
+                                byte1,
+                                byte2,
+                                byte3
+                            );
                             block_line.tracks.push(track_line);
                         }
                         block.lines.push(block_line);
@@ -381,7 +385,13 @@ impl OctamedMMDParser {
                             let byte1 = Self::parse_ubyte(stream)?;
                             let byte2 = Self::parse_ubyte(stream)?;
                             let byte3 = Self::parse_ubyte(stream)?;
-                            let track_line = OctamedMMD0TrackLine::from_bytes(byte1, byte2, byte3);
+                            let byte4 = Self::parse_ubyte(stream)?;
+                            let track_line = OctamedMMDTrackLine::from_bytes_mmd1(
+                                byte1,
+                                byte2,
+                                byte3,
+                                byte4
+                            );
                             block_line.tracks.push(track_line);
                         }
                         block.lines.push(block_line);
@@ -400,6 +410,7 @@ impl OctamedMMDParser {
         stream: &mut R,
         header: &OctamedMMD1BlockHeader
     ) -> Result<Option<OctamedMMD1BlockInfo>> {
+        let start_pos = stream.stream_position()?;
         let offset = header.info_ptr;
         if offset.is_null() {
             return Ok(None);
@@ -438,6 +449,7 @@ impl OctamedMMDParser {
         //todo actually parse page table
 
         let info = OctamedMMD1BlockInfo { header, block_name, highlight_mask, page_table };
+        stream.seek(std::io::SeekFrom::Start(start_pos))?;
         return Ok(Some(info));
     }
     fn parse_expansion_data<R: Read + Seek>(
