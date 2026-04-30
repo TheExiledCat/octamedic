@@ -7,7 +7,7 @@ use crate::commands::repl::{ Command, CommandResult };
 pub struct InspectCommand {}
 
 impl Command for InspectCommand {
-    fn run(&self, mmd: &mut octamed::mmd0::module::OctamedMMD0) -> CommandResult {
+    fn run(&self, mmd: &mut octamed::mmd::module::OctamedMMD) -> CommandResult {
         println!("{}\n{}", mmd.header, mmd.song);
         match &mmd.expansion_data {
             Some(e) => {

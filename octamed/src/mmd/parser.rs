@@ -1,9 +1,9 @@
 use core::panic;
-use std::{ collections::HashMap, fs::File, io::{ Read, Seek }, path::Path };
+use std::{ fs::File, io::{ Read, Seek }, path::Path };
 
 use crate::{
-    mmd0::module::{
-        OctamedMMD0,
+    mmd::module::{
+        OctamedMMD,
         OctamedMMD0Block,
         OctamedMMD0BlockHeader,
         OctamedMMD0BlockLine,
@@ -25,7 +25,7 @@ use crate::{
         OctamedMMD0SongFlags,
         OctamedMMDTrackLine,
         OctamedMMD1Block,
-        OctamedMMD1BlockCommandPageTable,
+        OctamedMMD2BlockCommandPageTable,
         OctamedMMD1BlockHeader,
         OctamedMMD1BlockInfo,
         OctamedMMD1BlockInfoHeader,
@@ -80,7 +80,7 @@ impl OctamedMMDParser {
         &mut self,
         stream: &mut R,
         offset: Offset
-    ) -> Result<OctamedMMD0> {
+    ) -> Result<OctamedMMD> {
         stream.seek(offset.into())?;
         let header = Self::parse_header(stream)?;
         self.mode = header.id.into();
@@ -97,10 +97,10 @@ impl OctamedMMDParser {
         let block_table = self.parse_blocks(header.block_array_ptr, stream, &song)?;
         let sample_table = self.parse_sample_table(header.sample_array_ptr, &song, stream)?;
         let expansion_data = self.parse_expansion_data(header.expansion_data_ptr, stream)?;
-        return Ok(OctamedMMD0 { song, block_table, header, sample_table, expansion_data });
+        return Ok(OctamedMMD { song, block_table, header, sample_table, expansion_data });
     }
 
-    pub fn parse_file(&mut self, path: &Path) -> Result<Vec<OctamedMMD0>> {
+    pub fn parse_file(&mut self, path: &Path) -> Result<Vec<OctamedMMD>> {
         let mut file = File::open(path)?;
         let mut modules = vec![];
         let mut module = self.parse_module(&mut file, Offset(0))?;
@@ -442,11 +442,10 @@ impl OctamedMMDParser {
             //todo. not that important
             OctamedMMD1HighlightMask {}
         };
-        let page_table = {
-            //todo also not that important
-            OctamedMMD1BlockCommandPageTable {}
+        let page_table: OctamedMMD2BlockCommandPageTable = {
+            // only for mmd2
+            OctamedMMD2BlockCommandPageTable {}
         };
-        //todo actually parse page table
 
         let info = OctamedMMD1BlockInfo { header, block_name, highlight_mask, page_table };
         stream.seek(std::io::SeekFrom::Start(start_pos))?;

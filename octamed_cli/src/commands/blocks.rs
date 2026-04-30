@@ -1,5 +1,5 @@
 use clap_derive::Args;
-use octamed::mmd0::module::OctamedMMDBlockTable;
+use octamed::mmd::module::OctamedMMDBlockTable;
 
 use crate::commands::repl::{ Command, CommandError, CommandResult };
 
@@ -8,7 +8,7 @@ use crate::commands::repl::{ Command, CommandError, CommandResult };
 pub struct InspectBlocksCommand {}
 
 impl Command for InspectBlocksCommand {
-    fn run(&self, mmd: &mut octamed::mmd0::module::OctamedMMD0) -> CommandResult {
+    fn run(&self, mmd: &mut octamed::mmd::module::OctamedMMD) -> CommandResult {
         match &mmd.block_table {
             OctamedMMDBlockTable::MMD0BlockTable { headers, blocks } => {
                 for (i, block) in headers.iter().enumerate() {
@@ -51,7 +51,7 @@ pub struct InspectBlockCommand {
     max_lines: usize,
 }
 impl Command for InspectBlockCommand {
-    fn run(&self, mmd: &mut octamed::mmd0::module::OctamedMMD0) -> CommandResult {
+    fn run(&self, mmd: &mut octamed::mmd::module::OctamedMMD) -> CommandResult {
         clearscreen::clear().unwrap();
         match &mmd.block_table {
             OctamedMMDBlockTable::MMD0BlockTable { headers, blocks } => {

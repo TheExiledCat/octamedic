@@ -1,2 +1,2 @@
-pub mod mmd0;
+pub mod mmd;
 pub mod utility;

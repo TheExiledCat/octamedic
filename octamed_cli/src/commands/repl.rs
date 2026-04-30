@@ -5,7 +5,7 @@ use clap_derive::Subcommand;
 use clap_repl::{ ClapEditor, reedline::DefaultCompleter };
 use figlet_rs::Toilet;
 use inquire::{ Autocomplete, Text, autocompletion::Replacement };
-use octamed::mmd0::{ module::OctamedMMD0, parser::OctamedMMDParser };
+use octamed::mmd::{ module::OctamedMMD, parser::OctamedMMDParser };
 
 use crate::commands::{
     self,
@@ -20,7 +20,7 @@ use crate::commands::{
 };
 pub type CommandResult = Result<(), CommandError>;
 pub trait Command {
-    fn run(&self, mmd: &mut OctamedMMD0) -> CommandResult;
+    fn run(&self, mmd: &mut OctamedMMD) -> CommandResult;
 }
 
 pub enum CommandError {
@@ -57,7 +57,7 @@ pub enum MMDCommandKind {
     #[command(name = "sequence")] Sequence(ShowSequenceCommand),
 }
 impl MMDCommandKind {
-    pub fn run(&mut self, mmd: &mut OctamedMMD0) -> CommandResult {
+    pub fn run(&mut self, mmd: &mut OctamedMMD) -> CommandResult {
         match self {
             MMDCommandKind::Inspect(c) => c.run(mmd),
             MMDCommandKind::Exit(c) => c.run(mmd),

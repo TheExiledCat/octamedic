@@ -31,7 +31,7 @@ pub struct WavExportCommand {
 }
 
 impl Command for WavExportCommand {
-    fn run(&self, mmd: &mut octamed::mmd0::module::OctamedMMD0) -> CommandResult {
+    fn run(&self, mmd: &mut octamed::mmd::module::OctamedMMD) -> CommandResult {
         let header = mmd.sample_table.headers[self.sample_number]
             .as_ref()
             .ok_or(
