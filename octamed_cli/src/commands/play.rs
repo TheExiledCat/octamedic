@@ -1,4 +1,5 @@
 use std::{
+    ops::Add,
     path::PathBuf,
     thread,
     time::{Duration, Instant},
@@ -28,6 +29,12 @@ pub struct PlayCommand {
     periods: u16,
     #[arg(short,long,help = "The volume to play the sample at (0-100)", default_value="50", value_parser=zero_to_100)]
     volume: u8,
+    #[arg(
+        short,
+        long,
+        help = "The interpolation mode to use for resampling. Defaults to nearest neighbor sampling, set to true to enable linear smoothing"
+    )]
+    fill: bool,
 }
 
 fn zero_to_100(text: &str) -> Result<u8, String> {
@@ -59,7 +66,11 @@ impl Command for PlayCommand {
         let output_channels = config.channels();
 
         let mut index = 0;
-        let samples = resample_nearest(sample.as_slice(), sample_rate, output_sample_rate);
+        let samples = if self.fill {
+            resample_linear(sample.as_slice(), sample_rate, output_sample_rate)
+        } else {
+            resample_nearest(sample.as_slice(), sample_rate, output_sample_rate)
+        };
         let sample_length = samples.len();
         let volume = self.volume as f32;
         let stream = device
@@ -88,6 +99,27 @@ impl Command for PlayCommand {
     }
 }
 
+fn resample_linear(samples: &[i8], input_sample_rate: u32, output_sample_rate: u32) -> Vec<f32> {
+    let ratio = (input_sample_rate as f32) / (output_sample_rate as f32);
+    let output_length = ((samples.len() as f32) / ratio).ceil() as usize;
+    let mut output = Vec::with_capacity(output_length);
+
+    for i in 0..output_length {
+        let input_pos = (i as f32) * ratio;
+        let index = input_pos
+            .floor()
+            .clamp(0.0, samples.len().saturating_sub(1) as f32) as usize;
+        let next_index = (index.add(1)).clamp(0, samples.len().saturating_sub(1)) as usize;
+        let t = input_pos - index as f32;
+
+        let sample_8bit_first = samples[index] as f32;
+        let sample_8bit_next = samples[next_index] as f32;
+        let sample = sample_8bit_first + (sample_8bit_next - sample_8bit_first) * t;
+        let sample_f32 = (sample as f32) / 128.0;
+        output.push(sample_f32);
+    }
+    return output;
+}
 fn resample_nearest(samples: &[i8], input_sample_rate: u32, output_sample_rate: u32) -> Vec<f32> {
     let ratio = (input_sample_rate as f32) / (output_sample_rate as f32);
     let output_length = ((samples.len() as f32) / ratio).ceil() as usize;
@@ -99,7 +131,7 @@ fn resample_nearest(samples: &[i8], input_sample_rate: u32, output_sample_rate: 
             .floor()
             .clamp(0.0, samples.len().saturating_sub(1) as f32) as usize;
         let sample_8bit = samples[index];
-        let sample_f32 = ((sample_8bit as f32) - 128.0) / 128.0;
+        let sample_f32 = (sample_8bit as f32) / 128.0;
         output.push(sample_f32);
     }
     return output;
