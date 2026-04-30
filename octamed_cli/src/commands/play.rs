@@ -1,19 +1,19 @@
-use std::{ path::PathBuf, thread, time::{ Duration, Instant } };
-
-use clap_derive::Args;
-use cpal::traits::{ DeviceTrait, HostTrait, StreamTrait };
-use hound::{ WavSpec, WavWriter };
-use octamed::utility::{ frequency::Frequency, period::AmigaPalPeriod };
-use progress_bar::{
-    Color,
-    Style,
-    finalize_progress_bar,
-    inc_progress_bar,
-    init_progress_bar,
-    set_progress_bar_action,
-    set_progress_bar_width,
+use std::{
+    path::PathBuf,
+    thread,
+    time::{Duration, Instant},
 };
-use crate::commands::repl::{ Command, CommandError, CommandResult };
+
+use crate::commands::repl::{Command, CommandError, CommandResult};
+use clap_derive::Args;
+use clap_num::number_range;
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use hound::{WavSpec, WavWriter};
+use octamed::utility::{frequency::Frequency, period::AmigaPalPeriod};
+use progress_bar::{
+    Color, Style, finalize_progress_bar, inc_progress_bar, init_progress_bar,
+    set_progress_bar_action, set_progress_bar_width,
+};
 
 #[derive(Args, Debug, Clone)]
 #[command(about = "Play a sample. Does not take into account sample transpose.")]
@@ -26,17 +26,21 @@ pub struct PlayCommand {
         default_value = "214"
     )]
     periods: u16,
+    #[arg(short,long,help = "The volume to play the sample at (0-100)", default_value="50", value_parser=zero_to_100)]
+    volume: u8,
 }
 
+fn zero_to_100(text: &str) -> Result<u8, String> {
+    number_range(text, 0, 100)
+}
 impl Command for PlayCommand {
     fn run(&self, mmd: &mut octamed::mmd0::module::OctamedMMD0) -> CommandResult {
         let header = mmd.sample_table.headers[self.sample_number]
             .as_ref()
-            .ok_or(
-                CommandError::Generic(
-                    format!("Sample not found. Selectable samples: 0-{}", mmd.song.sample_count)
-                )
-            )?;
+            .ok_or(CommandError::Generic(format!(
+                "Sample not found. Selectable samples: 0-{}",
+                mmd.song.sample_count
+            )))?;
         let sample: Vec<i8> = mmd.sample_table.samples[self.sample_number]
             .as_ref()
             .unwrap()
@@ -57,6 +61,7 @@ impl Command for PlayCommand {
         let mut index = 0;
         let samples = resample_nearest(sample.as_slice(), sample_rate, output_sample_rate);
         let sample_length = samples.len();
+        let volume = self.volume as f32;
         let stream = device
             .build_output_stream(
                 &config.config(),
@@ -65,13 +70,13 @@ impl Command for PlayCommand {
                         let value = *samples.get(index).unwrap_or(&0.0);
 
                         for channel in frame {
-                            *channel = value;
+                            *channel = value * (volume / 100.0);
                         }
                         index += 1;
                     }
                 },
-                |e| { panic!("{}", e) },
-                None
+                |e| panic!("{}", e),
+                None,
             )
             .unwrap();
 
@@ -90,7 +95,9 @@ fn resample_nearest(samples: &[i8], input_sample_rate: u32, output_sample_rate: 
 
     for i in 0..output_length {
         let input_pos = (i as f32) * ratio;
-        let index = input_pos.round().clamp(0.0, samples.len().saturating_sub(1) as f32) as usize;
+        let index = input_pos
+            .floor()
+            .clamp(0.0, samples.len().saturating_sub(1) as f32) as usize;
         let sample_8bit = samples[index];
         let sample_f32 = ((sample_8bit as f32) - 128.0) / 128.0;
         output.push(sample_f32);

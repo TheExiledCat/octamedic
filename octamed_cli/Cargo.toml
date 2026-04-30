@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 clap = "4.6.1"
+clap-num = "1.2.0"
 clap-repl = "0.3.2"
 clap_derive = "4.6.1"
 clearscreen = "4.0.6"
