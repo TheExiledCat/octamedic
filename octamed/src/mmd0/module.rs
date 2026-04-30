@@ -6,6 +6,8 @@ use crate::utility::{
     octamed_tempo::OctamedTempo,
 };
 
+pub const SAMPLE_IS_16_BIT_FLAG: u8 = 0x10;
+pub const SAMPLE_IS_STEREO_FLAG: u8 = 0x20;
 pub struct OctamedMMD0Header {
     pub id: ULong,
     pub module_length: ULong,
@@ -27,12 +29,15 @@ pub struct OctamedMMD0Header {
     pub counter: UByte,
     pub extra_songs: UByte,
 }
+
 pub struct OctamedMMD0HeaderFlags {
     pub load_to_fast_memory: bool,
 }
 impl OctamedMMD0HeaderFlags {
+    const LOAD_TO_FAST_MEM_FLAG: u8 = 0x1;
+
     pub fn from_byte(byte: UByte) -> Self {
-        return Self { load_to_fast_memory: bit_flag(byte, 0x1) };
+        return Self { load_to_fast_memory: bit_flag(byte, Self::LOAD_TO_FAST_MEM_FLAG) };
     }
 }
 impl Display for OctamedMMD0HeaderFlags {
@@ -67,7 +72,7 @@ impl Display for OctamedMMD0Header {
 pub struct OctamedMMD0 {
     pub header: OctamedMMD0Header,
     pub song: OctamedMMD0Song,
-    pub block_table: OctamedMMD0BlockTable,
+    pub block_table: OctamedMMDBlockTable,
     pub sample_table: OctamedMMD0SampleTable,
     pub expansion_data: Option<OctamedMMD0Expansion>,
 }
@@ -148,12 +153,23 @@ impl OctamedMMD0Sample {
         };
     }
 }
-pub struct OctamedMMD0BlockTable {
-    pub headers: Vec<OctamedMMD0BlockHeader>,
-    pub blocks: Vec<OctamedMMD0Block>,
+pub enum OctamedMMDBlockTable {
+    MMD0BlockTable {
+        headers: Vec<OctamedMMD0BlockHeader>,
+        blocks: Vec<OctamedMMD0Block>,
+    },
+    MMD1BlockTable {
+        headers: Vec<OctamedMMD1BlockHeader>,
+        blocks: Vec<OctamedMMD1Block>,
+    },
 }
+
 pub struct OctamedMMD0Block {
     pub lines: Vec<OctamedMMD0BlockLine>,
+}
+pub struct OctamedMMD1Block {
+    pub lines: Vec<OctamedMMD0BlockLine>,
+    pub info: Option<OctamedMMD1BlockInfo>,
 }
 pub struct OctamedMMD0BlockLine {
     pub tracks: Vec<OctamedMMD0TrackLine>,
@@ -165,12 +181,14 @@ pub struct OctamedMMD0TrackLine {
     pub command_value: UByte,
 }
 
+const BLOCK_LINE_COMMAND_NUMBER_MASK: u8 = 0x0f;
+const BLOCK_LINE_NOTE_NUMBER_MASK: u8 = 0x3f;
 impl OctamedMMD0TrackLine {
     pub fn from_bytes(byte1: UByte, byte2: UByte, byte3: UByte) -> Self {
         let command_value = byte3;
-        let command_number = UByte(byte2.0 & 0x0f);
-        let note_number = UByte(byte1.0 & 0x3f);
-        let xy = (byte1.0 >> 6) << 4;
+        let command_number = UByte(byte2.0 & BLOCK_LINE_COMMAND_NUMBER_MASK);
+        let note_number = UByte(byte1.0 & BLOCK_LINE_NOTE_NUMBER_MASK);
+        let xy = (byte1.0 >> 6) << 4; // leftmost 2 bits of byte 1 need to be prepended to byte 2 to get the value for the instrument number
         let iiii = byte2.0 >> 4;
         let instrument_number = UByte(xy | iiii);
 
@@ -193,6 +211,28 @@ pub struct OctamedMMD0BlockHeader {
     pub track_count: UByte,
     pub line_count: UByte,
 }
+pub struct OctamedMMD1BlockHeader {
+    pub track_count: UWord,
+    pub line_count: UWord,
+    pub info_ptr: Offset,
+}
+
+pub struct OctamedMMD1BlockInfo {
+    pub header: OctamedMMD1BlockInfoHeader,
+    pub block_name: String,
+    pub highlight_mask: OctamedMMD1HighlightMask,
+    pub page_table: OctamedMMD1BlockCommandPageTable, //octamed v6
+}
+pub struct OctamedMMD1BlockInfoHeader {
+    pub highlight_mask_array_ptr: Offset,
+    pub block_name_string_ptr: Offset,
+    pub block_name_length: ULong,
+    pub page_table_ptr: Offset,
+    pub reserved: [ULong; 5],
+}
+//todo
+pub struct OctamedMMD1HighlightMask {}
+pub struct OctamedMMD1BlockCommandPageTable {}
 pub struct OctamedMMD0SampleHeader {
     pub sample_length: ULong,
     pub sample_type: OctamedMMD0InstrumentType,
@@ -359,42 +399,56 @@ pub struct OctamedMMD0MidiCommands {}
 pub struct OctamedMMD0SongFlags(UByte, UByte);
 
 impl OctamedMMD0SongFlags {
+    //byte1
+    const FILTER_ON_FLAG: u8 = 0x01;
+    const JUMP_ON_FLAG: u8 = 0x02;
+    const JUMP_EIGHT_FLAG: u8 = 0x04;
+    const SONG_SAMPLES_MODULE_FLAG: u8 = 0x08;
+    const VOLUMES_ARE_HEX_FLAG: u8 = 0x10;
+    const USE_ST_SLIDING_FLAG: u8 = 0x20;
+    const IS_EIGHT_CHANNEL_FLAG: u8 = 0x40;
+    const IS_HQ_V2_COMPATIBILITY_FLAG: u8 = 0x80;
+    const BPM_BEAT_LENGTH_MASK: u8 = 0x1f;
+    //byte2
+    const IS_BPM_MODE_FLAG: u8 = 0x20;
+    const MIXING_ENABLED_FLAG: u8 = 0x80;
+
     pub fn from_bytes(byte1: UByte, byte2: UByte) -> Self {
         return Self(byte1, byte2);
     }
 
     pub fn filter_is_on(&self) -> bool {
-        return bit_flag(self.0, 0x01);
+        return bit_flag(self.0, Self::FILTER_ON_FLAG);
     }
     pub fn jumping_is_on(&self) -> bool {
-        return bit_flag(self.0, 0x02);
+        return bit_flag(self.0, Self::JUMP_ON_FLAG);
     }
     pub fn jump_every_eight_lines(&self) -> bool {
-        return bit_flag(self.0, 0x04);
+        return bit_flag(self.0, Self::JUMP_EIGHT_FLAG);
     }
     pub fn song_samples_indicator(&self) -> bool {
-        return bit_flag(self.0, 0x08);
+        return bit_flag(self.0, Self::SONG_SAMPLES_MODULE_FLAG);
     }
     pub fn volumes_are_hex(&self) -> bool {
-        return bit_flag(self.0, 0x10);
+        return bit_flag(self.0, Self::VOLUMES_ARE_HEX_FLAG);
     }
     pub fn use_st_sliding(&self) -> bool {
-        return bit_flag(self.0, 0x20);
+        return bit_flag(self.0, Self::USE_ST_SLIDING_FLAG);
     }
     pub fn is_8_channels(&self) -> bool {
-        return bit_flag(self.0, 0x40);
+        return bit_flag(self.0, Self::IS_EIGHT_CHANNEL_FLAG);
     }
     pub fn is_hq_v2_compatability(&self) -> bool {
-        return bit_flag(self.0, 0x80);
+        return bit_flag(self.0, Self::IS_HQ_V2_COMPATIBILITY_FLAG);
     }
     pub fn bpm_beat_length(&self) -> UByte {
-        return UByte(self.1.0 & 0x1f);
+        return UByte(self.1.0 & Self::BPM_BEAT_LENGTH_MASK);
     }
     pub fn is_bpm_mode(&self) -> bool {
-        return bit_flag(self.1, 0x20);
+        return bit_flag(self.1, Self::IS_BPM_MODE_FLAG);
     }
     pub fn mixing_enabled(&self) -> bool {
-        return bit_flag(self.1, 0x80);
+        return bit_flag(self.1, Self::MIXING_ENABLED_FLAG);
     }
 }
 
