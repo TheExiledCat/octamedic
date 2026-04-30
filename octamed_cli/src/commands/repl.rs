@@ -5,7 +5,7 @@ use clap_derive::Subcommand;
 use clap_repl::{ ClapEditor, reedline::DefaultCompleter };
 use figlet_rs::Toilet;
 use inquire::{ Autocomplete, Text, autocompletion::Replacement };
-use octamed::mmd0::{ module::OctamedMMD0, parser::OctamedMMD0Parser };
+use octamed::mmd0::{ module::OctamedMMD0, parser::OctamedMMDParser };
 
 use crate::commands::{
     self,
@@ -14,6 +14,7 @@ use crate::commands::{
     exit::ExitCommand,
     inspect::InspectCommand,
     instruments::InstrumentsCommand,
+    play::PlayCommand,
     wavexport::WavExportCommand,
 };
 pub type CommandResult = Result<(), CommandError>;
@@ -51,6 +52,7 @@ pub enum MMDCommandKind {
     #[command(name = "block")] InspectBlock(InspectBlockCommand),
     #[command(name = "blocks")] InspectBlocks(InspectBlocksCommand),
     #[command(name = "instruments")] Instruments(InstrumentsCommand),
+    #[command(name = "play")] Play(PlayCommand),
 }
 impl MMDCommandKind {
     pub fn run(&mut self, mmd: &mut OctamedMMD0) -> CommandResult {
@@ -62,6 +64,7 @@ impl MMDCommandKind {
             MMDCommandKind::InspectBlock(c) => c.run(mmd),
             MMDCommandKind::InspectBlocks(c) => c.run(mmd),
             MMDCommandKind::Instruments(c) => c.run(mmd),
+            MMDCommandKind::Play(c) => c.run(mmd),
         }
     }
 }
@@ -69,7 +72,12 @@ impl MMDRepl {
     pub fn start(path: PathBuf) {
         println!("Parsing file {}", path.to_string_lossy());
 
-        let mut mmd = OctamedMMD0Parser::parse_file(&path).unwrap().into_iter().next().unwrap();
+        let mut mmd = OctamedMMDParser::new()
+            .parse_file(&path)
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
         println!("Module parsed\nStarting Repl...");
 
         let future_font = Toilet::future().unwrap();

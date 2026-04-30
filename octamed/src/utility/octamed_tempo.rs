@@ -26,6 +26,8 @@ impl OctamedTempo {
     pub fn is_bpm_mode(&self) -> bool {
         return self.is_bpm_mode;
     }
+
+    // Source: https://github.com/neumatho/NostalgicPlayer/blob/main/Source/Agents/Players/OctaMed/Implementation/Mixer.cs Line 150, thank you thomas neumann :)
     pub fn get_tick_rate(mut self) -> Frequency {
         if self.is_bpm_mode {
             return Frequency::hertz(
