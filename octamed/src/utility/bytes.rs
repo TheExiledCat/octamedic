@@ -126,3 +126,46 @@ impl ValueMap for ULong {
         return Self(f(self.0));
     }
 }
+
+pub trait IntoBytes {
+    fn as_bytes(&mut self) -> Vec<u8>;
+}
+
+impl IntoBytes for ULong {
+    fn as_bytes(&mut self) -> Vec<u8> {
+        return self.0.to_be_bytes().to_vec();
+    }
+}
+impl IntoBytes for UWord {
+    fn as_bytes(&mut self) -> Vec<u8> {
+        return self.0.to_be_bytes().to_vec();
+    }
+}
+impl IntoBytes for UByte {
+    fn as_bytes(&mut self) -> Vec<u8> {
+        return self.0.to_be_bytes().to_vec();
+    }
+}
+
+impl IntoBytes for Word {
+    fn as_bytes(&mut self) -> Vec<u8> {
+        return self.0.to_be_bytes().to_vec();
+    }
+}
+impl IntoBytes for Byte {
+    fn as_bytes(&mut self) -> Vec<u8> {
+        return self.0.to_be_bytes().to_vec();
+    }
+}
+
+impl IntoBytes for String {
+    fn as_bytes(&mut self) -> Vec<u8> {
+        return String::as_bytes(&self).to_vec();
+    }
+}
+
+impl IntoBytes for Offset {
+    fn as_bytes(&mut self) -> Vec<u8> {
+        self.0.to_be_bytes().to_vec()
+    }
+}

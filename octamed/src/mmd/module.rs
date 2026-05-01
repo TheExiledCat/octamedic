@@ -25,7 +25,7 @@ pub struct OctamedMMD0Header {
     pub player_block: UWord,
     pub player_line: UWord,
     pub player_sequence_num: UWord,
-    pub actual_play_line: Word,
+    pub active_play_line: Word,
     pub counter: UByte,
     pub extra_songs: UByte,
 }
