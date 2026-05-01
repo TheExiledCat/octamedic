@@ -203,7 +203,7 @@ impl OctamedMMDParser {
             player_block,
             player_line,
             player_sequence_num,
-            actual_play_line,
+            active_play_line: actual_play_line,
             counter,
             extra_songs,
         };

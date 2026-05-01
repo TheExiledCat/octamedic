@@ -214,6 +214,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "binary_rw"
+version = "4.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "61c448b21d82244ebe70b1e7595e3c3d709ec5400b859bc44329492e18d6a718"
+dependencies = [
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "bit-set"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2318,6 +2327,9 @@ dependencies = [
 [[package]]
 name = "octamed"
 version = "0.1.0"
+dependencies = [
+ "binary_rw",
+]
 
 [[package]]
 name = "octamed_cli"
