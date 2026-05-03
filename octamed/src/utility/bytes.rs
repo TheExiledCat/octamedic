@@ -1,5 +1,7 @@
 use std::{ char, fmt::Display, io::SeekFrom };
 
+use crate::mmd::module::OctamedMMD0HeaderFlags;
+
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub struct ULong(pub u32);
 impl Display for ULong {
@@ -128,44 +130,60 @@ impl ValueMap for ULong {
 }
 
 pub trait IntoBytes {
-    fn as_bytes(&mut self) -> Vec<u8>;
+    fn as_bytes(&self) -> Vec<u8>;
 }
 
 impl IntoBytes for ULong {
-    fn as_bytes(&mut self) -> Vec<u8> {
+    fn as_bytes(&self) -> Vec<u8> {
         return self.0.to_be_bytes().to_vec();
     }
 }
 impl IntoBytes for UWord {
-    fn as_bytes(&mut self) -> Vec<u8> {
+    fn as_bytes(&self) -> Vec<u8> {
         return self.0.to_be_bytes().to_vec();
     }
 }
 impl IntoBytes for UByte {
-    fn as_bytes(&mut self) -> Vec<u8> {
+    fn as_bytes(&self) -> Vec<u8> {
         return self.0.to_be_bytes().to_vec();
     }
 }
 
 impl IntoBytes for Word {
-    fn as_bytes(&mut self) -> Vec<u8> {
+    fn as_bytes(&self) -> Vec<u8> {
         return self.0.to_be_bytes().to_vec();
     }
 }
 impl IntoBytes for Byte {
-    fn as_bytes(&mut self) -> Vec<u8> {
+    fn as_bytes(&self) -> Vec<u8> {
         return self.0.to_be_bytes().to_vec();
     }
 }
 
 impl IntoBytes for String {
-    fn as_bytes(&mut self) -> Vec<u8> {
+    fn as_bytes(&self) -> Vec<u8> {
         return String::as_bytes(&self).to_vec();
     }
 }
 
 impl IntoBytes for Offset {
-    fn as_bytes(&mut self) -> Vec<u8> {
+    fn as_bytes(&self) -> Vec<u8> {
         self.0.to_be_bytes().to_vec()
+    }
+}
+impl IntoBytes for OctamedMMD0HeaderFlags {
+    fn as_bytes(&self) -> Vec<u8> {
+        let val: u8 = if self.load_to_fast_memory { 1 } else { 0 };
+        return val.to_be_bytes().to_vec();
+    }
+}
+impl<T, const N: usize> IntoBytes for [T; N] where T: IntoBytes {
+    fn as_bytes(&self) -> Vec<u8> {
+        let mut bytes = vec![];
+        for b in 0..N {
+            let arr = self[b].as_bytes();
+            bytes.extend(arr);
+        }
+        return bytes;
     }
 }

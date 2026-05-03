@@ -168,9 +168,9 @@ impl OctamedMMDParser {
         let block_array_ptr: Offset = Self::parse_offset(stream)?;
         let flags = super::module::OctamedMMD0HeaderFlags::from_byte(Self::parse_ubyte(stream)?);
         let reserved = Self::parse_exact(stream, 3)?;
-        let mut reserved_buffer = [0 as u8; 3];
+        let mut reserved_buffer = [UByte(0); 3];
         for (i, byte) in reserved.iter().enumerate() {
-            reserved_buffer[i] = *byte;
+            reserved_buffer[i] = UByte(*byte);
         }
         let reserved = reserved_buffer;
         let sample_array_ptr = Self::parse_offset(stream)?;

@@ -1,8 +1,8 @@
 use std::{ collections::HashMap, fs::File, io::Write, path::PathBuf };
 
 use crate::{
-    mmd::{ conversion::{ BinarySize, BinaryWriter }, module::OctamedMMD },
-    utility::bytes::Offset,
+    mmd::{ conversion::{ BinarySize, BinaryWriter }, module::{ OctamedMMD, OctamedMMDBlockTable } },
+    utility::bytes::{ Offset, UByte },
 };
 struct AllocatorLayout {
     cursor: u32,
@@ -62,10 +62,48 @@ impl OctamedMMDWriter {
         return Ok(());
     }
     fn alloc_song(&mut self, mmd: &OctamedMMD) -> Result<()> {
-        todo!()
+        let song = &mmd.song;
+        self.layout.alloc(song, song.get_size(mmd));
+        return Ok(());
     }
     fn alloc_blocks(&mut self, mmd: &OctamedMMD) -> Result<()> {
-        todo!()
+        let block_table = &mmd.block_table;
+        //table
+        self.layout.alloc(block_table, mmd.block_table.get_size(mmd));
+
+        //actual blocks
+        match block_table {
+            crate::mmd::module::OctamedMMDBlockTable::MMD0BlockTable { headers, blocks } => {
+                for (i, header) in headers.iter().enumerate() {
+                    self.layout.alloc(header, header.get_size(mmd));
+                    let (track_count, line_count) = (header.track_count, header.line_count);
+                    self.layout.alloc(
+                        &blocks[i],
+                        (track_count.0 as u32) *
+                            (line_count.0 as u32) *
+                            ((size_of::<UByte>() as u32) * 3)
+                    );
+                }
+            }
+            crate::mmd::module::OctamedMMDBlockTable::MMD1BlockTable { headers, blocks } => {
+                for (i, header) in headers.iter().enumerate() {
+                    self.layout.alloc(header, header.get_size(mmd));
+                    let (track_count, line_count) = (header.track_count, header.line_count);
+                    self.layout.alloc(
+                        &blocks[i],
+                        (track_count.0 as u32) *
+                            (line_count.0 as u32) *
+                            ((size_of::<UByte>() as u32) * 4)
+                    );
+
+                    //todo the blockinfo and cmd page table
+                    todo!();
+                }
+            }
+        }
+        todo!();
+
+        return Ok(());
     }
     fn alloc_samples(&mut self, mmd: &OctamedMMD) -> Result<()> {
         todo!()
@@ -80,26 +118,26 @@ impl OctamedMMDWriter {
         let blocks = &mmd.block_table;
         let samples = &mmd.sample_table;
         let expansion_data = &mmd.expansion_data;
-        self.writer.write_bytes(header.id)?;
-        self.writer.write_bytes(header.module_length)?;
-        self.writer.write_bytes(self.layout.get(song))?;
-        self.writer.write_bytes(header.player_seconds_num)?;
-        self.writer.write_bytes(header.player_sequence)?;
+        self.writer.write_bytes(&header.id)?;
+        self.writer.write_bytes(&header.module_length)?;
+        self.writer.write_bytes(&self.layout.get(song))?;
+        self.writer.write_bytes(&header.player_seconds_num)?;
+        self.writer.write_bytes(&header.player_sequence)?;
 
-        self.writer.write_bytes(self.layout.get(blocks))?;
-        self.writer.write_bytes(header.flags)?;
-        self.writer.write_bytes(header.reserved)?;
-        self.writer.write_bytes(self.layout.get(samples))?;
-        self.writer.write_bytes(header.reserved2)?;
-        self.writer.write_bytes(self.layout.get(expansion_data))?;
-        self.writer.write_bytes(header.reserved3)?;
-        self.writer.write_bytes(header.player_state)?;
-        self.writer.write_bytes(header.player_block)?;
-        self.writer.write_bytes(header.player_line)?;
-        self.writer.write_bytes(header.player_sequence_num)?;
-        self.writer.write_bytes(header.active_play_line)?;
-        self.writer.write_bytes(header.counter)?;
-        self.writer.write_bytes(header.extra_songs)?;
+        self.writer.write_bytes(&self.layout.get(blocks))?;
+        self.writer.write_bytes(&header.flags)?;
+        self.writer.write_bytes(&header.reserved)?;
+        self.writer.write_bytes(&self.layout.get(samples))?;
+        self.writer.write_bytes(&header.reserved2)?;
+        self.writer.write_bytes(&self.layout.get(expansion_data))?;
+        self.writer.write_bytes(&header.reserved3)?;
+        self.writer.write_bytes(&header.player_state)?;
+        self.writer.write_bytes(&header.player_block)?;
+        self.writer.write_bytes(&header.player_line)?;
+        self.writer.write_bytes(&header.player_sequence_num)?;
+        self.writer.write_bytes(&header.active_play_line)?;
+        self.writer.write_bytes(&header.counter)?;
+        self.writer.write_bytes(&header.extra_songs)?;
 
         return Ok(());
     }
