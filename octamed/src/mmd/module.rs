@@ -182,11 +182,11 @@ pub struct OctamedMMDTrackLine {
 }
 
 impl OctamedMMDTrackLine {
-    const BLOCK_LINE_COMMAND_NUMBER_MASK_MMD0: u8 = 0x0f;
-    const BLOCK_LINE_NOTE_NUMBER_MASK_MMD0: u8 = 0x3f;
+    pub const BLOCK_LINE_COMMAND_NUMBER_MASK_MMD0: u8 = 0x0f;
+    pub const BLOCK_LINE_NOTE_NUMBER_MASK_MMD0: u8 = 0x3f;
 
-    const BLOCK_LINE_INSTRUMENT_NUMBER_MASK_MMD1: u8 = 0x3f;
-    const BLOCK_LINE_NOTE_NUMBER_MASK_MMD1: u8 = 0x7f;
+    pub const BLOCK_LINE_INSTRUMENT_NUMBER_MASK_MMD1: u8 = 0x3f;
+    pub const BLOCK_LINE_NOTE_NUMBER_MASK_MMD1: u8 = 0x7f;
     pub fn from_bytes_mmd0(byte1: UByte, byte2: UByte, byte3: UByte) -> Self {
         let command_value = byte3;
         let command_number = UByte(byte2.0 & Self::BLOCK_LINE_COMMAND_NUMBER_MASK_MMD0);
@@ -449,7 +449,7 @@ pub struct OctamedMMD0Info {}
 pub struct OctamedMMD0Rexx {}
 pub struct OctamedMMD0MidiCommands {}
 //
-pub struct OctamedMMD0SongFlags(UByte, UByte);
+pub struct OctamedMMD0SongFlags(pub UByte, pub UByte);
 
 impl OctamedMMD0SongFlags {
     //byte1

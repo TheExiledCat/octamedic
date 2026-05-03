@@ -1,6 +1,12 @@
 use std::{ char, fmt::Display, io::SeekFrom };
 
-use crate::mmd::module::OctamedMMD0HeaderFlags;
+use crate::mmd::module::{
+    OctamedMMD0HeaderFlags,
+    OctamedMMD0Sample,
+    OctamedMMD0SongFlags,
+    OctamedMMD1HighlightMask,
+    OctamedMMDTrackLine,
+};
 
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub struct ULong(pub u32);
@@ -183,6 +189,23 @@ impl<T, const N: usize> IntoBytes for [T; N] where T: IntoBytes {
         for b in 0..N {
             let arr = self[b].as_bytes();
             bytes.extend(arr);
+        }
+        return bytes;
+    }
+}
+impl IntoBytes for OctamedMMD0SongFlags {
+    fn as_bytes(&self) -> Vec<u8> {
+        let mut bytes = vec![];
+        bytes.push(self.0.0);
+        bytes.push(self.1.0);
+        return bytes;
+    }
+}
+impl<I> IntoBytes for Vec<I> where I: IntoBytes {
+    fn as_bytes(&self) -> Vec<u8> {
+        let mut bytes = vec![];
+        for v in self {
+            bytes.extend(v.as_bytes());
         }
         return bytes;
     }
