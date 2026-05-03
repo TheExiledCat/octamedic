@@ -16,7 +16,7 @@ pub struct OctamedMMD0Header {
     pub player_sequence: UWord,
     pub block_array_ptr: Offset,
     pub flags: OctamedMMD0HeaderFlags,
-    pub reserved: [u8; 3],
+    pub reserved: [UByte; 3],
     pub sample_array_ptr: Offset,
     pub reserved2: ULong,
     pub expansion_data_ptr: Offset,
