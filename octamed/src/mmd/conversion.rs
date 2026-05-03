@@ -9,6 +9,8 @@ use crate::{
         OctamedMMD0Song,
         OctamedMMD1Block,
         OctamedMMD1BlockHeader,
+        OctamedMMD1BlockInfo,
+        OctamedMMD1BlockInfoHeader,
         OctamedMMDBlockTable,
     },
     utility::bytes::{ IntoBytes, Offset },
@@ -38,7 +40,7 @@ impl BinarySize for OctamedMMDBlockTable {
 impl BinarySize for OctamedMMD0BlockHeader {}
 
 impl BinarySize for OctamedMMD1BlockHeader {}
-
+impl BinarySize for OctamedMMD1BlockInfoHeader {}
 pub trait BinaryWriter {
     fn write_bytes(&mut self, bytes: &impl IntoBytes) -> std::io::Result<usize>;
 }

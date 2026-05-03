@@ -1,8 +1,20 @@
-use std::{ collections::HashMap, fs::File, io::Write, path::PathBuf };
+use std::{ collections::HashMap, fs::File, io::Write, iter, path::PathBuf };
 
 use crate::{
-    mmd::{ conversion::{ BinarySize, BinaryWriter }, module::{ OctamedMMD, OctamedMMDBlockTable } },
-    utility::bytes::{ Offset, UByte },
+    mmd::{
+        conversion::{ BinarySize, BinaryWriter },
+        module::{
+            OctamedMMD,
+            OctamedMMD0Block,
+            OctamedMMD0BlockHeader,
+            OctamedMMD0BlockLine,
+            OctamedMMD1Block,
+            OctamedMMD1BlockHeader,
+            OctamedMMDBlockTable,
+            OctamedMMDTrackLine,
+        },
+    },
+    utility::bytes::{ Offset, UByte, ULong, ValueMap },
 };
 struct AllocatorLayout {
     cursor: u32,
@@ -18,7 +30,10 @@ impl AllocatorLayout {
         self.cursor += size;
     }
     fn get<T>(&self, obj: &T) -> Offset {
-        return self.positions[&(obj as *const _ as *const ())];
+        return self.positions
+            .get(&(obj as *const _ as *const ()))
+            .map(|o| *o)
+            .unwrap_or(Offset(0));
     }
     fn align_up(x: u32, align: u32) -> u32 {
         (x + align - 1) & !(align - 1)
@@ -41,6 +56,11 @@ impl OctamedMMDWriter {
     }
     fn write(&mut self, mmd: &OctamedMMD) -> Result<()> {
         self.write_header(mmd)?;
+        assert!(self.writer.len() == 52);
+        self.write_song(mmd)?;
+        assert!(self.writer.len() == 52 + 788);
+        self.write_blocks(mmd)?;
+
         todo!()
     }
     pub fn write_module_file(&mut self, path: PathBuf, mmd: &OctamedMMD) -> Result<()> {
@@ -96,12 +116,24 @@ impl OctamedMMDWriter {
                             ((size_of::<UByte>() as u32) * 4)
                     );
 
-                    //todo the blockinfo and cmd page table
-                    todo!();
+                    let info = &blocks[i].info;
+                    if let Some(i) = info {
+                        self.layout.alloc(&i.header, i.header.get_size(mmd));
+
+                        let bits_per_ulong = size_of::<ULong>() * 8;
+
+                        let count = ((line_count.0 as usize) + bits_per_ulong - 1) / bits_per_ulong;
+                        self.layout.alloc(&i.header.highlight_mask_array_ptr, count as u32);
+
+                        self.layout.alloc(
+                            &i.header.block_name_string_ptr,
+                            (i.block_name.chars().count() as u32) + 1 //\0
+                        );
+                        //page table is ignored as only mmd1 is supported, default to  null
+                    }
                 }
             }
         }
-        todo!();
 
         return Ok(());
     }
@@ -138,6 +170,120 @@ impl OctamedMMDWriter {
         self.writer.write_bytes(&header.active_play_line)?;
         self.writer.write_bytes(&header.counter)?;
         self.writer.write_bytes(&header.extra_songs)?;
+
+        return Ok(());
+    }
+
+    fn write_song(&mut self, mmd: &OctamedMMD) -> Result<()> {
+        let song = &mmd.song;
+        for sample in &song.samples {
+            self.writer.write_bytes(&sample.repeat)?;
+            self.writer.write_bytes(&sample.repeat_length)?;
+            self.writer.write_bytes(&sample.midi_channel)?;
+            self.writer.write_bytes(&sample.midi_preset)?;
+            self.writer.write_bytes(&sample.sample_volume)?;
+            self.writer.write_bytes(&sample.sample_transpose)?;
+        }
+        self.writer.write_bytes(&song.block_count)?;
+        self.writer.write_bytes(&song.song_length)?;
+        self.writer.write_bytes(&song.player_sequence_list)?;
+        self.writer.write_bytes(&song.primary_tempo)?;
+        self.writer.write_bytes(&song.global_transpose)?;
+        self.writer.write_bytes(&song.flags)?;
+        self.writer.write_bytes(&song.secondary_tempo)?;
+        self.writer.write_bytes(&song.track_volumes)?;
+        self.writer.write_bytes(&song.master_volume)?;
+        self.writer.write_bytes(&song.sample_count)?;
+        return Ok(());
+    }
+    fn write_blocks(&mut self, mmd: &OctamedMMD) -> Result<()> {
+        return match &mmd.block_table {
+            OctamedMMDBlockTable::MMD0BlockTable { headers, blocks } =>
+                self.write_blocks_mmd0(mmd, headers, blocks),
+            OctamedMMDBlockTable::MMD1BlockTable { headers, blocks } =>
+                self.write_blocks_mmd1(mmd, headers, blocks),
+        };
+    }
+    fn write_blocks_mmd0(
+        &mut self,
+        mmd: &OctamedMMD,
+        headers: &Vec<OctamedMMD0BlockHeader>,
+        blocks: &Vec<OctamedMMD0Block>
+    ) -> Result<()> {
+        for (i, header) in headers.iter().enumerate() {
+            self.writer.write_bytes(&header.track_count)?;
+            self.writer.write_bytes(&header.line_count)?;
+            let block = &blocks[i];
+            for line in &block.lines {
+                for track in &line.tracks {
+                    let byte1 = {
+                        UByte(
+                            track.note_number.map(
+                                |n| n & OctamedMMDTrackLine::BLOCK_LINE_NOTE_NUMBER_MASK_MMD0
+                            ).0 & track.instrument_number.map(|i| (i >> 4) << 6).0
+                        )
+                    };
+                    let byte2 = {
+                        UByte(
+                            track.command_number.map(
+                                |b| b & OctamedMMDTrackLine::BLOCK_LINE_COMMAND_NUMBER_MASK_MMD0
+                            ).0 & track.instrument_number.map(|i| i << 4).0
+                        )
+                    };
+                    let byte3 = track.command_value;
+                    self.writer.write_bytes(&byte1)?;
+                    self.writer.write_bytes(&byte2)?;
+                    self.writer.write_bytes(&byte3)?;
+                }
+            }
+        }
+
+        return Ok(());
+    }
+    fn write_blocks_mmd1(
+        &mut self,
+        mmd: &OctamedMMD,
+        headers: &Vec<OctamedMMD1BlockHeader>,
+        blocks: &Vec<OctamedMMD1Block>
+    ) -> Result<()> {
+        for (i, header) in headers.iter().enumerate() {
+            self.writer.write_bytes(&header.track_count)?;
+            self.writer.write_bytes(&header.line_count)?;
+            self.writer.write_bytes(&self.layout.get(&header.info_ptr))?;
+            let block = &blocks[i];
+            for line in &block.lines {
+                for track in &line.tracks {
+                    let byte1 = {
+                        track.note_number.map(
+                            |n| n & OctamedMMDTrackLine::BLOCK_LINE_NOTE_NUMBER_MASK_MMD1
+                        )
+                    };
+                    let byte2 = track.instrument_number.map(
+                        |i| i & OctamedMMDTrackLine::BLOCK_LINE_INSTRUMENT_NUMBER_MASK_MMD1
+                    );
+                    let byte3 = track.command_number;
+                    let byte4 = track.command_value;
+                    self.writer.write_bytes(&byte1)?;
+                    self.writer.write_bytes(&byte2)?;
+                    self.writer.write_bytes(&byte3)?;
+                    self.writer.write_bytes(&byte4)?;
+                }
+            }
+            //blockinfo
+
+            let info = &block.info;
+            if let Some(i) = info {
+                let bits_per_ulong = size_of::<ULong>() * 8;
+                let line_count = header.line_count;
+                let count = ((line_count.0 as usize) + bits_per_ulong - 1) / bits_per_ulong;
+                //for now highlight mask not implemented
+                self.writer.write_bytes(&vec![UByte(0);count])?;
+                self.writer.write_bytes(&i.header.block_name_string_ptr)?;
+                self.writer.write_bytes(&ULong((i.block_name.chars().count() as u32) + 1))?;
+                self.writer.write_bytes(&self.layout.get(&i.page_table))?;
+                self.writer.write_bytes(&i.header.reserved)?;
+            }
+        }
 
         return Ok(());
     }
