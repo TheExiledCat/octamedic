@@ -155,7 +155,18 @@ impl OctamedMMDWriter {
         return Ok(());
     }
     fn alloc_samples(&mut self, mmd: &OctamedMMD) -> Result<()> {
-        todo!()
+        self.layout.alloc(&mmd.sample_table, mmd.sample_table.get_size(mmd));
+
+        for header in mmd.sample_table.headers {
+            if let Some(h) = header {
+                self.layout.alloc(&header, h.get_size(mmd));
+            } else {
+                self.layout.alloc(&header, size_of::<Offset>() as u32);
+            }
+        }
+        self.layout.alloc(&mmd.sample_table.headers, mmd.sample_table.headers.get_size());
+        todo!();
+        return Ok(());
     }
     fn alloc_expansions(&mut self, mmd: &OctamedMMD) -> Result<()> {
         todo!()
