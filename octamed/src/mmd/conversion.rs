@@ -6,6 +6,7 @@ use crate::{
         OctamedMMD0Block,
         OctamedMMD0BlockHeader,
         OctamedMMD0Header,
+        OctamedMMD0SampleTable,
         OctamedMMD0Song,
         OctamedMMD1Block,
         OctamedMMD1BlockHeader,
@@ -37,10 +38,18 @@ impl BinarySize for OctamedMMDBlockTable {
         return (block_count.0 as u32) * (size_of::<Offset>() as u32);
     }
 }
+impl BinarySize for OctamedMMD0SampleTable {
+    fn get_size(&self, mmd: &OctamedMMD) -> u32 {
+        let sample_count = mmd.song.sample_count;
+
+        return (sample_count.0 as u32) * (size_of::<Offset>() as u32);
+    }
+}
 impl BinarySize for OctamedMMD0BlockHeader {}
 
 impl BinarySize for OctamedMMD1BlockHeader {}
 impl BinarySize for OctamedMMD1BlockInfoHeader {}
+
 pub trait BinaryWriter {
     fn write_bytes(&mut self, bytes: &impl IntoBytes) -> std::io::Result<usize>;
 }
