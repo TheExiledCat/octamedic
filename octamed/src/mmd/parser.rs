@@ -32,7 +32,7 @@ use crate::{
         OctamedMMD1HighlightMask,
         OctamedMMDBlockTable,
     },
-    utility::bytes::{ Byte, Offset, UByte, ULong, UWord, Word, bit_flag },
+    utility::bytes::{ Byte, Offset, UByte, ULong, UWord, Word },
 };
 
 type Result<T> = std::io::Result<T>;
@@ -486,12 +486,13 @@ impl OctamedMMDParser {
                 text
             }
         };
-        let color_pallete = {
+        let color_pallete = if header.rgb_table_ptr.is_null() {
+            OctamedMMD0ColorPallete::from_bytes([UWord(0); 8])
+        } else {
             stream.seek(header.rgb_table_ptr.into())?;
             let mut pallete = [UWord(0); 8];
             for i in 0..pallete.len() {
-                let color = Self::parse_uword(stream)?;
-                pallete[i] = color;
+                pallete[i] = Self::parse_uword(stream)?;
             }
             OctamedMMD0ColorPallete::from_bytes(pallete)
         };

@@ -57,9 +57,11 @@ impl OctamedMMDWriter {
     }
     pub fn write_module(mut self, mmd: &OctamedMMD) -> Result<Vec<u8>> {
         self.alloc_module(mmd)?;
+        let allocated = self.layout.cursor;
         // layout.cursor now equals the total bytes that write() will emit,
         // so write_header can use it directly as module_length.
         self.write(mmd)?;
+        assert_eq!(allocated as usize, self.writer.len());
         return Ok(self.writer);
     }
     fn push_size(&mut self) {
@@ -206,10 +208,14 @@ impl OctamedMMDWriter {
                 (e.header.instrument_info_struct_size.0 * e.header.instrument_info_array_length.0)
                     as u32,
             );
-            self.layout
-                .alloc(&e.header.rgb_table_ptr, e.color_pallete.get_size(mmd));
-            self.layout
-                .alloc(&e.header.notation_info_ptr, e.notation_info.get_size(mmd));
+            if !e.header.rgb_table_ptr.is_null() {
+                self.layout
+                    .alloc(&e.header.rgb_table_ptr, e.color_pallete.get_size(mmd));
+            }
+            if !e.header.notation_info_ptr.is_null() {
+                self.layout
+                    .alloc(&e.header.notation_info_ptr, e.notation_info.get_size(mmd));
+            }
             self.layout.alloc(
                 &e.header.song_name_char_array_ptr,
                 (e.song_name.len() as u32) + 1, // +1 for null terminator, matches IntoBytes for String
@@ -385,13 +391,20 @@ impl OctamedMMDWriter {
                 let line_count = header.line_count;
                 // line_count is zero-indexed; actual count is line_count.0 + 1
                 let count = ((line_count.0 as usize) + 1 + bits_per_ulong - 1) / bits_per_ulong;
-                self.writer
-                    .write_bytes(&self.layout.get_expect(&info_blk.header.highlight_mask_array_ptr))?;
-                self.writer
-                    .write_bytes(&self.layout.get_expect(&info_blk.header.block_name_string_ptr))?;
+                self.writer.write_bytes(
+                    &self
+                        .layout
+                        .get_expect(&info_blk.header.highlight_mask_array_ptr),
+                )?;
+                self.writer.write_bytes(
+                    &self
+                        .layout
+                        .get_expect(&info_blk.header.block_name_string_ptr),
+                )?;
                 self.writer
                     .write_bytes(&ULong((info_blk.block_name.chars().count() as u32) + 1))?;
-                self.writer.write_bytes(&self.layout.get(&info_blk.page_table))?; // spec: pagetable is MMD2+ only, null for MMD1
+                self.writer
+                    .write_bytes(&self.layout.get(&info_blk.page_table))?; // spec: pagetable is MMD2+ only, null for MMD1
                 self.writer.write_bytes(&info_blk.header.reserved)?;
                 //for now highlight mask not implemented; write count ULongs of zeros
                 self.writer.write_bytes(&vec![ULong(0); count])?;
@@ -471,13 +484,21 @@ impl OctamedMMDWriter {
             .write_bytes(&exp.header.instrument_info_struct_size)?;
 
         self.writer.write_bytes(&exp.header.jump_mask)?;
-        self.writer
-            .write_bytes(&self.layout.get_expect(&exp.header.rgb_table_ptr))?;
+        if exp.header.rgb_table_ptr.is_null() {
+            self.writer.write_bytes(&Offset(0))?;
+        } else {
+            self.writer
+                .write_bytes(&self.layout.get_expect(&exp.header.rgb_table_ptr))?;
+        }
 
         self.writer.write_bytes(&exp.header.channel_split)?;
 
-        self.writer
-            .write_bytes(&self.layout.get_expect(&exp.header.notation_info_ptr))?;
+        if exp.header.notation_info_ptr.is_null() {
+            self.writer.write_bytes(&Offset(0))?;
+        } else {
+            self.writer
+                .write_bytes(&self.layout.get_expect(&exp.header.notation_info_ptr))?;
+        }
 
         self.writer
             .write_bytes(&self.layout.get_expect(&exp.header.song_name_char_array_ptr))?;
@@ -497,8 +518,10 @@ impl OctamedMMDWriter {
         for info in &exp.instrument_infos {
             self.writer.write_bytes(&info.name)?;
         }
-        self.writer.write_bytes(&exp.color_pallete)?;
-        {
+        if !exp.header.rgb_table_ptr.is_null() {
+            self.writer.write_bytes(&exp.color_pallete)?;
+        }
+        if !exp.header.notation_info_ptr.is_null() {
             let info = &exp.notation_info;
             self.writer.write_bytes(&info.sharp_count)?;
             self.writer.write_bytes(&info.flags)?;
