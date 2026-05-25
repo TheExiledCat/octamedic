@@ -57,14 +57,9 @@ impl OctamedMMDWriter {
     }
     pub fn write_module(mut self, mmd: &OctamedMMD) -> Result<Vec<u8>> {
         self.alloc_module(mmd)?;
+        // layout.cursor now equals the total bytes that write() will emit,
+        // so write_header can use it directly as module_length.
         self.write(mmd)?;
-        // Patch module_length (header bytes 4–7) to the actual written file size.
-        // The field is preserved from the original parse, but we omit unimplemented
-        // sections (mmd_dump/info/rexx/midi) so the written file is usually smaller.
-        // OctaMED calls AmigaDOS Read(fh, buf, module_length); a file shorter than
-        // module_length produces a short read → "disk error".
-        let actual_size = (self.writer.len() as u32).to_be_bytes();
-        self.writer[4..8].copy_from_slice(&actual_size);
         return Ok(self.writer);
     }
     fn push_size(&mut self) {
@@ -234,7 +229,7 @@ impl OctamedMMDWriter {
         let samples = &mmd.sample_table;
 
         self.writer.write_bytes(&header.id)?;
-        self.writer.write_bytes(&header.module_length)?;
+        self.writer.write_bytes(&ULong(self.layout.cursor))?; // module_length = total alloc size
         self.writer.write_bytes(&self.layout.get_expect(song))?; // spec: song MUST ALWAYS EXIST
         self.writer.write_bytes(&header.player_seconds_num)?;
         self.writer.write_bytes(&header.player_sequence)?;
