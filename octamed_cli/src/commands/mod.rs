@@ -7,3 +7,4 @@ pub mod blocks;
 pub mod instruments;
 pub mod play;
 pub mod sequence;
+pub mod rewrite;

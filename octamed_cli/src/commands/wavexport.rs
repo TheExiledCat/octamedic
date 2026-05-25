@@ -40,8 +40,8 @@ impl Command for WavExportCommand {
                 )
             )?;
         let sample = mmd.sample_table.samples[self.sample_number].as_ref().unwrap();
-        let bits_per_sample = if header.is_16_bit { 16 } else { 8 };
-        let channels = if header.is_stereo { 2 } else { 1 };
+        let bits_per_sample = if header.is_16_bit() { 16 } else { 8 };
+        let channels = if header.is_stereo() { 2 } else { 1 };
         let sample_rate = Frequency::period(AmigaPalPeriod::new(self.periods))
             .as_hertz()
             .floor() as u32;

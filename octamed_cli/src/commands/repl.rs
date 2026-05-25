@@ -15,6 +15,7 @@ use crate::commands::{
     inspect::InspectCommand,
     instruments::InstrumentsCommand,
     play::PlayCommand,
+    rewrite::RewriteCommand,
     sequence::ShowSequenceCommand,
     wavexport::WavExportCommand,
 };
@@ -55,6 +56,7 @@ pub enum MMDCommandKind {
     #[command(name = "instruments")] Instruments(InstrumentsCommand),
     #[command(name = "play")] Play(PlayCommand),
     #[command(name = "sequence")] Sequence(ShowSequenceCommand),
+    #[command(name = "rewrite")] Rewrite(RewriteCommand),
 }
 impl MMDCommandKind {
     pub fn run(&mut self, mmd: &mut OctamedMMD) -> CommandResult {
@@ -68,6 +70,7 @@ impl MMDCommandKind {
             MMDCommandKind::Instruments(c) => c.run(mmd),
             MMDCommandKind::Play(c) => c.run(mmd),
             MMDCommandKind::Sequence(c) => c.run(mmd),
+            MMDCommandKind::Rewrite(c) => c.run(mmd),
         }
     }
 }
