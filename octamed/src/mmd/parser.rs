@@ -300,10 +300,11 @@ impl OctamedMMDParser {
             stream.seek(offset.into())?;
             let sample_length = Self::parse_ulong(stream)?;
             let sample_type: Word = Self::parse_word(stream)?;
-            let is_stereo = ((sample_type.0 as i16) & OctamedMMD0SampleHeader::STEREO_SAMPLE) != 0;
+            let _is_stereo = ((sample_type.0 as i16) & OctamedMMD0SampleHeader::STEREO_SAMPLE) != 0;
 
             let is_sample = sample_type.0 >= 0;
-            let sample_length = if !is_stereo { sample_length } else { ULong(sample_length.0 * 2) };
+            // sample_length is the total byte count of the sample data as stored on disk;
+            // do NOT double for stereo — the field already encodes the full length
             if sample_length.0 == 0 && is_sample {
                 //null instrument
                 sample_table.headers.push(None);
@@ -319,7 +320,8 @@ impl OctamedMMDParser {
             if is_sample {
                 sample_table.samples.push(Some(samples));
             } else {
-                //todo where are synths stored
+                // synth/hybrid instrument: keep headers and samples vecs in sync
+                sample_table.samples.push(None);
             }
         }
         return Ok(sample_table);
@@ -346,9 +348,10 @@ impl OctamedMMDParser {
                     let line_count = Self::parse_ubyte(stream)?;
                     let header = OctamedMMD0BlockHeader { track_count, line_count };
                     let mut block = OctamedMMD0Block { lines: vec![] };
-                    for i in 0..line_count.0 + 1 {
+                    // line_count is zero-indexed: 0 = 1 line. Cast to u32 before +1 to avoid u8 overflow.
+                    for _i in 0..(line_count.0 as u32) + 1 {
                         let mut block_line = OctamedMMD0BlockLine { tracks: vec![] };
-                        for track in 0..track_count.0 {
+                        for _track in 0..track_count.0 {
                             let byte1 = Self::parse_ubyte(stream)?;
                             let byte2 = Self::parse_ubyte(stream)?;
                             let byte3 = Self::parse_ubyte(stream)?;
@@ -378,9 +381,10 @@ impl OctamedMMDParser {
                     let header = OctamedMMD1BlockHeader { track_count, line_count, info_ptr };
                     let info = self.parse_block_info(stream, &header)?;
                     let mut block = OctamedMMD1Block { lines: vec![], info };
-                    for i in 0..line_count.0 + 1 {
+                    // line_count is zero-indexed: 0 = 1 line. Cast to u32 before +1 to avoid u16 overflow.
+                    for _i in 0..(line_count.0 as u32) + 1 {
                         let mut block_line = OctamedMMD0BlockLine { tracks: vec![] };
-                        for track in 0..track_count.0 {
+                        for _track in 0..track_count.0 {
                             let byte1 = Self::parse_ubyte(stream)?;
                             let byte2 = Self::parse_ubyte(stream)?;
                             let byte3 = Self::parse_ubyte(stream)?;
@@ -430,6 +434,8 @@ impl OctamedMMDParser {
             page_table_ptr,
             reserved,
         };
+        // block_name is at the pointed address, not sequential after the header struct
+        stream.seek(header.block_name_string_ptr.into())?;
         let mut block_name = String::with_capacity(
             header.block_name_length.0.saturating_sub(1) as usize
         );
@@ -466,7 +472,8 @@ impl OctamedMMDParser {
                 header.annotation_text_char_array_ptr.is_null() ||
                 header.annotation_text_length.0 <= 1
             {
-                "N/A".into()
+                // null/empty annotation: use empty string so writer allocates exactly 1 byte (null terminator)
+                String::new()
             } else {
                 stream.seek(header.annotation_text_char_array_ptr.into())?;
                 let mut text = String::with_capacity(
@@ -515,7 +522,8 @@ impl OctamedMMDParser {
         let notation_info = OctamedMMD0NotationInfo::new();
         let song_name = {
             if header.song_name_char_array_ptr.is_null() || header.song_name_length.0 <= 1 {
-                "N/A".into()
+                // null/empty song name: use empty string so writer allocates exactly 1 byte (null terminator)
+                String::new()
             } else {
                 let mut name = String::with_capacity((header.song_name_length.0 - 1) as usize);
                 stream.seek(header.song_name_char_array_ptr.into())?;
