@@ -61,8 +61,8 @@ impl Command for PlayCommand {
             .iter()
             .map(|b| b.0)
             .collect();
-        let bits_per_sample = if header.is_16_bit { 16 } else { 8 };
-        let channels = if header.is_stereo { 2 } else { 1 };
+        let bits_per_sample = if header.is_16_bit() { 16 } else { 8 };
+        let channels = if header.is_stereo() { 2 } else { 1 };
         let sample_rate = Frequency::period(AmigaPalPeriod::new(self.periods))
             .as_hertz()
             .floor() as u32;

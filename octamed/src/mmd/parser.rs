@@ -31,8 +31,6 @@ use crate::{
         OctamedMMD1BlockInfoHeader,
         OctamedMMD1HighlightMask,
         OctamedMMDBlockTable,
-        SAMPLE_IS_16_BIT_FLAG,
-        SAMPLE_IS_STEREO_FLAG,
     },
     utility::bytes::{ Byte, Offset, UByte, ULong, UWord, Word, bit_flag },
 };
@@ -65,7 +63,7 @@ impl From<ULong> for OctamedModuleKind {
         if value == Self::MMD3_ID {
             return Self::MMD3;
         }
-        panic!("Unknown mmd format");
+        panic!("Unknown mmd format: {}", value);
     }
 }
 pub struct OctamedMMDParser {
@@ -174,6 +172,9 @@ impl OctamedMMDParser {
         }
         let reserved = reserved_buffer;
         let sample_array_ptr = Self::parse_offset(stream)?;
+        if sample_array_ptr.is_null() {
+            panic!("MMD1+NoInstr not supported at this time");
+        }
         let reserved2 = Self::parse_ulong(stream)?;
         let expansion_data_ptr = Self::parse_offset(stream)?;
         let reserved3 = Self::parse_ulong(stream)?;
@@ -299,8 +300,8 @@ impl OctamedMMDParser {
             stream.seek(offset.into())?;
             let sample_length = Self::parse_ulong(stream)?;
             let sample_type: Word = Self::parse_word(stream)?;
-            let is_stereo = bit_flag(sample_type, SAMPLE_IS_STEREO_FLAG);
-            let is_16_bit = bit_flag(sample_type, SAMPLE_IS_16_BIT_FLAG);
+            let is_stereo = ((sample_type.0 as i16) & OctamedMMD0SampleHeader::STEREO_SAMPLE) != 0;
+
             let is_sample = sample_type.0 >= 0;
             let sample_length = if !is_stereo { sample_length } else { ULong(sample_length.0 * 2) };
             if sample_length.0 == 0 && is_sample {
@@ -314,9 +315,7 @@ impl OctamedMMDParser {
                 .iter()
                 .map(|s| Byte(*s as i8))
                 .collect();
-            sample_table.headers.push(
-                Some(OctamedMMD0SampleHeader { sample_length, sample_type, is_16_bit, is_stereo })
-            );
+            sample_table.headers.push(Some(OctamedMMD0SampleHeader { sample_length, sample_type }));
             if is_sample {
                 sample_table.samples.push(Some(samples));
             } else {
@@ -513,7 +512,7 @@ impl OctamedMMDParser {
         let mmd_info = OctamedMMD0Info {};
         let mmd_midi_commands = OctamedMMD0MidiCommands {};
         let mmd_rexx = OctamedMMD0Rexx {};
-        let notation_info = OctamedMMD0NotationInfo {};
+        let notation_info = OctamedMMD0NotationInfo::new();
         let song_name = {
             if header.song_name_char_array_ptr.is_null() || header.song_name_length.0 <= 1 {
                 "N/A".into()

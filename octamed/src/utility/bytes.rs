@@ -1,11 +1,18 @@
 use std::{ char, fmt::Display, io::SeekFrom };
 
-use crate::mmd::module::{
-    OctamedMMD0HeaderFlags,
-    OctamedMMD0Sample,
-    OctamedMMD0SongFlags,
-    OctamedMMD1HighlightMask,
-    OctamedMMDTrackLine,
+use crate::mmd::{
+    conversion::BinaryWriter,
+    module::{
+        OctamedMMD0ColorPallete,
+        OctamedMMD0HeaderFlags,
+        OctamedMMD0InstrumentType,
+        OctamedMMD0NotationInfo,
+        OctamedMMD0Sample,
+        OctamedMMD0SampleHeader,
+        OctamedMMD0SongFlags,
+        OctamedMMD1HighlightMask,
+        OctamedMMDTrackLine,
+    },
 };
 
 #[derive(PartialEq, Eq, Clone, Copy)]
@@ -168,7 +175,9 @@ impl IntoBytes for Byte {
 
 impl IntoBytes for String {
     fn as_bytes(&self) -> Vec<u8> {
-        return String::as_bytes(&self).to_vec();
+        let mut bytes = String::as_bytes(&self).to_vec();
+        bytes.push(0);
+        return bytes;
     }
 }
 
@@ -208,5 +217,28 @@ impl<I> IntoBytes for Vec<I> where I: IntoBytes {
             bytes.extend(v.as_bytes());
         }
         return bytes;
+    }
+}
+impl<I> IntoBytes for &[I] where I: IntoBytes {
+    fn as_bytes(&self) -> Vec<u8> {
+        return self
+            .iter()
+            .map(|b| b.as_bytes())
+            .flatten()
+            .collect();
+    }
+}
+impl IntoBytes for OctamedMMD0InstrumentType {
+    fn as_bytes(&self) -> Vec<u8> {
+        return (*self as i16).to_be_bytes().to_vec();
+    }
+}
+impl IntoBytes for OctamedMMD0ColorPallete {
+    fn as_bytes(&self) -> Vec<u8> {
+        return self.colors
+            .iter()
+            .map(|c| c.value.as_bytes())
+            .flatten()
+            .collect();
     }
 }

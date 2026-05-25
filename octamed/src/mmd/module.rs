@@ -5,9 +5,12 @@ use crate::utility::{
     note,
     octamed_tempo::OctamedTempo,
 };
-
-pub const SAMPLE_IS_16_BIT_FLAG: u8 = 0x10;
-pub const SAMPLE_IS_STEREO_FLAG: u8 = 0x20;
+pub enum OctamedMMDType {
+    MMD0,
+    MMD1,
+    MMD2,
+    MMD3,
+}
 pub struct OctamedMMD0Header {
     pub id: ULong,
     pub module_length: ULong,
@@ -29,7 +32,6 @@ pub struct OctamedMMD0Header {
     pub counter: UByte,
     pub extra_songs: UByte,
 }
-
 pub struct OctamedMMD0HeaderFlags {
     pub load_to_fast_memory: bool,
 }
@@ -76,7 +78,17 @@ pub struct OctamedMMD {
     pub sample_table: OctamedMMD0SampleTable,
     pub expansion_data: Option<OctamedMMD0Expansion>,
 }
-
+impl OctamedMMD {
+    pub fn get_type(&self) -> OctamedMMDType {
+        match self.header.id.0 {
+            0x4d4d4430 => OctamedMMDType::MMD0,
+            0x4d4d4431 => OctamedMMDType::MMD1,
+            0x4d4d4432 => OctamedMMDType::MMD2,
+            0x4d4d4433 => OctamedMMDType::MMD3,
+            _ => panic!(),
+        }
+    }
+}
 pub struct OctamedMMD0Song {
     pub samples: [OctamedMMD0Sample; 63],
     pub block_count: UWord,
@@ -287,14 +299,23 @@ pub struct OctamedMMD2BlockCommandPageTable {}
 pub struct OctamedMMD0SampleHeader {
     pub sample_length: ULong,
     pub sample_type: OctamedMMD0InstrumentType,
-    pub is_16_bit: bool,
-    pub is_stereo: bool,
+}
+impl OctamedMMD0SampleHeader {
+    pub const SIXTEEN_BIT_SAMPLE: i16 = 0x10;
+    pub const STEREO_SAMPLE: i16 = 0x20;
+    pub fn is_16_bit(&self) -> bool {
+        return ((self.sample_type as i16) & Self::SIXTEEN_BIT_SAMPLE) != 0;
+    }
+    pub fn is_stereo(&self) -> bool {
+        return ((self.sample_type as i16) & Self::STEREO_SAMPLE) != 0;
+    }
 }
 pub struct OctamedMMD0SampleTable {
     pub headers: Vec<Option<OctamedMMD0SampleHeader>>,
     pub samples: Vec<Option<Vec<Byte>>>,
 }
 #[repr(i16)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum OctamedMMD0InstrumentType {
     Hybrid = -2,
     Synth,
@@ -443,7 +464,28 @@ impl OctamedMMD0Color {
 }
 
 //TODO
-pub struct OctamedMMD0NotationInfo {}
+pub struct OctamedMMD0NotationInfo {
+    pub sharp_count: UByte,
+    pub flags: UByte,
+    pub selected_tracks: [UWord; 5],
+    pub shown_tracks: [UByte; 16],
+    pub ghosted_tracks: [UByte; 16],
+    pub note_transposes: [Byte; 63],
+    pub _pad: UByte,
+}
+impl OctamedMMD0NotationInfo {
+    pub fn new() -> Self {
+        return Self {
+            sharp_count: UByte(0),
+            flags: UByte(0),
+            selected_tracks: [UWord(0); 5],
+            shown_tracks: [UByte(0); 16],
+            ghosted_tracks: [UByte(0); 16],
+            note_transposes: [Byte(0); 63],
+            _pad: UByte(0),
+        };
+    }
+}
 pub struct OctamedMMD0Dump {}
 pub struct OctamedMMD0Info {}
 pub struct OctamedMMD0Rexx {}
