@@ -24,6 +24,7 @@ pub trait Command {
     fn run(&self, mmd: &mut OctamedMMD) -> CommandResult;
 }
 
+#[derive(Debug)]
 pub enum CommandError {
     Generic(String),
 }
