@@ -1,23 +1,14 @@
-use std::{ collections::HashMap, fs::File, io::Write, iter, path::PathBuf };
+use std::{collections::HashMap, fs::File, io::Write, iter, path::PathBuf};
 
 use crate::{
     mmd::{
-        conversion::{ BinarySize, BinaryWriter },
+        conversion::{BinarySize, BinaryWriter},
         module::{
-            OctamedMMD,
-            OctamedMMD0Block,
-            OctamedMMD0BlockHeader,
-            OctamedMMD0BlockLine,
-            OctamedMMD0ExternalInstrument,
-            OctamedMMD0InstrumentInfo,
-            OctamedMMD0InstrumentType,
-            OctamedMMD1Block,
-            OctamedMMD1BlockHeader,
-            OctamedMMDBlockTable,
-            OctamedMMDTrackLine,
+            OctamedMMD, OctamedMMD0Block, OctamedMMD0BlockHeader, OctamedMMD1Block,
+            OctamedMMD1BlockHeader, OctamedMMDBlockTable, OctamedMMDTrackLine,
         },
     },
-    utility::bytes::{ Offset, UByte, ULong, UWord, ValueMap },
+    utility::bytes::{Offset, UByte, ULong, UWord, ValueMap},
 };
 struct AllocatorLayout {
     cursor: u32,
@@ -33,17 +24,20 @@ impl AllocatorLayout {
     pub fn alloc<T>(&mut self, obj: &T, size: u32) {
         // No alignment here: the writer emits bytes sequentially with no padding gaps,
         // so the cursor must track exactly what will be written.
-        self.positions.insert(obj as *const _ as *const (), Offset(self.cursor));
+        self.positions
+            .insert(obj as *const _ as *const (), Offset(self.cursor));
         self.cursor += size;
     }
     fn get<T>(&self, obj: &T) -> Offset {
-        return self.positions
+        return self
+            .positions
             .get(&(obj as *const _ as *const ()))
             .map(|o| *o)
             .unwrap_or(Offset(0));
     }
     fn get_expect<T>(&self, obj: &T) -> Offset {
-        return *self.positions
+        return *self
+            .positions
             .get(&(obj as *const _ as *const ()))
             .expect("layout position not found — was this object allocated?");
     }
@@ -116,7 +110,8 @@ impl OctamedMMDWriter {
     fn alloc_blocks(&mut self, mmd: &OctamedMMD) -> Result<()> {
         let block_table = &mmd.block_table;
         //table
-        self.layout.alloc(block_table, mmd.block_table.get_size(mmd));
+        self.layout
+            .alloc(block_table, mmd.block_table.get_size(mmd));
 
         //actual blocks
         match block_table {
@@ -126,9 +121,9 @@ impl OctamedMMDWriter {
                     let (track_count, line_count) = (header.track_count, header.line_count);
                     self.layout.alloc(
                         &blocks[i],
-                        (track_count.0 as u32) *
-                            ((line_count.0 as u32) + 1) *
-                            ((size_of::<UByte>() as u32) * 3)
+                        (track_count.0 as u32)
+                            * ((line_count.0 as u32) + 1)
+                            * ((size_of::<UByte>() as u32) * 3),
                     );
                 }
             }
@@ -138,25 +133,30 @@ impl OctamedMMDWriter {
                     let (track_count, line_count) = (header.track_count, header.line_count);
                     self.layout.alloc(
                         &blocks[i],
-                        (track_count.0 as u32) *
-                            ((line_count.0 as u32) + 1) *
-                            ((size_of::<UByte>() as u32) * 4)
+                        (track_count.0 as u32)
+                            * ((line_count.0 as u32) + 1)
+                            * ((size_of::<UByte>() as u32) * 4),
                     );
 
                     if let Some(info_block) = &blocks[i].info {
                         // Use info_block itself as the key (NOT &header.info_ptr which aliases
                         // with &header when info_ptr is at Rust struct offset 0).
-                        self.layout.alloc(info_block, info_block.header.get_size(mmd));
+                        self.layout
+                            .alloc(info_block, info_block.header.get_size(mmd));
 
                         let bits_per_ulong = size_of::<ULong>() * 8;
                         // line_count is zero-indexed, so actual line count is line_count.0 + 1
-                        let count = ((line_count.0 as usize) + 1 + bits_per_ulong - 1) / bits_per_ulong;
+                        let count =
+                            ((line_count.0 as usize) + 1 + bits_per_ulong - 1) / bits_per_ulong;
                         // count is number of ULongs; alloc needs byte size
-                        self.layout.alloc(&info_block.header.highlight_mask_array_ptr, (count * size_of::<ULong>()) as u32);
+                        self.layout.alloc(
+                            &info_block.header.highlight_mask_array_ptr,
+                            (count * size_of::<ULong>()) as u32,
+                        );
 
                         self.layout.alloc(
                             &info_block.header.block_name_string_ptr,
-                            (info_block.block_name.chars().count() as u32) + 1 //\0
+                            (info_block.block_name.chars().count() as u32) + 1, //\0
                         );
                         //page table is ignored as only mmd1 is supported, default to  null
                     }
@@ -167,7 +167,8 @@ impl OctamedMMDWriter {
         return Ok(());
     }
     fn alloc_samples(&mut self, mmd: &OctamedMMD) -> Result<()> {
-        self.layout.alloc(&mmd.sample_table, mmd.sample_table.get_size(mmd));
+        self.layout
+            .alloc(&mmd.sample_table, mmd.sample_table.get_size(mmd));
 
         for (i, header) in mmd.sample_table.headers.iter().enumerate() {
             if let Some(h) = header {
@@ -177,7 +178,7 @@ impl OctamedMMDWriter {
                 }
                 self.layout.alloc(
                     &mmd.sample_table.samples[i],
-                    mmd.sample_table.samples[i].as_deref().unwrap().len() as u32
+                    mmd.sample_table.samples[i].as_deref().unwrap().len() as u32,
                 );
             }
         }
@@ -194,31 +195,39 @@ impl OctamedMMDWriter {
             if !e.external_instruments.is_empty() {
                 self.layout.alloc(
                     &e.header.expanded_instruments_array_ptr,
-                    (e.external_instruments.len() as u32) *
-                        (e.header.extpanded_instruments_struct_size.0 as u32)
+                    (e.external_instruments.len() as u32)
+                        * (e.header.extpanded_instruments_struct_size.0 as u32),
                 );
             }
 
             self.layout.alloc(
                 &e.header.annotation_text_char_array_ptr,
-                (e.annotation.len() as u32) + 1 // +1 for null terminator, matches IntoBytes for String
+                (e.annotation.len() as u32) + 1, // +1 for null terminator, matches IntoBytes for String
             );
             self.layout.alloc(
                 &e.header.instrument_info_ptr,
-                (e.header.instrument_info_struct_size.0 *
-                    e.header.instrument_info_array_length.0) as u32
+                (e.header.instrument_info_struct_size.0 * e.header.instrument_info_array_length.0)
+                    as u32,
             );
-            self.layout.alloc(&e.header.rgb_table_ptr, e.color_pallete.get_size(mmd));
-            self.layout.alloc(&e.header.notation_info_ptr, e.notation_info.get_size(mmd));
+            self.layout
+                .alloc(&e.header.rgb_table_ptr, e.color_pallete.get_size(mmd));
+            self.layout
+                .alloc(&e.header.notation_info_ptr, e.notation_info.get_size(mmd));
             self.layout.alloc(
                 &e.header.song_name_char_array_ptr,
-                (e.song_name.len() as u32) + 1 // +1 for null terminator, matches IntoBytes for String
+                (e.song_name.len() as u32) + 1, // +1 for null terminator, matches IntoBytes for String
             );
 
-            self.layout.alloc(&e.header.mmd_dump_ptr, e.mmd_dump.get_size(mmd));
-            self.layout.alloc(&e.header.mmd_info_ptr, e.mmd_info.get_size(mmd));
-            self.layout.alloc(&e.header.mmd_rexx_ptr, e.mmd_rexx.get_size(mmd));
-            self.layout.alloc(&e.header.mmd_midi_commands_ptr, e.mmd_midi_commands.get_size(mmd));
+            self.layout
+                .alloc(&e.header.mmd_dump_ptr, e.mmd_dump.get_size(mmd));
+            self.layout
+                .alloc(&e.header.mmd_info_ptr, e.mmd_info.get_size(mmd));
+            self.layout
+                .alloc(&e.header.mmd_rexx_ptr, e.mmd_rexx.get_size(mmd));
+            self.layout.alloc(
+                &e.header.mmd_midi_commands_ptr,
+                e.mmd_midi_commands.get_size(mmd),
+            );
         }
 
         return Ok(());
@@ -243,7 +252,8 @@ impl OctamedMMDWriter {
         self.writer.write_bytes(&self.layout.get_expect(samples))?; // always written by our writer
         self.writer.write_bytes(&header.reserved2)?;
         if let Some(e) = &mmd.expansion_data {
-            self.writer.write_bytes(&self.layout.get_expect(&e.header))?;
+            self.writer
+                .write_bytes(&self.layout.get_expect(&e.header))?;
         } else {
             self.writer.write_bytes(&Offset(0))?; // spec: expdata is optional
         }
@@ -305,7 +315,7 @@ impl OctamedMMDWriter {
         &mut self,
         mmd: &OctamedMMD,
         headers: &Vec<OctamedMMD0BlockHeader>,
-        blocks: &Vec<OctamedMMD0Block>
+        blocks: &Vec<OctamedMMD0Block>,
     ) -> Result<()> {
         for (i, header) in headers.iter().enumerate() {
             self.writer.write_bytes(&header.track_count)?;
@@ -316,17 +326,23 @@ impl OctamedMMDWriter {
                     let byte1 = {
                         UByte(
                             // note bits [5:0], instrument xy bits [7:6] — non-overlapping, must OR
-                            track.note_number.map(
-                                |n| n & OctamedMMDTrackLine::BLOCK_LINE_NOTE_NUMBER_MASK_MMD0
-                            ).0 | track.instrument_number.map(|i| (i >> 4) << 6).0
+                            track
+                                .note_number
+                                .map(|n| n & OctamedMMDTrackLine::BLOCK_LINE_NOTE_NUMBER_MASK_MMD0)
+                                .0
+                                | track.instrument_number.map(|i| (i >> 4) << 6).0,
                         )
                     };
                     let byte2 = {
                         UByte(
                             // command bits [3:0], instrument iiii bits [7:4] — non-overlapping, must OR
-                            track.command_number.map(|b| {
-                                b & OctamedMMDTrackLine::BLOCK_LINE_COMMAND_NUMBER_MASK_MMD0
-                            }).0 | track.instrument_number.map(|i| i << 4).0
+                            track
+                                .command_number
+                                .map(|b| {
+                                    b & OctamedMMDTrackLine::BLOCK_LINE_COMMAND_NUMBER_MASK_MMD0
+                                })
+                                .0
+                                | track.instrument_number.map(|i| i << 4).0,
                         )
                     };
                     let byte3 = track.command_value;
@@ -343,7 +359,7 @@ impl OctamedMMDWriter {
         &mut self,
         mmd: &OctamedMMD,
         headers: &Vec<OctamedMMD1BlockHeader>,
-        blocks: &Vec<OctamedMMD1Block>
+        blocks: &Vec<OctamedMMD1Block>,
     ) -> Result<()> {
         for (i, header) in headers.iter().enumerate() {
             self.writer.write_bytes(&header.track_count)?;
@@ -360,13 +376,13 @@ impl OctamedMMDWriter {
             for line in &block.lines {
                 for track in &line.tracks {
                     let byte1 = {
-                        track.note_number.map(
-                            |n| n & OctamedMMDTrackLine::BLOCK_LINE_NOTE_NUMBER_MASK_MMD1
-                        )
+                        track
+                            .note_number
+                            .map(|n| n & OctamedMMDTrackLine::BLOCK_LINE_NOTE_NUMBER_MASK_MMD1)
                     };
-                    let byte2 = track.instrument_number.map(
-                        |i| i & OctamedMMDTrackLine::BLOCK_LINE_INSTRUMENT_NUMBER_MASK_MMD1
-                    );
+                    let byte2 = track
+                        .instrument_number
+                        .map(|i| i & OctamedMMDTrackLine::BLOCK_LINE_INSTRUMENT_NUMBER_MASK_MMD1);
                     let byte3 = track.command_number;
                     let byte4 = track.command_value;
                     self.writer.write_bytes(&byte1)?;
@@ -384,14 +400,17 @@ impl OctamedMMDWriter {
                 // line_count is zero-indexed; actual count is line_count.0 + 1
                 let count = ((line_count.0 as usize) + 1 + bits_per_ulong - 1) / bits_per_ulong;
                 //info header
-                self.writer.write_bytes(&self.layout.get_expect(&i.header.highlight_mask_array_ptr))?;
-                self.writer.write_bytes(&self.layout.get_expect(&i.header.block_name_string_ptr))?;
-                self.writer.write_bytes(&ULong((i.block_name.chars().count() as u32) + 1))?;
+                self.writer
+                    .write_bytes(&self.layout.get_expect(&i.header.highlight_mask_array_ptr))?;
+                self.writer
+                    .write_bytes(&self.layout.get_expect(&i.header.block_name_string_ptr))?;
+                self.writer
+                    .write_bytes(&ULong((i.block_name.chars().count() as u32) + 1))?;
                 self.writer.write_bytes(&self.layout.get(&i.page_table))?; // spec: pagetable is MMD2+ only, null for MMD1
                 self.writer.write_bytes(&i.header.reserved)?;
 
                 //for now highlight mask not implemented; write count ULongs of zeros
-                self.writer.write_bytes(&vec![ULong(0);count])?;
+                self.writer.write_bytes(&vec![ULong(0); count])?;
                 self.writer.write_bytes(&i.block_name)?;
             }
         }
@@ -439,35 +458,55 @@ impl OctamedMMDWriter {
         if exp.external_instruments.is_empty() {
             self.writer.write_bytes(&Offset(0))?;
             self.writer.write_bytes(&UWord(0))?;
-            self.writer.write_bytes(&exp.header.extpanded_instruments_struct_size)?;
+            self.writer
+                .write_bytes(&exp.header.extpanded_instruments_struct_size)?;
         } else {
             self.writer.write_bytes(
-                &self.layout.get_expect(&exp.header.expanded_instruments_array_ptr)
+                &self
+                    .layout
+                    .get_expect(&exp.header.expanded_instruments_array_ptr),
             )?;
-            self.writer.write_bytes(&UWord(exp.external_instruments.len() as u16))?;
-            self.writer.write_bytes(&exp.header.extpanded_instruments_struct_size)?;
+            self.writer
+                .write_bytes(&UWord(exp.external_instruments.len() as u16))?;
+            self.writer
+                .write_bytes(&exp.header.extpanded_instruments_struct_size)?;
         }
 
-        self.writer.write_bytes(&self.layout.get_expect(&exp.header.annotation_text_char_array_ptr))?;
-        self.writer.write_bytes(&exp.header.annotation_text_length)?;
+        self.writer.write_bytes(
+            &self
+                .layout
+                .get_expect(&exp.header.annotation_text_char_array_ptr),
+        )?;
+        self.writer
+            .write_bytes(&exp.header.annotation_text_length)?;
 
-        self.writer.write_bytes(&self.layout.get_expect(&exp.header.instrument_info_ptr))?;
-        self.writer.write_bytes(&exp.header.instrument_info_array_length)?;
-        self.writer.write_bytes(&exp.header.instrument_info_struct_size)?;
+        self.writer
+            .write_bytes(&self.layout.get_expect(&exp.header.instrument_info_ptr))?;
+        self.writer
+            .write_bytes(&exp.header.instrument_info_array_length)?;
+        self.writer
+            .write_bytes(&exp.header.instrument_info_struct_size)?;
 
         self.writer.write_bytes(&exp.header.jump_mask)?;
-        self.writer.write_bytes(&self.layout.get_expect(&exp.header.rgb_table_ptr))?;
+        self.writer
+            .write_bytes(&self.layout.get_expect(&exp.header.rgb_table_ptr))?;
 
         self.writer.write_bytes(&exp.header.channel_split)?;
 
-        self.writer.write_bytes(&self.layout.get_expect(&exp.header.notation_info_ptr))?;
+        self.writer
+            .write_bytes(&self.layout.get_expect(&exp.header.notation_info_ptr))?;
 
-        self.writer.write_bytes(&self.layout.get_expect(&exp.header.song_name_char_array_ptr))?;
+        self.writer
+            .write_bytes(&self.layout.get_expect(&exp.header.song_name_char_array_ptr))?;
         self.writer.write_bytes(&exp.header.song_name_length)?;
-        self.writer.write_bytes(&self.layout.get_expect(&exp.header.mmd_dump_ptr))?;
-        self.writer.write_bytes(&self.layout.get_expect(&exp.header.mmd_info_ptr))?;
-        self.writer.write_bytes(&self.layout.get_expect(&exp.header.mmd_rexx_ptr))?;
-        self.writer.write_bytes(&self.layout.get_expect(&exp.header.mmd_midi_commands_ptr))?;
+        self.writer
+            .write_bytes(&self.layout.get_expect(&exp.header.mmd_dump_ptr))?;
+        self.writer
+            .write_bytes(&self.layout.get_expect(&exp.header.mmd_info_ptr))?;
+        self.writer
+            .write_bytes(&self.layout.get_expect(&exp.header.mmd_rexx_ptr))?;
+        self.writer
+            .write_bytes(&self.layout.get_expect(&exp.header.mmd_midi_commands_ptr))?;
         self.writer.write_bytes(&exp.header.reserved)?;
         self.writer.write_bytes(&exp.header.tag_end)?;
 
@@ -491,7 +530,7 @@ impl OctamedMMDWriter {
 
         self.writer.write_bytes(&exp.song_name)?;
         //todo
-        /* 
+        /*
         self.writer.write_bytes(&exp.mmd_dump)?;
         self.writer.write_bytes(&exp.mmd_info)?;
         self.writer.write_bytes(&exp.mmd_rexx)?;
