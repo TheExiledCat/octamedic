@@ -1,4 +1,4 @@
-use std::{ fs::File, io::Write, process::exit };
+use std::{ fs::File, io::Write };
 
 use clap_derive::Args;
 use octamed::mmd::writer::OctamedMMDWriter;

@@ -1,20 +1,10 @@
-use std::{ ops::Add, path::PathBuf, thread, time::{ Duration, Instant } };
+use std::{ ops::Add, thread, time::Duration };
 
 use crate::commands::repl::{ Command, CommandError, CommandResult };
 use clap_derive::Args;
 use clap_num::number_range;
 use cpal::traits::{ DeviceTrait, HostTrait, StreamTrait };
-use hound::{ WavSpec, WavWriter };
 use octamed::utility::{ frequency::Frequency, period::AmigaPalPeriod };
-use progress_bar::{
-    Color,
-    Style,
-    finalize_progress_bar,
-    inc_progress_bar,
-    init_progress_bar,
-    set_progress_bar_action,
-    set_progress_bar_width,
-};
 
 #[derive(Args, Debug, Clone)]
 #[command(about = "Play a sample. Does not take into account sample transpose.")]
