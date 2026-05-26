@@ -1,19 +1,11 @@
 use std::{ char, fmt::Display, io::SeekFrom };
 
-use crate::mmd::{
-    conversion::BinaryWriter,
-    module::{
+use crate::mmd::module::{
         OctamedMMD0ColorPallete,
         OctamedMMD0HeaderFlags,
         OctamedMMD0InstrumentType,
-        OctamedMMD0NotationInfo,
-        OctamedMMD0Sample,
-        OctamedMMD0SampleHeader,
         OctamedMMD0SongFlags,
-        OctamedMMD1HighlightMask,
-        OctamedMMDTrackLine,
-    },
-};
+    };
 
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub struct ULong(pub u32);

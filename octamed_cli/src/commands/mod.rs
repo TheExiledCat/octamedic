@@ -1,10 +1,11 @@
-pub mod repl;
-pub mod inspect;
-pub mod exit;
-pub mod wavexport;
-pub mod clear;
 pub mod blocks;
+pub mod clear;
+pub mod exit;
+pub mod inspect;
 pub mod instruments;
+pub mod pallete;
 pub mod play;
-pub mod sequence;
+pub mod repl;
 pub mod rewrite;
+pub mod sequence;
+pub mod wavexport;

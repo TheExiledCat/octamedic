@@ -1,19 +1,18 @@
-use std::{ iter, path::PathBuf };
+use std::{iter, path::PathBuf};
 
-use clap::{ CommandFactory, Parser };
+use clap::{CommandFactory, Parser};
 use clap_derive::Subcommand;
-use clap_repl::{ ClapEditor, reedline::DefaultCompleter };
 use figlet_rs::Toilet;
-use inquire::{ Autocomplete, Text, autocompletion::Replacement };
-use octamed::mmd::{ module::OctamedMMD, parser::OctamedMMDParser };
+use inquire::{Autocomplete, Text, autocompletion::Replacement};
+use octamed::mmd::{module::OctamedMMD, parser::OctamedMMDParser};
 
 use crate::commands::{
-    self,
-    blocks::{ InspectBlockCommand, InspectBlocksCommand },
+    blocks::{InspectBlockCommand, InspectBlocksCommand},
     clear::ClearCommand,
     exit::ExitCommand,
     inspect::InspectCommand,
     instruments::InstrumentsCommand,
+    pallete::PalleteCommand,
     play::PlayCommand,
     rewrite::RewriteCommand,
     sequence::ShowSequenceCommand,
@@ -48,16 +47,28 @@ pub struct MMDCommand {
 }
 #[derive(Subcommand)]
 pub enum MMDCommandKind {
-    #[command(name = "inspect")] Inspect(InspectCommand),
-    #[command(name = "exit")] Exit(ExitCommand),
-    #[command(name = "wavexport")] ExportWav(WavExportCommand),
-    #[command(name = "clear")] Clear(ClearCommand),
-    #[command(name = "block")] InspectBlock(InspectBlockCommand),
-    #[command(name = "blocks")] InspectBlocks(InspectBlocksCommand),
-    #[command(name = "instruments")] Instruments(InstrumentsCommand),
-    #[command(name = "play")] Play(PlayCommand),
-    #[command(name = "sequence")] Sequence(ShowSequenceCommand),
-    #[command(name = "rewrite")] Rewrite(RewriteCommand),
+    #[command(name = "inspect")]
+    Inspect(InspectCommand),
+    #[command(name = "exit")]
+    Exit(ExitCommand),
+    #[command(name = "wavexport")]
+    ExportWav(WavExportCommand),
+    #[command(name = "clear")]
+    Clear(ClearCommand),
+    #[command(name = "block")]
+    InspectBlock(InspectBlockCommand),
+    #[command(name = "blocks")]
+    InspectBlocks(InspectBlocksCommand),
+    #[command(name = "instruments")]
+    Instruments(InstrumentsCommand),
+    #[command(name = "play")]
+    Play(PlayCommand),
+    #[command(name = "sequence")]
+    Sequence(ShowSequenceCommand),
+    #[command(name = "rewrite")]
+    Rewrite(RewriteCommand),
+    #[command(name = "pallete")]
+    Pallete(PalleteCommand),
 }
 impl MMDCommandKind {
     pub fn run(&mut self, mmd: &mut OctamedMMD) -> CommandResult {
@@ -72,6 +83,7 @@ impl MMDCommandKind {
             MMDCommandKind::Play(c) => c.run(mmd),
             MMDCommandKind::Sequence(c) => c.run(mmd),
             MMDCommandKind::Rewrite(c) => c.run(mmd),
+            MMDCommandKind::Pallete(c) => c.run(mmd),
         }
     }
 }
@@ -97,7 +109,7 @@ impl MMDRepl {
                 .get_subcommands()
                 .map(|c| c.get_name().to_owned())
                 .chain(iter::once("help".into()))
-                .collect::<Vec<String>>()
+                .collect::<Vec<String>>(),
         );
         loop {
             let input = Self::read_line(&autocompleter).trim().to_owned();
@@ -134,7 +146,10 @@ impl MMDRepl {
     }
 
     fn read_line(completer: &MMDReplCompleter) -> String {
-        return Text::new("").with_autocomplete(completer.clone()).prompt().unwrap();
+        return Text::new("")
+            .with_autocomplete(completer.clone())
+            .prompt()
+            .unwrap();
     }
 }
 #[derive(Clone)]
@@ -143,13 +158,16 @@ struct MMDReplCompleter {
 }
 impl MMDReplCompleter {
     pub fn new(commands: Vec<String>) -> Self {
-        return Self { command_list: commands };
+        return Self {
+            command_list: commands,
+        };
     }
 }
 impl Autocomplete for MMDReplCompleter {
     fn get_suggestions(&mut self, input: &str) -> Result<Vec<String>, inquire::CustomUserError> {
         let input = input.split_whitespace().last().unwrap_or("");
-        let sug = self.command_list
+        let sug = self
+            .command_list
             .iter()
             .filter(|c| c.starts_with(input))
             .take(5)
@@ -161,7 +179,7 @@ impl Autocomplete for MMDReplCompleter {
     fn get_completion(
         &mut self,
         input: &str,
-        highlighted_suggestion: Option<String>
+        highlighted_suggestion: Option<String>,
     ) -> Result<inquire::autocompletion::Replacement, inquire::CustomUserError> {
         Ok(match highlighted_suggestion {
             Some(s) => {
