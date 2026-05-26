@@ -2,27 +2,12 @@ use std::io::Write;
 
 use crate::{
     mmd::module::{
-        OctamedMMD,
-        OctamedMMD0Block,
-        OctamedMMD0BlockHeader,
-        OctamedMMD0ColorPallete,
-        OctamedMMD0Dump,
-        OctamedMMD0ExpansionHeader,
-        OctamedMMD0Header,
-        OctamedMMD0Info,
-        OctamedMMD0MidiCommands,
-        OctamedMMD0NotationInfo,
-        OctamedMMD0Rexx,
-        OctamedMMD0SampleHeader,
-        OctamedMMD0SampleTable,
-        OctamedMMD0Song,
-        OctamedMMD1Block,
-        OctamedMMD1BlockHeader,
-        OctamedMMD1BlockInfo,
-        OctamedMMD1BlockInfoHeader,
-        OctamedMMDBlockTable,
+        OctamedMMD, OctamedMMD0BlockHeader, OctamedMMD0ColorPallete, OctamedMMD0Dump,
+        OctamedMMD0ExpansionHeader, OctamedMMD0Header, OctamedMMD0Info, OctamedMMD0MidiCommands,
+        OctamedMMD0NotationInfo, OctamedMMD0Rexx, OctamedMMD0SampleHeader, OctamedMMD0SampleTable,
+        OctamedMMD0Song, OctamedMMD1BlockHeader, OctamedMMD1BlockInfoHeader, OctamedMMDBlockTable,
     },
-    utility::bytes::{ IntoBytes, Offset, UWord },
+    utility::bytes::{IntoBytes, Offset, UWord},
 };
 
 pub trait ToModule {
@@ -32,7 +17,10 @@ pub trait FromModule {
     fn from_module(&mut self, module: &OctamedMMD) -> Self;
 }
 
-pub trait BinarySize where Self: Sized {
+pub trait BinarySize
+where
+    Self: Sized,
+{
     fn get_size(&self, mmd: &OctamedMMD) -> u32 {
         return size_of::<Self>() as u32;
     }

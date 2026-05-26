@@ -28,7 +28,7 @@ impl Editor {
                     }
                     labels
                 };
-                if (is_row_number) {
+                if is_row_number {
                     is_row_number = false;
                 }
                 let col = Container::new(taffy, texts)

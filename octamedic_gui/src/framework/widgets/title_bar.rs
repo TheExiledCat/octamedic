@@ -69,7 +69,7 @@ impl Component for TitleBar {
         let seconds = total_seconds % 60;
         self.container
             .child_mut(1)
-            .set_text((&format!("{:02}:{:02}", minutes, seconds)));
+            .set_text(&format!("{:02}:{:02}", minutes, seconds));
         return Ok(());
     }
     fn handle_signals(&mut self, signals: &Vec<WidgetSignal>) {
