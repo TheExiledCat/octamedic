@@ -6,8 +6,11 @@ use crate::data::{
     tempo::OctamedicTempo,
     volume::OctamedicVolume,
 };
+
 #[derive(Clone, Copy)]
+
 pub struct SongId(pub u8);
+
 pub struct OctamedicSong {
     pub(crate) name: String,
     pub(crate) instruments: [Option<OctamedicInstrument>; 63],
@@ -20,9 +23,12 @@ pub struct OctamedicSong {
     pub(crate) master_volume: OctamedicVolume,
     pub(crate) patterns: Vec<OctamedicPattern>,
 }
+
 impl OctamedicSong {
     pub fn new(name: impl AsRef<str>) -> Self {
+
         let name = name.as_ref();
+
         return Self {
             name: name.into(),
             instruments: [None; 63],
@@ -36,10 +42,14 @@ impl OctamedicSong {
             patterns: vec![OctamedicPattern::new()],
         };
     }
+
     pub fn get_pattern(&self, pattern_id: &PatternId) -> Option<&OctamedicPattern> {
+
         return self.patterns.get(pattern_id.0 as usize);
     }
+
     pub fn get_sequence(&self) -> Vec<UByte> {
+
         return self.sequence.clone();
     }
 }
