@@ -6,7 +6,7 @@ A faithful clone of OctaMED Professional v4
 
 ## Features
 
-- Faithful recreation of the 8 bit sound engine written in Rust using pix_engine for rendering and cpal for audio playback
+- Faithful recreation of the 8 bit sound engine written in Rust using ggez for rendering and cpal for audio playback
 - Works with original MMD0, MMD1, and MMD2 modules, configs and samples
 - All the original settings, keybinds and plugin support
 - Full Midi support
