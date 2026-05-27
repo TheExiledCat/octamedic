@@ -1,0 +1,39 @@
+# Enforce at least 1 blank line between top-level items (fns, structs, impls, etc.)
+blank_lines_lower_bound = 1
+# Allow up to 2 blank lines so you can visually group things inside impl blocks
+blank_lines_upper_bound = 2
+
+# Readable line width — not too cramped, not sprawling
+max_width = 100
+tab_spaces = 4
+
+# Keep imports clean and grouped: std → external → crate
+imports_granularity = "Crate"
+group_imports = "StdExternalCrate"
+reorder_imports = true
+reorder_modules = true
+
+# Trailing commas make diffs cleaner and adding items easier
+trailing_comma = "Vertical"
+trailing_semicolon = true
+
+# Brace style: opening brace on the same line (Rust convention)
+brace_style = "SameLineWhere"
+control_brace_style = "AlwaysSameLine"
+
+# where clauses on their own line — much easier to read
+where_single_line = false
+indent_style = "Block"
+
+# Don't collapse small structs/enums onto one line — keeps things uniform
+struct_lit_single_line = false
+
+# fn args: one per line when they don't fit, not jammed together
+fn_params_layout = "Tall"
+
+# Normalize string literals and doc comments
+normalize_doc_attributes = true
+format_strings = false
+
+# Unix newlines
+newline_style = "Unix"

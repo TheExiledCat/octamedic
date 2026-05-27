@@ -14,7 +14,9 @@ pub enum InputEvent {
         button: MouseButton,
     },
 }
+
 #[derive(Eq, PartialEq)]
+
 pub enum MouseButton {
     Left,
     Right,
