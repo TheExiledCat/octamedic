@@ -2351,6 +2351,9 @@ dependencies = [
 [[package]]
 name = "octamedic_core"
 version = "0.1.0"
+dependencies = [
+ "octamed",
+]
 
 [[package]]
 name = "octamedic_gui"

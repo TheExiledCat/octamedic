@@ -1,11 +1,9 @@
-use std::{ char, fmt::Display, io::SeekFrom };
+use std::{char, fmt::Display, io::SeekFrom};
 
 use crate::mmd::module::{
-        OctamedMMD0ColorPallete,
-        OctamedMMD0HeaderFlags,
-        OctamedMMD0InstrumentType,
-        OctamedMMD0SongFlags,
-    };
+    OctamedMMD0ColorPallete, OctamedMMD0HeaderFlags, OctamedMMD0InstrumentType,
+    OctamedMMD0SongFlags,
+};
 
 #[derive(PartialEq, Eq, Clone, Copy)]
 pub struct ULong(pub u32);
@@ -110,27 +108,64 @@ impl IntoByte for ULong {
 
 pub trait ValueMap {
     type Value;
-    fn map<F>(&self, f: F) -> Self where F: Fn(Self::Value) -> Self::Value;
+    fn map<F>(&self, f: F) -> Self
+    where
+        F: Fn(Self::Value) -> Self::Value;
+
+    fn remap<T, F>(&self, f: F) -> T
+    where
+        F: Fn(Self::Value) -> T;
 }
+
 impl ValueMap for UByte {
     type Value = u8;
 
-    fn map<F>(&self, f: F) -> Self where F: Fn(Self::Value) -> Self::Value {
+    fn map<F>(&self, f: F) -> Self
+    where
+        F: Fn(Self::Value) -> Self::Value,
+    {
         return Self(f(self.0));
     }
+
+    fn remap<T, F>(&self, f: F) -> T
+    where
+        F: Fn(Self::Value) -> T,
+    {
+        return f(self.0);
+    }
 }
+
 impl ValueMap for UWord {
     type Value = u16;
 
-    fn map<F>(&self, f: F) -> Self where F: Fn(Self::Value) -> Self::Value {
+    fn map<F>(&self, f: F) -> Self
+    where
+        F: Fn(Self::Value) -> Self::Value,
+    {
         return Self(f(self.0));
+    }
+
+    fn remap<T, F>(&self, f: F) -> T
+    where
+        F: Fn(Self::Value) -> T,
+    {
+        return f(self.0);
     }
 }
 impl ValueMap for ULong {
     type Value = u32;
 
-    fn map<F>(&self, f: F) -> Self where F: Fn(Self::Value) -> Self::Value {
+    fn map<F>(&self, f: F) -> Self
+    where
+        F: Fn(Self::Value) -> Self::Value,
+    {
         return Self(f(self.0));
+    }
+    fn remap<T, F>(&self, f: F) -> T
+    where
+        F: Fn(Self::Value) -> T,
+    {
+        return f(self.0);
     }
 }
 
@@ -184,7 +219,10 @@ impl IntoBytes for OctamedMMD0HeaderFlags {
         return val.to_be_bytes().to_vec();
     }
 }
-impl<T, const N: usize> IntoBytes for [T; N] where T: IntoBytes {
+impl<T, const N: usize> IntoBytes for [T; N]
+where
+    T: IntoBytes,
+{
     fn as_bytes(&self) -> Vec<u8> {
         let mut bytes = vec![];
         for b in 0..N {
@@ -202,7 +240,10 @@ impl IntoBytes for OctamedMMD0SongFlags {
         return bytes;
     }
 }
-impl<I> IntoBytes for Vec<I> where I: IntoBytes {
+impl<I> IntoBytes for Vec<I>
+where
+    I: IntoBytes,
+{
     fn as_bytes(&self) -> Vec<u8> {
         let mut bytes = vec![];
         for v in self {
@@ -211,13 +252,12 @@ impl<I> IntoBytes for Vec<I> where I: IntoBytes {
         return bytes;
     }
 }
-impl<I> IntoBytes for &[I] where I: IntoBytes {
+impl<I> IntoBytes for &[I]
+where
+    I: IntoBytes,
+{
     fn as_bytes(&self) -> Vec<u8> {
-        return self
-            .iter()
-            .map(|b| b.as_bytes())
-            .flatten()
-            .collect();
+        return self.iter().map(|b| b.as_bytes()).flatten().collect();
     }
 }
 impl IntoBytes for OctamedMMD0InstrumentType {
@@ -227,7 +267,8 @@ impl IntoBytes for OctamedMMD0InstrumentType {
 }
 impl IntoBytes for OctamedMMD0ColorPallete {
     fn as_bytes(&self) -> Vec<u8> {
-        return self.colors
+        return self
+            .colors
             .iter()
             .map(|c| c.value.as_bytes())
             .flatten()
