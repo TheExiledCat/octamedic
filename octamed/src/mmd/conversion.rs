@@ -14,7 +14,7 @@ pub trait ToModule {
     fn to_module(&mut self) -> OctamedMMD;
 }
 pub trait FromModule {
-    fn from_module(&mut self, module: &OctamedMMD) -> Self;
+    fn from_module(module: &OctamedMMD) -> Self;
 }
 
 pub trait BinarySize
