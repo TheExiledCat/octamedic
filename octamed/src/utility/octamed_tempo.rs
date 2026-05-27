@@ -2,17 +2,19 @@ use std::fmt::Display;
 
 use crate::{
     mmd::module::OctamedMMD0Song,
-    utility::{ bytes::{ UByte, UWord, ValueMap }, frequency::Frequency },
+    utility::{
+        bytes::{UByte, UWord, ValueMap},
+        frequency::Frequency,
+    },
 };
 
 const BPM_COMPATIBILITY_VALUES: &[u8] = &[195, 97, 65, 49, 39, 32, 28, 24, 22, 20];
-const DEFAULT_TICKS_PER_LINE: u8 = 6;
 #[derive(Clone, Copy)]
 pub struct OctamedTempo {
-    primary_tempo: UWord,
-    lines_per_beat: UByte,
-    ticks_per_line: UByte,
-    is_bpm_mode: bool,
+    pub primary_tempo: UWord,
+    pub lines_per_beat: UByte,
+    pub ticks_per_line: UByte,
+    pub is_bpm_mode: bool,
 }
 
 impl OctamedTempo {
@@ -21,7 +23,12 @@ impl OctamedTempo {
         let ticks_per_line = song.secondary_tempo;
         let is_bpm_mode = song.flags.is_bpm_mode();
         let lines_per_beat = song.flags.bpm_beat_length();
-        return Self { primary_tempo, ticks_per_line, is_bpm_mode, lines_per_beat };
+        return Self {
+            primary_tempo,
+            ticks_per_line,
+            is_bpm_mode,
+            lines_per_beat,
+        };
     }
     pub fn is_bpm_mode(&self) -> bool {
         return self.is_bpm_mode;
@@ -31,14 +38,13 @@ impl OctamedTempo {
     pub fn get_tick_rate(mut self) -> Frequency {
         if self.is_bpm_mode {
             return Frequency::hertz(
-                ((self.primary_tempo.0 as f32) * (self.lines_per_beat.0 as f32)) / 10.0
+                ((self.primary_tempo.0 as f32) * (self.lines_per_beat.0 as f32)) / 10.0,
             );
         }
 
         if self.primary_tempo.0 <= 10 {
-            self.primary_tempo = UWord(
-                BPM_COMPATIBILITY_VALUES[(self.primary_tempo.0 - 1) as usize] as u16
-            );
+            self.primary_tempo =
+                UWord(BPM_COMPATIBILITY_VALUES[(self.primary_tempo.0 - 1) as usize] as u16);
         }
         return Frequency::hertz(1.0 / ((0.474326 / (self.primary_tempo.0 as f32)) * 1.3968255));
     }
