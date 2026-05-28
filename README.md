@@ -58,9 +58,14 @@ When using the installer, automatic updates are also added. Whenever you startup
     - full octamed clone made using ggez
 ## Roadmap
 - [X] Loading real mmd file's metadata, note and instrument data
+- [ ] Loading protracker/soundtracker supported modules
 - [ ] Loading extra metadata from mmd files
 - [ ] Initial engine iteration which can playback real mmd files with just note data (no commands yet)
 - [ ] Initial editor iteration that can edit notes and patterns of existing mmd files but cant edit instruments
+- [ ] Write back modules to:
+    - [ ] MMD0
+    - [ ] MMD1 (No Instr)
+    - [ ] MMD1 +Instruments
 - [ ] Sample Commands
 - [ ] Midi commands
 - [ ] Synth commands
@@ -69,5 +74,10 @@ When using the installer, automatic updates are also added. Whenever you startup
 - [ ] Editing instruments
 - [ ] Keybind mapping
 - [ ] Midi in support
+    - [ ] Omni in support
+    - [ ] Midi control mapping 
 - [ ] Midi mapping
-- [ ] Track to audio interface support
+- [ ] Track to audio interface routing support
+- [ ] Gui overhaul to make it look like octamed
+- [ ] Octamed configuration support
+- [ ] Custom configuration overrides
