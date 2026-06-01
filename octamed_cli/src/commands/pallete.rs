@@ -1,4 +1,3 @@
-use std::{fs::File, io::Write};
 
 use clap_derive::Args;
 

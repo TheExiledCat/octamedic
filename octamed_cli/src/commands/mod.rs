@@ -7,5 +7,6 @@ pub mod pallete;
 pub mod play;
 pub mod repl;
 pub mod rewrite;
+pub mod sample;
 pub mod sequence;
 pub mod wavexport;

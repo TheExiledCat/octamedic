@@ -2345,6 +2345,7 @@ dependencies = [
  "hound",
  "inquire",
  "octamed",
+ "octamedic_core",
  "progress_bar",
 ]
 

@@ -15,6 +15,7 @@ use crate::commands::{
     pallete::PalleteCommand,
     play::PlayCommand,
     rewrite::RewriteCommand,
+    sample::SampleCommand,
     sequence::ShowSequenceCommand,
     wavexport::WavExportCommand,
 };
@@ -72,14 +73,16 @@ pub enum MMDCommandKind {
     InspectBlocks(InspectBlocksCommand),
     #[command(name = "instruments")]
     Instruments(InstrumentsCommand),
-    #[command(name = "play")]
-    Play(PlayCommand),
+    #[command(name = "sample")]
+    Sample(SampleCommand),
     #[command(name = "sequence")]
     Sequence(ShowSequenceCommand),
     #[command(name = "rewrite")]
     Rewrite(RewriteCommand),
     #[command(name = "pallete")]
     Pallete(PalleteCommand),
+    #[command(name = "play")]
+    Play(PlayCommand),
 }
 
 impl MMDCommandKind {
@@ -93,10 +96,11 @@ impl MMDCommandKind {
             MMDCommandKind::InspectBlock(c) => c.run(mmd),
             MMDCommandKind::InspectBlocks(c) => c.run(mmd),
             MMDCommandKind::Instruments(c) => c.run(mmd),
-            MMDCommandKind::Play(c) => c.run(mmd),
+            MMDCommandKind::Sample(c) => c.run(mmd),
             MMDCommandKind::Sequence(c) => c.run(mmd),
             MMDCommandKind::Rewrite(c) => c.run(mmd),
             MMDCommandKind::Pallete(c) => c.run(mmd),
+            MMDCommandKind::Play(c) => c.run(mmd),
         }
     }
 }
