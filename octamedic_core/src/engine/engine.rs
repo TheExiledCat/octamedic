@@ -7,18 +7,20 @@ pub struct OctamedicEngine {
 }
 
 impl OctamedicEngine {
-    pub fn new() -> Self {
+    pub fn new(project: OctamedicProject) -> Self {
 
         return Self {
             transport: OctamedicTransport::new(),
-            project: OctamedicProject::new(),
+            project,
             samples_until_tick: 0,
         };
     }
 
-    pub fn process(&mut self, sample_buffer: &mut [u8], output_sample_rate: u32) {
+    /// Fills a sample buffer with samples from the loaded song. Returns true if the end of the song was reached while filling the buffer.
 
-        let mut pos = 0;
+    pub fn process(&mut self, sample_buffer: &mut [u8], output_sample_rate: u32) -> bool {
+
+        let pos = 0;
 
         while pos < sample_buffer.len() {
 
@@ -32,5 +34,7 @@ impl OctamedicEngine {
                 self.transport.process(&self.project);
             }
         }
+
+        return false;
     }
 }
