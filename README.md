@@ -1,4 +1,4 @@
-# OctaMEDIC Pro V4
+# OctaMEDIC Pro V4 (WIP V0.01 IN DEVELOPMENT)
 
 A faithful clone of OctaMED Professional v4
 
