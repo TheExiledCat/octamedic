@@ -29,6 +29,12 @@ A faithful clone of OctaMED Professional v4
 - Works in both 1080P HD and the original 640x201 (stretched or windowed) resolutions
 - support for original amiga 32 color support and full 32 bit color capabilities
 
+## Contributing
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) — setup, architecture overview, code style, and PR process
+- [TODO.md](TODO.md) — ordered developer roadmap; start here if you want to help
+- [Bug report](.github/ISSUE_TEMPLATE/bug_report.md) / [Feature request](.github/ISSUE_TEMPLATE/feature_request.md) — issue templates
+
 ## Documentation
 
 Theres a full manual shipped with the product (also in the /docs folder of the repo)
