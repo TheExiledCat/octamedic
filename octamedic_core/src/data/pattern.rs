@@ -58,7 +58,7 @@ impl From<&OctamedMMD0Block> for OctamedicPattern {
                             note: OctamedicNote::from_octamed(t.note_number),
                             instrument_id: t.instrument_number.remap(|i| InstrumentId(i)),
                             command_id: t.command_number.remap(|c| CommandId(c)),
-                            command_value: t.command_number,
+                            command_value: t.command_value,
                         })
                         .collect(),
                 })
@@ -90,7 +90,7 @@ impl From<&OctamedMMD1Block> for OctamedicPattern {
                             note: OctamedicNote::from_octamed(t.note_number),
                             instrument_id: t.instrument_number.remap(|i| InstrumentId(i)),
                             command_id: t.command_number.remap(|c| CommandId(c)),
-                            command_value: t.command_number,
+                            command_value: t.command_value,
                         })
                         .collect(),
                 })
