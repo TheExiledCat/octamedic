@@ -16,8 +16,7 @@ pub struct OctamedicTransport {
 
 impl OctamedicTransport {
     pub fn new() -> Self {
-
-        return Self {
+        Self {
             state: OctamedicTransportState::Playing,
             paused: true,
             row: 0,
@@ -25,63 +24,64 @@ impl OctamedicTransport {
             sequence_position: 0,
             pattern_id: PatternId(0),
             song_id: SongId(0),
-        };
+        }
     }
 
     pub fn play(&mut self) {
-
         self.paused = false;
-
         self.state = OctamedicTransportState::Playing;
     }
 
     pub fn play_loop(&mut self) {
-
         self.paused = false;
-
         self.state = OctamedicTransportState::Looping;
     }
 
     pub fn pause(&mut self) {
-
         self.paused = true;
     }
 
-    pub fn process(&mut self, project: &OctamedicProject) {
+    pub fn is_paused(&self) -> bool {
+        self.paused
+    }
 
-        let tempo = project.get_song(self.song_id).unwrap().tempo;
-
-        if self.tick == 0 {
-
-            //todo collect and trigger row events
-            return;
+    /// Advance the sequencer by one tick. Returns `true` if playback has ended.
+    pub fn process(&mut self, project: &OctamedicProject) -> bool {
+        if self.paused {
+            return true;
         }
 
-        if self.tick > 0 {
-            // todo apply effect ticks
+        if self.tick == 0 {
+            // TODO: dispatch note-on events for the current row to the voice allocator
+        } else {
+            // TODO: apply per-tick effect updates (slides, vibrato, etc.)
         }
 
         self.tick += 1;
 
-        let ticks_per_line = tempo.ticks_per_line.0;
+        let ticks_per_line = project
+            .get_song(self.song_id)
+            .unwrap()
+            .tempo
+            .ticks_per_line
+            .0 as usize;
 
-        if self.tick >= ticks_per_line as usize {
-
+        if self.tick >= ticks_per_line {
+            self.tick = 0;
             self.next_row(project);
         }
+
+        self.paused
     }
 
     fn next_row(&mut self, project: &OctamedicProject) {
-
         self.row += 1;
 
         let pattern = self.get_pattern(project, self.song_id, self.pattern_id);
 
         if self.row >= pattern.line_count.0 as usize {
-
             match self.state {
                 OctamedicTransportState::Playing => {
-
                     self.sequence_position += 1;
 
                     let next_pattern: Option<PatternId> = project
@@ -93,20 +93,15 @@ impl OctamedicTransport {
 
                     match next_pattern {
                         Some(p) => {
-
                             self.pattern_id = p;
-
                             self.row = 0;
-
                             self.tick = 0;
                         }
                         None => self.pause(),
                     }
                 }
                 OctamedicTransportState::Looping => {
-
                     self.row = 0;
-
                     self.tick = 0;
                 }
             }
@@ -119,12 +114,9 @@ impl OctamedicTransport {
         song: SongId,
         pattern: PatternId,
     ) -> &'p OctamedicPattern {
-
         let song = project.get_song(song).unwrap();
-
         let pattern = song.get_pattern(&pattern).unwrap();
-
-        return pattern;
+        pattern
     }
 }
 

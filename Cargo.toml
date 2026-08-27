@@ -1,2 +1,14 @@
 [workspace]
-members = ["octamed", "octamed_cli","octamedic_core", "octamedic_gui"]
+members = ["octamed", "octamed_cli", "octamedic_core", "octamedic_gui"]
+resolver = "3"
+
+[profile.dev]
+debug = "line-tables-only"
+opt-level = "z"
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.debugging]
+inherits = "dev"
+debug = true
