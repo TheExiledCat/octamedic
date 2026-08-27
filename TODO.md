@@ -2,7 +2,7 @@
 
 > **Current milestone**: get existing MMD modules playing in the CLI with no UI and no effect commands.
 
-Everything below is ordered by dependency — later items depend on earlier ones.
+Everything below is ordered by dependency — later items depend on earlier ones. Each section describes *what* needs to exist and *why*, with enough context to design your own implementation. How you get there is up to you.
 
 ---
 
@@ -10,112 +10,110 @@ Everything below is ordered by dependency — later items depend on earlier ones
 
 ### 1. Voice allocator (`octamedic_core/src/engine/`)
 
-Create a `Voice` struct and a `VoiceAllocator` that maps each pattern track to a playback voice.
+OctaMED is a tracker — it plays samples at varying pitches across multiple simultaneous channels. A "voice" is one of those channels: it holds everything needed to know where we are in a sample, how fast to read it, and at what volume to output it.
 
-```rust
-struct Voice {
-    sample_data: Arc<Vec<i8>>,  // raw signed 8-bit sample from the MMD file
-    position: f64,              // fractional read position into sample_data
-    playback_rate: f64,         // samples advanced per output sample
-    volume: f32,                // 0.0–1.0
-    active: bool,
-    looping: bool,
-    loop_start: usize,
-    loop_end: usize,
+You need some kind of per-track voice state, and a way to manage it. Think about: what information does a playing note need to carry? What happens when a new note fires on a track that's already playing? What does "silence" look like in voice state?
+
+OctaMED supports up to 16 tracks per pattern. Start with a fixed-size allocation — dynamic allocation can come later.
+
+```
+// rough shape — implementation is your call
+voice {
+    which sample it's playing
+    where it is in that sample (fractional, so pitch shifting works)
+    how fast to advance through the sample per output sample
+    current volume
+    whether it is active
+    loop region (if any)
 }
 ```
-
-`VoiceAllocator` should hold one `Voice` per track (OctaMED supports up to 16 tracks).
 
 ### 2. Sample data in the project (`octamedic_core/src/data/instrument.rs`)
 
-`OctamedicInstrument` is currently an empty struct. Populate it with:
+`OctamedicInstrument` is currently an empty stub. Before voices can play anything, the project needs to actually carry sample data into the engine.
 
-- The raw signed 8-bit sample bytes (copied from `OctamedMMD0SampleTable` during `from_module()`).
-- Loop points (`repeat`, `repeat_length` from `OctamedMMD0Sample`).
-- Native sample rate. OctaMED samples are recorded at an implicit rate derived from the Amiga PAL clock; for a note at middle C the period is 428 and the effective rate is ~8287 Hz. Use `AmigaPalPeriod` + `Frequency` utilities already in `octamed/src/utility/`.
+Look at `OctamedMMD0SampleTable` in `octamed` — that's where the raw bytes live after parsing. You need to carry them through `OctamedicProject::from_module()` and into each `OctamedicInstrument` so the engine can reach them at runtime.
 
-Wire `OctamedicProject::from_module()` to copy sample data from `module.sample_table.samples` into each `OctamedicInstrument`.
+Beyond raw bytes, think about what else an instrument needs to hand a voice when it triggers: loop region, base pitch. OctaMED's loop convention is in `OctamedMMD0Sample` — look at `repeat` and `repeat_length`, and check how OctaMED signals "no loop" vs a real loop point.
+
+The base pitch question is subtle: OctaMED samples don't carry an explicit sample rate. The rate is implied by the Amiga PAL clock and the period value at which the sample was recorded. The utilities in `octamed/src/utility/` (`period.rs`, `amiga.rs`, `frequency.rs`) have everything you need to reason about this.
 
 ### 3. Row dispatch (`octamedic_core/src/engine/transport.rs`)
 
-The `// TODO: dispatch note-on events` comment in `transport.process()` (tick == 0 branch) needs an actual implementation. At minimum:
+Right now, `transport.process()` has a `// TODO` comment where note-on events should fire. This is where the sequencer hands work off to the audio side: on tick 0 of each row, read the row's track data and decide which voices need to start (or restart, or stop).
 
-- Read the current row from `project → song → pattern → lines[self.row]`.
-- For each track in that row, if `note != 0` and `instrument_id != 0`, send a note-on event to the voice allocator: set `Voice.sample_data`, `Voice.position = 0`, `Voice.playback_rate` (computed from note number + instrument), `Voice.active = true`.
+The interesting design question here is the boundary between transport and engine. The transport knows *what* notes are in the row; the engine owns the voices. How should information flow between them? Consider whether the transport should reach into the engine directly, or produce an intermediate event type, or something else. There is no single right answer — think about what keeps each module's responsibilities clean.
 
-The cleanest approach is to have `OctamedicTransport::process()` return a `Vec<NoteEvent>` (or write into a caller-supplied slice) so the engine — not the transport — owns the voices.
+A note event at minimum needs: which track triggered it, which instrument, which note number. The engine uses that to find the sample data and compute the playback rate.
 
 ### 4. Pitch calculation
 
-To compute `playback_rate` for a given note number:
+When a voice triggers on a note, you need to know how fast to advance through the sample data to produce the right pitch at the output sample rate.
+
+The core idea: if you have a sample recorded at rate `R_sample` and you play it back at rate `R_output`, reading one sample per output frame gives you pitch at `R_sample`. To shift the pitch up by a factor of 2 (one octave), you advance two sample frames per output frame. So:
 
 ```
-target_frequency = frequency of the note (use octamed::utility::note + frequency)
-playback_rate = target_frequency.as_hertz() / native_sample_rate
+advance_per_output_frame = target_frequency / native_sample_rate
 ```
 
-`native_sample_rate` for a sample played at note number N can be derived from `AmigaPalPeriod` (see `octamed/src/utility/period.rs` and `amiga.rs`).
+The `note` and `frequency` utilities in `octamed/src/utility/` handle the conversion from OctaMED note number to Hz. Work out the native sample rate from the Amiga PAL clock and the base period (`period.rs`, `amiga.rs`).
+
+Linear interpolation between sample frames is enough for now — it avoids clicks when the advance is fractional.
 
 ### 5. Mixing (`octamedic_core/src/engine/engine.rs`)
 
-Replace the `fill(128)` stub in `OctamedicEngine::process()` with a real mix:
+`OctamedicEngine::process()` currently fills every output byte with 128 (silence). Replace that with a real mix: for each output sample, sum the contribution of every active voice.
 
-```rust
-for (out, voice) in sample_buffer[pos..pos + chunk].iter_mut().zip(voices) {
-    if !voice.active { continue; }
-    let s = voice.read_sample();  // linear-interpolated read at voice.position
-    *out = (128.0 + s * voice.volume * 127.0).clamp(0.0, 255.0) as u8;
-    voice.advance(1);             // advance position by playback_rate
-}
-```
+Think about: how do you handle multiple voices contributing to one output sample? What happens when the sum clips? The output format is unsigned 8-bit PCM with 128 as silence — how does that map to the signed range your voice math will produce?
 
-Sum multiple voices with saturation clamping. Start with mono; stereo panning can come later.
+Start with mono. Stereo panning is a later concern.
 
 ### 6. Loop handling
 
-After advancing `voice.position` past `loop_end`, wrap back to `loop_start` if `looping == true`. Use the `repeat` and `repeat_length` fields from `OctamedMMD0Sample` (repeat_length == 1 means no loop in OctaMED convention).
+OctaMED samples can loop. Once a voice reaches the end of its loop region, it should wrap back to the loop start and continue rather than stopping. Check the OctaMED convention for how `repeat` and `repeat_length` encode the loop region (and how to tell whether a sample loops at all).
 
 ### 7. End-to-end test
 
-Run `cargo run -p octamed_cli -- example_meds/example.mmd0` and issue the `play` command. You should hear the module play through to the end and the REPL should return control.
+`cargo run -p octamed_cli -- example_meds/example.mmd0`, then `play`. You should hear something. Once that works, try `example.mmd1`.
 
 ---
 
 ## Milestone 2 — Essential effect commands
 
-Once basic playback works, add command processing in the `tick > 0` branch of `transport.process()`:
+`OctamedicPatternTrack` already carries `command_id` and `command_value` for every note in every row — they're just not acted on yet. The tick > 0 branch of `transport.process()` is where per-tick effect updates should happen.
 
-| Command | Code | Description |
+Effects worth implementing first, roughly in order of how often they appear in real modules:
+
+| Command | Code | What it does |
 |---|---|---|
-| Set volume | `C xx` | Set voice volume to `xx` |
-| Pattern break | `D xx` | Jump to next pattern at row `xx` |
-| Position jump | `B xx` | Jump to sequence position `xx` |
-| Tone portamento | `3 xx` | Slide pitch toward target note |
-| Volume slide | `A xx` | Slide volume up/down |
-| Vibrato | `4 xx` | Periodic pitch modulation |
+| Set volume | `C` | Immediately set the track's playback volume |
+| Pattern break | `D` | End the current pattern early, jump to a specific row in the next one |
+| Position jump | `B` | Jump to a different position in the sequence list |
+| Tone portamento | `3` | Slide the pitch gradually toward the target note over multiple ticks |
+| Volume slide | `A` | Ramp volume up or down across the ticks of a row |
+| Vibrato | `4` | Oscillate pitch periodically |
 
-`CommandId` and `command_value` are already stored on each `OctamedicPatternTrack`.
+The OctaMED documentation (or the original source) describes each command's parameter encoding. The community reference at [modland.com](https://www.modland.com) and MED-specific trackers documentation are useful here.
 
 ---
 
 ## Milestone 3 — Write-back
 
-`OctamedicProject::to_module()` currently `todo!()`s. Implement it so edited projects can be saved back to MMD0/MMD1. This is needed before any editing workflow makes sense.
+`OctamedicProject::to_module()` currently panics with `todo!()`. Implementing it would let edited projects be saved back to MMD0 or MMD1 format — a prerequisite for any real editing workflow. Look at `octamed/src/mmd/writer.rs` and `conversion.rs` to understand the existing serialization infrastructure.
 
 ---
 
 ## Milestone 4 — GUI
 
-Only start this after Milestone 1 is working. The `octamedic_gui` crate has a skeleton widget framework but no functional integration with `octamedic_core`.
+Hold off on this until Milestone 1 produces audible output. The `octamedic_gui` crate has a widget skeleton (ggez + taffy) but no connection to `octamedic_core`. That integration is the first thing to tackle when the time comes.
 
 ---
 
 ## Known bugs (fix anytime)
 
-- ~~`command_value` in `OctamedicPatternTrack` was copied from `command_number` instead of `command_value`~~ — **fixed**.
-- `OctamedicTransport::process()` early-returned before incrementing `tick`, causing the sequencer to never advance past row 0 — **fixed**.
-- `OctamedicEngine::process()` had an infinite loop because `pos` was never mutated — **fixed**.
-- `OctamedTempo::get_tick_rate` is duplicated verbatim in `OctamedicTempo`. The copy in `octamedic_core/src/data/tempo.rs` should delegate to the one in `octamed` to avoid drift.
-- `OctamedMMD::get_type()` panics on unknown IDs. Should return a `Result` instead.
-- Several `.unwrap()` calls in `octamed/src/mmd/parser.rs` will panic on malformed files. Replace with proper error propagation.
+- ~~`command_value` in `OctamedicPatternTrack` was being copied from `command_number`~~ — **fixed**
+- ~~`OctamedicTransport::process()` returned early before incrementing `tick`~~ — **fixed**
+- ~~`OctamedicEngine::process()` had an infinite loop because `pos` was never mutated~~ — **fixed**
+- `OctamedTempo::get_tick_rate` is duplicated verbatim in `OctamedicTempo` — the copy in `octamedic_core/src/data/tempo.rs` should delegate to avoid the two drifting out of sync
+- `OctamedMMD::get_type()` panics on unknown format IDs — should return a `Result`
+- Several `.unwrap()` calls in `octamed/src/mmd/parser.rs` will panic on malformed files — needs proper error propagation
