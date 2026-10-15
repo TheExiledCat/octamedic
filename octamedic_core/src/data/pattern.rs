@@ -5,7 +5,10 @@ use octamed::{
 
 use crate::data::{command::CommandId, instrument::InstrumentId, note::OctamedicNote};
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+/// Most tracks a pattern can have.
+pub const MAX_TRACKS: usize = 64;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 
 pub struct PatternId(pub u8);
 
@@ -15,6 +18,8 @@ impl From<UByte> for PatternId {
         return Self(value.0 as u8);
     }
 }
+
+#[derive(Clone)]
 
 pub struct OctamedicPattern {
     pub track_count: UWord,
