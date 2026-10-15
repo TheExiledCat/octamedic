@@ -72,15 +72,14 @@ impl OctamedicTempo {
             );
         }
 
-        if self.primary_tempo.0 <= 10 {
+        let mut tempo = self.primary_tempo.0.max(1);
 
-            todo!();
+        if tempo <= 10 {
 
-            self.primary_tempo =
-                UWord(BPM_COMPATIBILITY_VALUES[(self.primary_tempo.0 - 1) as usize] as u16);
+            tempo = BPM_COMPATIBILITY_VALUES[(tempo - 1) as usize] as u16;
         }
 
-        return Frequency::hertz(1.0 / ((0.474326 / (self.primary_tempo.0 as f32)) * 1.3968255));
+        return Frequency::hertz(1.0 / ((0.474326 / (tempo as f32)) * 1.3968255));
     }
 
     pub fn set_tempo(&mut self, value: UWord) {

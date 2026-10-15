@@ -31,13 +31,13 @@ impl OctamedicSong {
 
         return Self {
             name: name.into(),
-            instruments: [None; 63],
+            instruments: std::array::from_fn(|_| None),
             block_count: UWord(1),
             song_length: UWord(1),
             sequence: vec![UByte(0)],
             tempo: OctamedicTempo::new(),
             global_transpose: Byte(0),
-            track_volumes: [OctamedicVolume::new(0); 16],
+            track_volumes: [OctamedicVolume::new(64); 16],
             master_volume: OctamedicVolume::new(64),
             patterns: vec![OctamedicPattern::new()],
         };

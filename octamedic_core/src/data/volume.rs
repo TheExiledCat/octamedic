@@ -1,6 +1,6 @@
 use octamed::utility::bytes::UByte;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 
 pub struct OctamedicVolume {
     value: UByte,
@@ -16,6 +16,11 @@ impl OctamedicVolume {
         s.set(value);
 
         return s;
+    }
+
+    pub fn get(&self) -> u8 {
+
+        return self.value.0;
     }
 
     pub fn set(&mut self, value: u8) {
