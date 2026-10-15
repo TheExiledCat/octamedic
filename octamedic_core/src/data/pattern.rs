@@ -5,7 +5,7 @@ use octamed::{
 
 use crate::data::{command::CommandId, instrument::InstrumentId, note::OctamedicNote};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 
 pub struct PatternId(pub u8);
 
