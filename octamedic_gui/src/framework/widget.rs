@@ -4,7 +4,7 @@ use ggez::{
     Context,
     graphics::{Canvas, Rect},
 };
-use taffy::{AvailableSpace, NodeId, Size};
+use taffy::{AvailableSpace, NodeId, Size, Style};
 
 use crate::framework::ui::{Ui, UiEvent};
 
@@ -36,6 +36,11 @@ pub struct DrawState {
 }
 
 pub trait Widget: AsAny {
+    fn style(&self) -> Style {
+
+        return Style::default();
+    }
+
     fn mount(&mut self, _ui: &mut Ui, _node: NodeId) {}
 
     fn draw(&self, canvas: &mut Canvas, state: &DrawState);

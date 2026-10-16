@@ -8,7 +8,7 @@ use ggez::{
     graphics::{Canvas, Color, DrawParam, FontData, Image, Rect, Sampler},
     input::mouse,
 };
-use taffy::{FlexDirection, Size, Style, prelude::percent};
+use taffy::{FlexDirection, Size, prelude::percent};
 
 use crate::{
     app::{
@@ -63,28 +63,25 @@ impl App {
 
         mouse::set_cursor_grabbed(ctx, true)?;
 
-        let mut ui = Ui::new(
-            Style {
-                flex_direction: FlexDirection::Column,
-                size: Size {
-                    width: percent(1.0_f32),
-                    height: percent(1.0_f32),
-                },
-                gap: Size::zero(),
-                ..Panel::default_style()
-            },
-            Panel::new(),
-        );
+        let mut ui = Ui::new_styled(Panel::new(), |style| {
+
+            style.flex_direction = FlexDirection::Column;
+
+            style.size = Size {
+                width: percent(1.0_f32),
+                height: percent(1.0_f32),
+            };
+        });
 
         let root = ui.root();
 
-        ui.add(root, TitleBar::style(), TitleBar::new());
+        ui.add(root, TitleBar::new());
 
         header::build(&mut ui, root);
 
         status_bar::build(&mut ui, root);
 
-        ui.add(root, BlockEditor::style(), BlockEditor::new());
+        ui.add(root, BlockEditor::new());
 
         footer::build(&mut ui, root);
 

@@ -2,7 +2,7 @@ use ggez::{
     Context,
     graphics::{Canvas, Color, DrawParam, Text},
 };
-use taffy::{AvailableSpace, Size, Style};
+use taffy::{AvailableSpace, Size};
 
 use crate::framework::widget::{DrawState, Widget};
 
@@ -49,11 +49,6 @@ impl Label {
     pub fn set_text(&mut self, text: impl Into<String>) {
 
         self.text = text.into();
-    }
-
-    pub fn default_style() -> Style {
-
-        return Style::default();
     }
 }
 

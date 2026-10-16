@@ -12,33 +12,29 @@ pub fn build(ui: &mut Ui, parent: NodeId) -> NodeId {
 
     let fill = Color::from_rgb(211, 211, 211);
 
-    let header = ui.add(
-        parent,
-        Style {
-            size: Size {
-                width: percent(1.0_f32),
-                height: length(130.0_f32),
-            },
-            ..Panel::default_style()
-        },
-        Panel::new().with_border(border, 2.0),
-    );
+    let header = ui.add_styled(parent, Panel::new().with_border(border, 2.0), |style| {
 
-    let side = |width: f32| Style {
-        size: Size {
-            width: percent(width),
-            height: auto(),
-        },
-        ..Panel::default_style()
+        style.size.height = length(130.0_f32);
+    });
+
+    let side = |width: f32| {
+
+        move |style: &mut Style| {
+
+            style.size = Size {
+                width: percent(width),
+                height: auto(),
+            };
+        }
     };
 
-    ui.add(
+    ui.add_styled(
         header,
-        side(0.7),
         Panel::new().with_background(fill).with_border(border, 2.0),
+        side(0.7),
     );
 
-    ui.add(header, side(0.3), Panel::new().with_background(fill));
+    ui.add_styled(header, Panel::new().with_background(fill), side(0.3));
 
     return header;
 }

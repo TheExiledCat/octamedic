@@ -22,6 +22,7 @@ Only `draw` is required. Every other method has a default that does nothing.
 
 | Method | Called when | Use it for |
 |---|---|---|
+| `style(&self) -> Style` | once, by `ui.add`, to get the node's taffy style | the widget's default layout. The default is `Style::default()` |
 | `mount(&mut self, ui, node)` | once, by `ui.add`, before the widget goes into the tree | adding child widgets and keeping their ids |
 | `update(&mut self, ui, node)` | every frame, before layout | timers, syncing children to state |
 | `on_event(&mut self, ui, node, event) -> bool` | an event on this widget or a descendant | reacting to clicks. Return `true` to stop bubbling |
@@ -37,8 +38,8 @@ Only `draw` is required. Every other method has a default that does nothing.
 ### Setting up and running a `Ui`
 
 ```rust
-let mut ui = Ui::new(root_style, Panel::new());
-ui.add(ui.root(), TitleBar::style(), TitleBar::new());
+let mut ui = Ui::new_styled(Panel::new(), |style| style.flex_direction = FlexDirection::Column);
+ui.add(ui.root(), TitleBar::new());
 
 // every frame, in EventHandler::update:
 ui.update();
@@ -55,16 +56,36 @@ Always drain `take_unhandled_events()`, even if you ignore the events, so they d
 ### Adding widgets
 
 ```rust
-let panel = ui.add(parent, Panel::default_style(), Panel::new().with_background(Color::BLACK));
-let title = ui.add(panel, Label::default_style(), Label::new("OctaMEDIC", 24.0));
-let play = ui.add(panel, Button::default_style(), Button::new("Play", 18.0));
+let panel = ui.add(parent, Panel::new().with_background(Color::BLACK));
+let title = ui.add(panel, Label::new("OctaMEDIC", 24.0));
+let play = ui.add(panel, Button::new("Play", 18.0));
 ```
 
-The style is plain taffy: spread a default and override what you need.
+`ui.add` lays a widget out with its own `style()`. To change that for one call site, use `add_styled`. It passes the widget's style to a closure, so you only write what's different:
 
 ```rust
-Style { margin: Rect { left: auto(), ..Rect::zero() }, ..Label::default_style() }
+ui.add_styled(bar, Label::new("By Amano Rosuko", 18.0), |style| {
+    style.margin.left = auto();
+});
 ```
+
+To replace the style entirely, assign it: `|style| *style = Style { .. }`. The root works the same way, through `Ui::new` and `Ui::new_styled`.
+
+A widget's style is only read when it's added. After that the node's style lives in the tree, and `ui.set_style(node, style)` changes it. A `Panel` with a border includes that border in its style, so its children are laid out inside the border.
+
+### Panel borders
+
+Choose sides with `Borders` flags, as in ratatui. Each call only sets the sides it names, so chaining gives sides different colours and thicknesses:
+
+```rust
+Panel::new().with_border(color, 2.0)                                // all four sides
+Panel::new().with_borders(Borders::LEFT | Borders::RIGHT, pink, 1.0)
+Panel::new()
+    .with_borders(Borders::ALL, Color::BLACK, 1.0)
+    .with_borders(Borders::TOP, Color::WHITE, 2.0)                  // top overrides ALL
+```
+
+The block editor gives every column except the last a `Borders::RIGHT` border, so there are lines between columns but none on the outside.
 
 Children are drawn in the order they're added, so the last child is on top and wins hit tests.
 
@@ -81,7 +102,20 @@ Button::set_text(&mut ui, play, "Stop");    // reaches into the button's label
 
 ### Reacting to a click
 
-Handle the click in the nearest widget that owns the button:
+The simplest option is to give the button its own handler. It runs when that button is clicked and returns whether it handled the click. Return `true` to stop there, or `false` to let the click bubble on to the button's ancestors as well:
+
+```rust
+let timer = Button::new("00:00", 24.0).on_click(|ui, node, _mouse_button| {
+    if let Some(bar) = ui.ancestor_mut::<TitleBar>(node) {
+        bar.restart_timer();
+    }
+    true
+});
+```
+
+The handler can't capture the widget that owns the button, because that widget owns the handler too. Reach it through `ui.ancestor_mut::<W>(node)` instead. This works because only the button is detached while its handler runs; its ancestors are still in the tree. `ui.find_ancestor::<W>(node)` gives just the id.
+
+A button without a handler lets its click bubble, so you can also handle it in the nearest widget that owns the button:
 
 ```rust
 fn on_event(&mut self, ui: &mut Ui, _node: NodeId, event: &UiEvent) -> bool {
@@ -113,8 +147,8 @@ pub struct Counter {
 
 impl Widget for Counter {
     fn mount(&mut self, ui: &mut Ui, node: NodeId) {
-        self.label = Some(ui.add(node, Label::default_style(), Label::new("0", 18.0)));
-        self.button = Some(ui.add(node, Button::default_style(), Button::new("+1", 18.0)));
+        self.label = Some(ui.add(node, Label::new("0", 18.0)));
+        self.button = Some(ui.add(node, Button::new("+1", 18.0)));
     }
 
     fn on_event(&mut self, ui: &mut Ui, _node: NodeId, event: &UiEvent) -> bool {
@@ -130,7 +164,7 @@ impl Widget for Counter {
     fn draw(&self, _canvas: &mut Canvas, _state: &DrawState) {}
 }
 
-ui.add(parent, Panel::default_style(), Counter { count: 0, label: None, button: None });
+ui.add(parent, Counter { count: 0, label: None, button: None });
 ```
 
 `Button` itself is built this way: a background plus a `Label` child.
