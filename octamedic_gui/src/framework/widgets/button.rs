@@ -5,15 +5,19 @@ use taffy::{
 };
 
 use crate::framework::{
-    ui::Ui,
+    input::MouseButton,
+    ui::{Ui, UiEvent},
     widget::{DrawState, Widget},
     widgets::{label::Label, panel::fill_rect},
 };
+
+type ClickHandler = Box<dyn FnMut(&mut Ui, NodeId, MouseButton) -> bool>;
 
 pub struct Button {
     initial_text: String,
     font_size: f32,
     label: Option<NodeId>,
+    on_click: Option<ClickHandler>,
     background_colors: ButtonColors,
     text_colors: ButtonColors,
 }
@@ -25,9 +29,22 @@ impl Button {
             initial_text: text.into(),
             font_size,
             label: None,
+            on_click: None,
             background_colors: ButtonColors::background(),
             text_colors: ButtonColors::text(),
         };
+    }
+
+    // the handler returns whether it handled the click; if not, or without a handler, the click
+    // bubbles on to the button's ancestors
+    pub fn on_click(
+        mut self,
+        handler: impl FnMut(&mut Ui, NodeId, MouseButton) -> bool + 'static,
+    ) -> Self {
+
+        self.on_click = Some(Box::new(handler));
+
+        return self;
     }
 
     pub fn label_node(&self) -> Option<NodeId> {
@@ -47,8 +64,10 @@ impl Button {
             label.set_text(text);
         }
     }
+}
 
-    pub fn default_style() -> Style {
+impl Widget for Button {
+    fn style(&self) -> Style {
 
         return Style {
             size: Size {
@@ -66,15 +85,13 @@ impl Button {
             ..Default::default()
         };
     }
-}
 
-impl Widget for Button {
     fn mount(&mut self, ui: &mut Ui, node: NodeId) {
 
         let label = Label::new(std::mem::take(&mut self.initial_text), self.font_size)
             .with_color(self.text_colors.default_color);
 
-        self.label = Some(ui.add(node, Label::default_style(), label));
+        self.label = Some(ui.add(node, label));
     }
 
     fn update(&mut self, ui: &mut Ui, node: NodeId) {
@@ -106,6 +123,26 @@ impl Widget for Button {
             .for_state(state.hovered, state.pressed);
 
         fill_rect(canvas, state.rect, background);
+    }
+
+    fn on_event(&mut self, ui: &mut Ui, node: NodeId, event: &UiEvent) -> bool {
+
+        let UiEvent::Clicked {
+            node: clicked,
+            button,
+        } = *event;
+
+        if clicked != node {
+
+            return false;
+        }
+
+        let Some(handler) = &mut self.on_click else {
+
+            return false;
+        };
+
+        return handler(ui, node, button);
     }
 
     fn is_interactive(&self) -> bool {

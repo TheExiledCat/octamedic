@@ -7,8 +7,7 @@ use taffy::{
 };
 
 use crate::framework::{
-    input::MouseButton,
-    ui::{Ui, UiEvent},
+    ui::Ui,
     widget::{DrawState, Widget},
     widgets::{button::Button, label::Label, panel::Panel},
 };
@@ -31,7 +30,16 @@ impl TitleBar {
         };
     }
 
-    pub fn style() -> Style {
+    pub fn restart_timer(&mut self) {
+
+        self.started = Instant::now();
+
+        self.displayed_seconds = None;
+    }
+}
+
+impl Widget for TitleBar {
+    fn style(&self) -> Style {
 
         return Style {
             size: Size {
@@ -46,35 +54,32 @@ impl TitleBar {
                 top: length(2.0_f32),
                 bottom: length(2.0_f32),
             },
-            ..Panel::default_style()
+            ..self.background.style()
         };
     }
-}
 
-impl Widget for TitleBar {
     fn mount(&mut self, ui: &mut Ui, bar: NodeId) {
 
-        ui.add(bar, Label::default_style(), Label::new("TIMER", 24.0));
+        ui.add(bar, Label::new("TIMER", 24.0));
 
-        self.timer = Some(ui.add(bar, Button::default_style(), Button::new("00:00", 24.0)));
+        let timer = Button::new("00:00", 24.0).on_click(|ui, node, _| {
 
-        ui.add(
-            bar,
-            Label::default_style(),
-            Label::new("+-OctaMEDIC Professional (v4.00)", 28.0),
-        );
+            if let Some(bar) = ui.ancestor_mut::<TitleBar>(node) {
 
-        ui.add(
-            bar,
-            Style {
-                margin: Rect {
-                    left: auto(),
-                    ..Rect::zero()
-                },
-                ..Label::default_style()
-            },
-            Label::new("By Amano Rosuko", 18.0),
-        );
+                bar.restart_timer();
+            }
+
+            true
+        });
+
+        self.timer = Some(ui.add(bar, timer));
+
+        ui.add(bar, Label::new("+-OctaMEDIC Professional (v4.00)", 28.0));
+
+        ui.add_styled(bar, Label::new("By Amano Rosuko", 18.0), |style| {
+
+            style.margin.left = auto();
+        });
     }
 
     fn draw(&self, canvas: &mut Canvas, state: &DrawState) {
@@ -101,29 +106,5 @@ impl Widget for TitleBar {
                 format!("{:02}:{:02}", seconds / 60, seconds % 60),
             );
         }
-    }
-
-    fn on_event(&mut self, _ui: &mut Ui, _node: NodeId, event: &UiEvent) -> bool {
-
-        let Some(timer) = self.timer else {
-
-            return false;
-        };
-
-        let reset = UiEvent::Clicked {
-            node: timer,
-            button: MouseButton::Left,
-        };
-
-        if *event != reset {
-
-            return false;
-        }
-
-        self.started = Instant::now();
-
-        self.displayed_seconds = None;
-
-        return true;
     }
 }

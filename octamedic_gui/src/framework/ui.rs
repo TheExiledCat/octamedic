@@ -31,7 +31,16 @@ impl Widget for Placeholder {
 }
 
 impl Ui {
-    pub fn new(style: Style, root: impl Widget) -> Self {
+    pub fn new(root: impl Widget) -> Self {
+
+        return Self::new_styled(root, |_| {});
+    }
+
+    pub fn new_styled(root: impl Widget, adjust_style: impl FnOnce(&mut Style)) -> Self {
+
+        let mut style = root.style();
+
+        adjust_style(&mut style);
 
         let mut tree = TaffyTree::new();
 
@@ -58,7 +67,21 @@ impl Ui {
         return self.root;
     }
 
-    pub fn add(&mut self, parent: NodeId, style: Style, widget: impl Widget) -> NodeId {
+    pub fn add(&mut self, parent: NodeId, widget: impl Widget) -> NodeId {
+
+        return self.add_styled(parent, widget, |_| {});
+    }
+
+    pub fn add_styled(
+        &mut self,
+        parent: NodeId,
+        widget: impl Widget,
+        adjust_style: impl FnOnce(&mut Style),
+    ) -> NodeId {
+
+        let mut style = widget.style();
+
+        adjust_style(&mut style);
 
         let node = self
             .tree
@@ -167,6 +190,30 @@ impl Ui {
             .as_mut()
             .as_any_mut()
             .downcast_mut();
+    }
+
+    pub fn find_ancestor<W: Widget>(&self, node: NodeId) -> Option<NodeId> {
+
+        let mut current = self.tree.parent(node);
+
+        while let Some(ancestor) = current {
+
+            if self.get::<W>(ancestor).is_some() {
+
+                return Some(ancestor);
+            }
+
+            current = self.tree.parent(ancestor);
+        }
+
+        return None;
+    }
+
+    pub fn ancestor_mut<W: Widget>(&mut self, node: NodeId) -> Option<&mut W> {
+
+        let ancestor = self.find_ancestor::<W>(node)?;
+
+        return self.get_mut(ancestor);
     }
 
     fn with_widget_detached<R>(
@@ -494,6 +541,8 @@ impl Ui {
 
 mod tests {
 
+    use std::{cell::Cell, rc::Rc};
+
     use taffy::{
         Position, Size,
         prelude::{length, percent},
@@ -515,36 +564,36 @@ mod tests {
         }
     }
 
-    fn sized(x: f32, y: f32, width: f32, height: f32) -> Style {
+    fn sized(x: f32, y: f32, width: f32, height: f32) -> impl FnOnce(&mut Style) {
 
-        return Style {
-            position: Position::Absolute,
-            inset: taffy::Rect {
-                left: length(x),
-                top: length(y),
-                right: taffy::prelude::auto(),
-                bottom: taffy::prelude::auto(),
-            },
-            size: Size {
-                width: length(width),
-                height: length(height),
-            },
-            ..Default::default()
+        return move |style| {
+
+            *style = Style {
+                position: Position::Absolute,
+                inset: taffy::Rect {
+                    left: length(x),
+                    top: length(y),
+                    right: taffy::prelude::auto(),
+                    bottom: taffy::prelude::auto(),
+                },
+                size: Size {
+                    width: length(width),
+                    height: length(height),
+                },
+                ..Default::default()
+            }
         };
     }
 
     fn ui() -> Ui {
 
-        return Ui::new(
-            Style {
-                size: Size {
-                    width: percent(1.0_f32),
-                    height: percent(1.0_f32),
-                },
-                ..Default::default()
-            },
-            Panel::new(),
-        );
+        return Ui::new_styled(Panel::new(), |style| {
+
+            style.size = Size {
+                width: percent(1.0_f32),
+                height: percent(1.0_f32),
+            };
+        });
     }
 
     fn layout(ui: &mut Ui) {
@@ -579,7 +628,7 @@ mod tests {
 
         let mut ui = ui();
 
-        let button = ui.add(ui.root(), sized(10.0, 10.0, 50.0, 20.0), Clickable);
+        let button = ui.add_styled(ui.root(), Clickable, sized(10.0, 10.0, 50.0, 20.0));
 
         layout(&mut ui);
 
@@ -602,7 +651,7 @@ mod tests {
 
         let mut ui = ui();
 
-        ui.add(ui.root(), sized(10.0, 10.0, 50.0, 20.0), Clickable);
+        ui.add_styled(ui.root(), Clickable, sized(10.0, 10.0, 50.0, 20.0));
 
         layout(&mut ui);
 
@@ -619,7 +668,7 @@ mod tests {
 
         let mut ui = ui();
 
-        let button = ui.add(ui.root(), sized(10.0, 10.0, 50.0, 20.0), Clickable);
+        let button = ui.add_styled(ui.root(), Clickable, sized(10.0, 10.0, 50.0, 20.0));
 
         layout(&mut ui);
 
@@ -642,9 +691,9 @@ mod tests {
 
         let mut ui = ui();
 
-        let button = ui.add(ui.root(), sized(10.0, 10.0, 100.0, 40.0), Clickable);
+        let button = ui.add_styled(ui.root(), Clickable, sized(10.0, 10.0, 100.0, 40.0));
 
-        ui.add(button, sized(5.0, 5.0, 20.0, 10.0), Panel::new());
+        ui.add_styled(button, Panel::new(), sized(5.0, 5.0, 20.0, 10.0));
 
         layout(&mut ui);
 
@@ -665,9 +714,9 @@ mod tests {
 
         let mut ui = ui();
 
-        ui.add(ui.root(), sized(0.0, 0.0, 100.0, 100.0), Clickable);
+        ui.add_styled(ui.root(), Clickable, sized(0.0, 0.0, 100.0, 100.0));
 
-        let top = ui.add(ui.root(), sized(50.0, 50.0, 100.0, 100.0), Clickable);
+        let top = ui.add_styled(ui.root(), Clickable, sized(50.0, 50.0, 100.0, 100.0));
 
         layout(&mut ui);
 
@@ -680,9 +729,9 @@ mod tests {
 
         let mut ui = ui();
 
-        let outer = ui.add(ui.root(), sized(100.0, 50.0, 200.0, 200.0), Panel::new());
+        let outer = ui.add_styled(ui.root(), Panel::new(), sized(100.0, 50.0, 200.0, 200.0));
 
-        let inner = ui.add(outer, sized(10.0, 20.0, 30.0, 40.0), Clickable);
+        let inner = ui.add_styled(outer, Clickable, sized(10.0, 20.0, 30.0, 40.0));
 
         layout(&mut ui);
 
@@ -700,7 +749,7 @@ mod tests {
 
         let mut ui = ui();
 
-        let button = ui.add(ui.root(), sized(10.0, 10.0, 50.0, 20.0), Clickable);
+        let button = ui.add_styled(ui.root(), Clickable, sized(10.0, 10.0, 50.0, 20.0));
 
         layout(&mut ui);
 
@@ -719,7 +768,7 @@ mod tests {
 
         let mut ui = ui();
 
-        let node = ui.add(ui.root(), Style::default(), Clickable);
+        let node = ui.add(ui.root(), Clickable);
 
         assert!(ui.get::<Clickable>(node).is_some());
 
@@ -734,9 +783,9 @@ mod tests {
 
         let mut ui = ui();
 
-        let panel = ui.add(ui.root(), sized(0.0, 0.0, 100.0, 100.0), Panel::new());
+        let panel = ui.add_styled(ui.root(), Panel::new(), sized(0.0, 0.0, 100.0, 100.0));
 
-        let button = ui.add(panel, sized(10.0, 10.0, 50.0, 20.0), Clickable);
+        let button = ui.add_styled(panel, Clickable, sized(10.0, 10.0, 50.0, 20.0));
 
         layout(&mut ui);
 
@@ -744,7 +793,7 @@ mod tests {
 
         ui.remove(panel);
 
-        let replacement = ui.add(ui.root(), sized(10.0, 10.0, 50.0, 20.0), Clickable);
+        let replacement = ui.add_styled(ui.root(), Clickable, sized(10.0, 10.0, 50.0, 20.0));
 
         layout(&mut ui);
 
@@ -772,9 +821,9 @@ mod tests {
 
                 let x = index as f32 * 100.0;
 
-                let button = ui.add(node, sized(x, 0.0, 100.0, 20.0), Clickable);
+                let button = ui.add_styled(node, Clickable, sized(x, 0.0, 100.0, 20.0));
 
-                let view = ui.add(node, sized(0.0, 20.0, 400.0, 380.0), Clickable);
+                let view = ui.add_styled(node, Clickable, sized(0.0, 20.0, 400.0, 380.0));
 
                 ui.set_hidden(view, index != 0);
 
@@ -810,12 +859,12 @@ mod tests {
 
         let root = ui.root();
 
-        let tabs = ui.add(
+        let tabs = ui.add_styled(
             root,
-            sized(0.0, 0.0, 400.0, 400.0),
             Tabs {
                 tabs: vec![],
             },
+            sized(0.0, 0.0, 400.0, 400.0),
         );
 
         let [(_, first_view), (_, second_view)] = ui.get::<Tabs>(tabs).unwrap().tabs[..] else {
@@ -849,12 +898,12 @@ mod tests {
 
         let root = ui.root();
 
-        ui.add(
+        ui.add_styled(
             root,
-            sized(0.0, 0.0, 400.0, 400.0),
             Tabs {
                 tabs: vec![],
             },
+            sized(0.0, 0.0, 400.0, 400.0),
         );
 
         layout(&mut ui);
@@ -871,14 +920,13 @@ mod tests {
 
         let mut ui = ui();
 
-        let node = ui.add(
-            ui.root(),
-            Style {
+        let node = ui.add_styled(ui.root(), Panel::new(), |style| {
+
+            *style = Style {
                 display: Display::Grid,
                 ..Default::default()
-            },
-            Panel::new(),
-        );
+            }
+        });
 
         ui.set_hidden(node, true);
 
@@ -906,7 +954,7 @@ mod tests {
 
         fn mount(&mut self, ui: &mut Ui, node: NodeId) {
 
-            self.counter = Some(ui.add(node, Style::default(), Counter(0)));
+            self.counter = Some(ui.add(node, Counter(0)));
         }
 
         fn update(&mut self, ui: &mut Ui, _node: NodeId) {
@@ -928,7 +976,6 @@ mod tests {
 
         let ticker = ui.add(
             root,
-            Style::default(),
             Ticker {
                 counter: None,
             },
@@ -969,7 +1016,7 @@ mod tests {
 
         let mut ui = ui();
 
-        let button = ui.add(ui.root(), sized(10.0, 10.0, 50.0, 20.0), CloseButton);
+        let button = ui.add_styled(ui.root(), CloseButton, sized(10.0, 10.0, 50.0, 20.0));
 
         layout(&mut ui);
 
@@ -988,10 +1035,10 @@ mod tests {
 
         let root = ui.root();
 
-        let button = ui.add(
+        let button = ui.add_styled(
             root,
-            sized(10.0, 10.0, 100.0, 40.0),
             Button::new("Play", 12.0),
+            sized(10.0, 10.0, 100.0, 40.0),
         );
 
         let label = ui.get::<Button>(button).unwrap().label_node().unwrap();
@@ -1006,6 +1053,134 @@ mod tests {
             ui.take_unhandled_events(),
             vec![UiEvent::Clicked {
                 node: button,
+                button: MouseButton::Left,
+            }]
+        );
+    }
+
+    #[test]
+
+    fn a_buttons_click_handler_runs_and_stops_the_click_bubbling() {
+
+        let mut ui = ui();
+
+        let clicks = Rc::new(Cell::new(0));
+
+        let counted = clicks.clone();
+
+        let button = Button::new("Play", 12.0).on_click(move |_, _, _| {
+
+            counted.set(counted.get() + 1);
+
+            true
+        });
+
+        ui.add_styled(ui.root(), button, sized(10.0, 10.0, 100.0, 40.0));
+
+        layout(&mut ui);
+
+        click(&mut ui, [20.0, 20.0]);
+
+        assert_eq!(clicks.get(), 1);
+
+        assert!(ui.take_unhandled_events().is_empty());
+    }
+
+    /// Owns a button whose click handler reaches back to it through the ui.
+
+    struct Owner {
+        clicks: u32,
+    }
+
+    impl Widget for Owner {
+        fn mount(&mut self, ui: &mut Ui, node: NodeId) {
+
+            let button = Button::new("+1", 12.0).on_click(|ui, node, _| {
+
+                if let Some(owner) = ui.ancestor_mut::<Owner>(node) {
+
+                    owner.clicks += 1;
+                }
+
+                true
+            });
+
+            ui.add_styled(node, button, sized(10.0, 10.0, 100.0, 40.0));
+        }
+
+        fn draw(&self, _canvas: &mut Canvas, _state: &DrawState) {}
+    }
+
+    #[test]
+
+    fn a_click_handler_can_change_the_widget_that_owns_the_button() {
+
+        let mut ui = ui();
+
+        let owner = ui.add_styled(
+            ui.root(),
+            Owner {
+                clicks: 0,
+            },
+            sized(0.0, 0.0, 400.0, 400.0),
+        );
+
+        layout(&mut ui);
+
+        click(&mut ui, [20.0, 20.0]);
+
+        click(&mut ui, [20.0, 20.0]);
+
+        assert_eq!(ui.get::<Owner>(owner).unwrap().clicks, 2);
+    }
+
+    #[test]
+
+    fn find_ancestor_skips_the_node_itself_and_finds_the_nearest_match() {
+
+        let mut ui = ui();
+
+        let outer = ui.add(
+            ui.root(),
+            Owner {
+                clicks: 0,
+            },
+        );
+
+        let inner = ui.add(
+            outer,
+            Owner {
+                clicks: 0,
+            },
+        );
+
+        let leaf = ui.add(inner, Panel::new());
+
+        assert_eq!(ui.find_ancestor::<Owner>(leaf), Some(inner));
+
+        assert_eq!(ui.find_ancestor::<Owner>(inner), Some(outer));
+
+        assert_eq!(ui.find_ancestor::<Owner>(outer), None);
+    }
+
+    #[test]
+
+    fn a_click_handler_returning_false_lets_the_click_bubble() {
+
+        let mut ui = ui();
+
+        let button = Button::new("Play", 12.0).on_click(|_, _, _| false);
+
+        let node = ui.add_styled(ui.root(), button, sized(10.0, 10.0, 100.0, 40.0));
+
+        layout(&mut ui);
+
+        click(&mut ui, [20.0, 20.0]);
+
+        assert_eq!(
+            ui.take_unhandled_events(),
+            vec![UiEvent::Clicked {
+                node,
                 button: MouseButton::Left,
             }]
         );
