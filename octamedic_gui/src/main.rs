@@ -10,7 +10,10 @@ fn main() -> GameResult<()> {
     let (mut ctx, event_loop) = ContextBuilder::new("OctaMEDIC", "Amano Rosuko")
         .backend(ggez::conf::Backend::Vulkan)
         .window_mode(WindowMode {
-            maximized: true,
+            maximized: false,
+            fullscreen_type: ggez::conf::FullscreenType::Windowed,
+            borderless: false,
+
             ..Default::default()
         })
         .build()?;
