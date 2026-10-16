@@ -1,5 +1,4 @@
 use ggez::{ContextBuilder, GameResult, conf::WindowMode, event};
-use taffy::TaffyTree;
 
 use crate::app::app::App;
 
@@ -16,9 +15,7 @@ fn main() -> GameResult<()> {
         })
         .build()?;
 
-    let taffy = TaffyTree::new();
-
-    let app = App::new(taffy, &mut ctx)?;
+    let app = App::new(&mut ctx)?;
 
     event::run(ctx, event_loop, app);
 }

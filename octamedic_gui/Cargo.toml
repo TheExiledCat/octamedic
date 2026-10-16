@@ -4,8 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-display-info = "0.5.9"
 ggez = { version = "0.9.3", default-features = false }
-rand = "0.10.1"
 taffy = "0.10.1"
 
