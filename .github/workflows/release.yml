@@ -1,0 +1,108 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-22.04
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-22.04-arm
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: aarch64-apple-darwin
+            os: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev pkg-config
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }} -p octamed_cli -p octamedic_gui
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          cd target/${{ matrix.target }}/release
+          for pair in cli:octamed_cli gui:octamedic_gui; do
+            kind="${pair%%:*}"; bin="${pair#*:}"
+            zip "$GITHUB_WORKSPACE/octamedic-${kind}-${GITHUB_REF_NAME}-${{ matrix.target }}.zip" "$bin"
+          done
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $bins = @{ cli = "octamed_cli"; gui = "octamedic_gui" }
+          foreach ($kind in $bins.Keys) {
+            $archive = "octamedic-$kind-$env:GITHUB_REF_NAME-${{ matrix.target }}.zip"
+            Compress-Archive -Path "target/${{ matrix.target }}/release/$($bins[$kind]).exe" -DestinationPath $archive
+          }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: octamedic-*.zip
+
+  release:
+    name: Publish release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract changelog entry
+        id: notes
+        run: |
+          awk -v tag="$GITHUB_REF_NAME" '
+            /^## / { if (found) exit; found = ($2 == tag) ; next }
+            found { print }
+          ' docs/CHANGELOG.md 2>/dev/null > notes.md || true
+          if [ -s notes.md ] && grep -q '[^[:space:]]' notes.md; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          body_path: ${{ steps.notes.outputs.found == 'true' && 'notes.md' || '' }}
+          generate_release_notes: ${{ steps.notes.outputs.found != 'true' }}
