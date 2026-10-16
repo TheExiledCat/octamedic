@@ -11,7 +11,11 @@ use ggez::{
 use taffy::{FlexDirection, Size, Style, prelude::percent};
 
 use crate::{
-    app::{editor, footer, header, status_bar, title_bar::TitleBar},
+    app::{
+        editor::{self, BlockEditor},
+        footer, header, status_bar,
+        title_bar::TitleBar,
+    },
     framework::{
         input,
         ui::Ui,
@@ -50,7 +54,7 @@ impl App {
         ctx.gfx
             .add_font(TEXT_FONT, FontData::from_slice(TOPAZ_FONT)?);
 
-        ctx.gfx.set_fullscreen(FullscreenType::True)?;
+        // ctx.gfx.set_fullscreen(FullscreenType::True)?;
 
         ctx.gfx
             .set_drawable_size(VIRTUAL_SCREEN.w, VIRTUAL_SCREEN.h)?;
@@ -80,7 +84,7 @@ impl App {
 
         status_bar::build(&mut ui, root);
 
-        editor::build(&mut ui, root);
+        ui.add(root, BlockEditor::style(), BlockEditor::new());
 
         footer::build(&mut ui, root);
 
