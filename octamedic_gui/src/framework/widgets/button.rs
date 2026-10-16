@@ -1,46 +1,116 @@
-use ggez::{
-    Context, GameResult,
-    graphics::{Canvas, Color},
-};
+use ggez::graphics::{Canvas, Color};
 use taffy::{
-    AlignItems, JustifyContent, Layout, Rect, Size, Style, TaffyResult, TaffyTree,
+    AlignItems, JustifyContent, NodeId, Rect, Size, Style,
     prelude::{auto, length},
 };
 
 use crate::framework::{
-    input::{InputEvent, MouseButton::Left},
-    widget::{DefaultStyle, Widget, WidgetCore, WidgetSignal, WidgetSignalKind},
-    widgets::{Label::Label, container::Container},
+    ui::Ui,
+    widget::{DrawState, Widget},
+    widgets::{label::Label, panel::fill_rect},
 };
 
 pub struct Button {
+    initial_text: String,
+    font_size: f32,
+    label: Option<NodeId>,
     background_colors: ButtonColors,
     text_colors: ButtonColors,
-    on_click: Box<dyn Fn()>,
-    container: Container,
 }
 
 impl Button {
-    pub fn new<F>(taffy: &mut TaffyTree, label: impl ToString, font_size: f32, on_click: F) -> Self
-    where
-        F: Fn() + 'static,
-    {
-
-        let child = Self::get_label(taffy, label, font_size).boxed();
-
-        let container = Container::new(taffy, vec![child]).with_style(taffy, Self::default_style());
+    pub fn new(text: impl Into<String>, font_size: f32) -> Self {
 
         return Self {
+            initial_text: text.into(),
+            font_size,
+            label: None,
             background_colors: ButtonColors::background(),
             text_colors: ButtonColors::text(),
-            on_click: Box::new(on_click),
-            container,
         };
     }
 
-    fn get_label(taffy: &mut TaffyTree, text: impl ToString, font_size: f32) -> Label {
+    pub fn label_node(&self) -> Option<NodeId> {
 
-        Label::new(taffy, text, font_size)
+        return self.label;
+    }
+
+    pub fn set_text(ui: &mut Ui, node: NodeId, text: impl Into<String>) {
+
+        let Some(label) = ui.get::<Button>(node).and_then(Button::label_node) else {
+
+            return;
+        };
+
+        if let Some(label) = ui.get_mut::<Label>(label) {
+
+            label.set_text(text);
+        }
+    }
+
+    pub fn default_style() -> Style {
+
+        return Style {
+            size: Size {
+                width: auto(),
+                height: auto(),
+            },
+            padding: Rect {
+                left: length(2.0_f32),
+                right: length(2.0_f32),
+                bottom: length(1.0_f32),
+                top: length(1.0_f32),
+            },
+            justify_content: Some(JustifyContent::Center),
+            align_items: Some(AlignItems::Center),
+            ..Default::default()
+        };
+    }
+}
+
+impl Widget for Button {
+    fn mount(&mut self, ui: &mut Ui, node: NodeId) {
+
+        let label = Label::new(std::mem::take(&mut self.initial_text), self.font_size)
+            .with_color(self.text_colors.default_color);
+
+        self.label = Some(ui.add(node, Label::default_style(), label));
+    }
+
+    fn update(&mut self, ui: &mut Ui, node: NodeId) {
+
+        let color = self
+            .text_colors
+            .for_state(ui.is_hovered(node), ui.is_pressed(node));
+
+        let Some(label) = self.label else {
+
+            return;
+        };
+
+        // only through `get_mut` when it changes, since that marks the label for layout.
+        if ui
+            .get::<Label>(label)
+            .is_some_and(|label| label.color() != color)
+            && let Some(label) = ui.get_mut::<Label>(label)
+        {
+
+            label.set_color(color);
+        }
+    }
+
+    fn draw(&self, canvas: &mut Canvas, state: &DrawState) {
+
+        let background = self
+            .background_colors
+            .for_state(state.hovered, state.pressed);
+
+        fill_rect(canvas, state.rect, background);
+    }
+
+    fn is_interactive(&self) -> bool {
+
+        return true;
     }
 }
 
@@ -68,100 +138,18 @@ impl ButtonColors {
             press_color: Color::WHITE,
         };
     }
-}
 
-impl Widget for Button {
-    fn core(&self) -> &WidgetCore {
+    fn for_state(&self, hovered: bool, pressed: bool) -> Color {
 
-        &self.container.core()
-    }
+        return if pressed {
 
-    fn core_mut(&mut self) -> &mut WidgetCore {
+            self.press_color
+        } else if hovered {
 
-        self.container.core_mut()
-    }
-
-    fn handle_event(&mut self, event: &InputEvent) -> bool {
-
-        self.container.handle_event(event)
-    }
-
-    fn layout(&mut self, taffy: &TaffyTree) -> TaffyResult<Layout> {
-
-        self.container.layout(taffy)
-    }
-
-    fn update(&mut self, ctx: &mut Context, taffy: &mut TaffyTree) -> GameResult {
-
-        if self.core().pressed {
-
-            self.container.set_colors(
-                self.text_colors.press_color,
-                self.background_colors.press_color,
-            )
-        } else if self.core().hovered {
-
-            self.container.set_colors(
-                self.text_colors.hover_color,
-                self.background_colors.hover_color,
-            )
+            self.hover_color
         } else {
 
-            self.container.set_colors(
-                self.text_colors.default_color,
-                self.background_colors.default_color,
-            );
-        }
-
-        self.container.update(ctx, taffy)?;
-
-        return Ok(());
-    }
-
-    fn render(&self, ctx: &mut Context, canvas: &mut Canvas) -> GameResult {
-
-        return self.container.render(ctx, canvas);
-    }
-
-    fn set_text(&mut self, text: &str) {
-
-        self.container.set_text(text)
-    }
-
-    fn collect_signals(&mut self) -> Vec<WidgetSignal> {
-
-        if self.core().just_pressed {
-
-            return vec![WidgetSignal {
-                node: self.core().node,
-                kind: WidgetSignalKind::Clicked(Left),
-            }];
-        }
-
-        vec![]
-    }
-}
-
-impl DefaultStyle for Button {
-    fn default_style() -> Style
-    where
-        Self: Sized,
-    {
-
-        Style {
-            size: Size {
-                width: auto(),
-                height: auto(),
-            },
-            padding: Rect {
-                left: length(2.0),
-                right: length(2.0),
-                bottom: length(1.0),
-                top: length(1.0),
-            },
-            justify_content: Some(JustifyContent::Center),
-            align_items: Some(AlignItems::Center),
-            ..Container::default_style()
-        }
+            self.default_color
+        };
     }
 }

@@ -7,17 +7,15 @@ use ggez::{
     graphics,
     graphics::{Canvas, Color, DrawParam, FontData, Image, Rect, Sampler},
     input::mouse,
-    mint::Point2,
 };
-use taffy::{AvailableSpace, FlexDirection, Size, Style, TaffyTree, prelude::percent};
+use taffy::{FlexDirection, Size, Style, prelude::percent};
 
-use crate::framework::{
-    input,
-    input::InputEvent,
-    widget::{DefaultStyle, Widget},
-    widgets::{
-        container::Container, editor::Editor, footer::Footer, header::HeaderBar,
-        status_bar::StatusBar, title_bar::TitleBar,
+use crate::{
+    app::{editor, footer, header, status_bar, title_bar::TitleBar},
+    framework::{
+        input,
+        ui::Ui,
+        widgets::{label::TEXT_FONT, panel::Panel},
     },
 };
 
@@ -26,8 +24,6 @@ const TOPAZ_FONT: &[u8] = include_bytes!("../../assets/fonts/amiga-topaz.ttf");
 const OCTAMED_GUI: &[u8] = include_bytes!("../../assets/octamed.png");
 
 const CURSOR: &[u8] = include_bytes!("../../assets/cursor.png");
-
-pub const TOPAZ_FONT_KEY: &'static str = "Topaz";
 
 pub const VIRTUAL_SCREEN: Rect = Rect {
     x: 0.0,
@@ -44,15 +40,15 @@ pub const AMIGA_SCREEN: Rect = Rect {
 };
 
 pub struct App {
-    root: Container,
-    taffy: TaffyTree,
+    ui: Ui,
+    cursor: Image,
 }
 
 impl App {
-    pub fn new(mut taffy: TaffyTree, ctx: &mut Context) -> GameResult<Self> {
+    pub fn new(ctx: &mut Context) -> GameResult<Self> {
 
         ctx.gfx
-            .add_font(TOPAZ_FONT_KEY, FontData::from_slice(TOPAZ_FONT)?);
+            .add_font(TEXT_FONT, FontData::from_slice(TOPAZ_FONT)?);
 
         ctx.gfx.set_fullscreen(FullscreenType::True)?;
 
@@ -63,11 +59,34 @@ impl App {
 
         mouse::set_cursor_grabbed(ctx, true)?;
 
-        let root = Self::root(&mut taffy);
+        let mut ui = Ui::new(
+            Style {
+                flex_direction: FlexDirection::Column,
+                size: Size {
+                    width: percent(1.0_f32),
+                    height: percent(1.0_f32),
+                },
+                gap: Size::zero(),
+                ..Panel::default_style()
+            },
+            Panel::new(),
+        );
+
+        let root = ui.root();
+
+        ui.add(root, TitleBar::style(), TitleBar::new());
+
+        header::build(&mut ui, root);
+
+        status_bar::build(&mut ui, root);
+
+        editor::build(&mut ui, root);
+
+        footer::build(&mut ui, root);
 
         return Ok(Self {
-            root,
-            taffy,
+            ui,
+            cursor: Image::from_bytes(ctx, CURSOR)?,
         });
     }
 
@@ -107,156 +126,85 @@ impl App {
         return (size.width, size.height);
     }
 
-    fn root(taffy: &mut TaffyTree) -> Container {
+    fn draw_cursor(&self, ctx: &Context, canvas: &mut Canvas) {
 
-        let child = TitleBar::new(taffy).boxed();
-
-        let header = HeaderBar::new(taffy).boxed();
-
-        let status_bar = StatusBar::new(taffy).boxed();
-
-        let editor = Editor::new(taffy).boxed();
-
-        let footer = Footer::new(taffy).boxed();
-
-        let root = Container::new(taffy, vec![child, header, status_bar, editor, footer])
-            .with_style(
-                taffy,
-                Style {
-                    flex_direction: FlexDirection::Column,
-                    size: Size {
-                        width: percent(1.0),
-                        height: percent(1.0),
-                    },
-                    gap: Size::zero(),
-                    ..Container::default_style()
-                },
-            );
-
-        return root;
-    }
-
-    fn draw_cursor(
-        &mut self,
-        ctx: &mut ggez::Context,
-        canvas: &mut Canvas,
-    ) -> Result<(), ggez::GameError> {
-
-        let image = Image::from_bytes(ctx, CURSOR)?;
-
-        let height = VIRTUAL_SCREEN.h;
-
-        let scaling = height / AMIGA_SCREEN.h;
+        let scaling = VIRTUAL_SCREEN.h / AMIGA_SCREEN.h;
 
         let mut pos = ctx.mouse.position();
 
-        pos.x = pos.x - (pos.x % scaling);
+        pos.x -= pos.x % scaling;
 
-        pos.y = pos.y - (pos.y % scaling);
+        pos.y -= pos.y % scaling;
 
         canvas.draw(
-            &image,
+            &self.cursor,
             DrawParam::default().dest(pos).scale([scaling, scaling]),
         );
-
-        return Ok(());
     }
 
-    fn collect_events(&self, ctx: &mut Context) -> GameResult<Vec<InputEvent>> {
-
-        let mut events = vec![];
+    fn forward_mouse_input(&mut self, ctx: &Context) {
 
         let pos = ctx.mouse.position();
 
-        if ctx.mouse.delta() != Point2::from([0.0, 0.0]) {
+        let pos = [pos.x, pos.y];
 
-            let delta = ctx.mouse.delta();
+        self.ui.mouse_moved(pos);
 
-            events.push(InputEvent::MouseMove {
-                pos,
-                delta,
-            });
+        let buttons = [
+            (MouseButton::Left, input::MouseButton::Left),
+            (MouseButton::Right, input::MouseButton::Right),
+        ];
+
+        for (ggez_button, button) in buttons {
+
+            if ctx.mouse.button_just_pressed(ggez_button) {
+
+                self.ui.mouse_pressed(pos, button);
+            }
+
+            if ctx.mouse.button_just_released(ggez_button) {
+
+                self.ui.mouse_released(pos, button);
+            }
         }
-
-        if ctx.mouse.button_just_pressed(MouseButton::Left) {
-
-            events.push(InputEvent::MouseDown {
-                pos,
-                button: input::MouseButton::Left,
-            })
-        }
-
-        if ctx.mouse.button_just_pressed(MouseButton::Right) {
-
-            events.push(InputEvent::MouseDown {
-                pos,
-                button: input::MouseButton::Right,
-            })
-        }
-
-        if ctx.mouse.button_just_released(MouseButton::Left) {
-
-            events.push(InputEvent::MouseUp {
-                pos,
-                button: input::MouseButton::Left,
-            })
-        }
-
-        if ctx.mouse.button_just_released(MouseButton::Right) {
-
-            events.push(InputEvent::MouseUp {
-                pos,
-                button: input::MouseButton::Right,
-            })
-        }
-
-        return Ok(events);
     }
 }
 
 impl EventHandler for App {
-    fn update(&mut self, ctx: &mut ggez::Context) -> Result<(), ggez::GameError> {
+    fn update(&mut self, ctx: &mut Context) -> GameResult {
 
         ctx.gfx
             .set_window_title(&format!("OctaMEDIC ({:.02} FPS) ", ctx.time.fps()));
 
-        self.root.update(ctx, &mut self.taffy)?;
+        self.ui.update();
 
-        self.taffy
-            .compute_layout(
-                self.root.core().node,
-                taffy::Size {
-                    width: AvailableSpace::Definite(VIRTUAL_SCREEN.w),
-                    height: AvailableSpace::Definite(VIRTUAL_SCREEN.h),
-                },
-            )
-            .unwrap();
+        let gfx: &Context = ctx;
 
-        self.root.layout(&self.taffy).unwrap();
+        self.ui.compute_layout(
+            Size {
+                width: VIRTUAL_SCREEN.w,
+                height: VIRTUAL_SCREEN.h,
+            },
+            |widget, known, available| widget.measure_content(gfx, known, available),
+        );
 
-        let events = self.collect_events(ctx)?;
+        self.forward_mouse_input(ctx);
 
-        for event in events {
-
-            self.root.handle_event(&event);
-        }
-
-        let signals = self.root.collect_signals();
-
-        self.root.handle_signals(&signals);
+        // nothing above the widgets handles events yet; drain them so they don't pile up.
+        self.ui.take_unhandled_events();
 
         return Ok(());
     }
 
-    fn draw(&mut self, ctx: &mut ggez::Context) -> Result<(), ggez::GameError> {
+    fn draw(&mut self, ctx: &mut Context) -> GameResult {
 
         let mut canvas = Canvas::from_frame(ctx, Some(Color::BLACK));
 
         canvas.set_sampler(Sampler::nearest_clamp());
 
-        self.root.render(ctx, &mut canvas)?;
+        self.ui.draw(&mut canvas);
 
-        self.draw_cursor(ctx, &mut canvas)?;
+        self.draw_cursor(ctx, &mut canvas);
 
         // {
         //     let img = Image::from_bytes(ctx, OCTAMED_GUI)?;
