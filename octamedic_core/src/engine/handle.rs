@@ -49,6 +49,7 @@ pub enum EngineCommand {
         volume: u8,
     },
     SetMasterVolume(u8),
+    SetOutputVolume(u8),
     SetGlobalTranspose(i8),
     PlayNote {
         track: usize,
@@ -340,9 +341,16 @@ impl EngineHandle {
         });
     }
 
-    pub fn set_volume(&self, volume: u8) {
+    // the song's own master volume, as stored in the module
+    pub fn set_master_volume(&self, volume: u8) {
 
         self.send(EngineCommand::SetMasterVolume(volume));
+    }
+
+    // the listener's volume over the whole mix, 0-64; songs loaded later don't change it
+    pub fn set_output_volume(&self, volume: u8) {
+
+        self.send(EngineCommand::SetOutputVolume(volume));
     }
 
     pub fn play_note(&self, track: usize, note: OctamedicNote, instrument: InstrumentId) {

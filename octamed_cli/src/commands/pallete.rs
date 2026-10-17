@@ -1,4 +1,3 @@
-
 use clap_derive::Args;
 
 use crate::commands::repl::{Command, CommandResult};

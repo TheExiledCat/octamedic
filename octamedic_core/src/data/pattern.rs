@@ -6,6 +6,7 @@ use octamed::{
 use crate::data::{command::CommandId, instrument::InstrumentId, note::OctamedicNote};
 
 /// Most tracks a pattern can have.
+
 pub const MAX_TRACKS: usize = 64;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
