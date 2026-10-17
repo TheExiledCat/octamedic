@@ -8,7 +8,7 @@ use crate::data::{command::CommandId, instrument::InstrumentId, note::OctamedicN
 /// Most tracks a pattern can have.
 pub const MAX_TRACKS: usize = 64;
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 
 pub struct PatternId(pub u8);
 
@@ -39,6 +39,23 @@ impl OctamedicPattern {
             line_count,
             lines: vec![OctamedicPatternLine::new(track_count); line_count.0 as usize],
         };
+    }
+}
+
+impl OctamedicPattern {
+    pub fn line_count(&self) -> usize {
+
+        return self.lines.len();
+    }
+
+    pub fn track(&self, line: usize, track: usize) -> Option<&OctamedicPatternTrack> {
+
+        return self.lines.get(line)?.tracks.get(track);
+    }
+
+    pub fn track_mut(&mut self, line: usize, track: usize) -> Option<&mut OctamedicPatternTrack> {
+
+        return self.lines.get_mut(line)?.tracks.get_mut(track);
     }
 }
 
@@ -109,7 +126,7 @@ impl From<&OctamedMMD1Block> for OctamedicPattern {
 #[derive(Clone)]
 
 pub struct OctamedicPatternLine {
-    pub(crate) tracks: Vec<OctamedicPatternTrack>,
+    pub tracks: Vec<OctamedicPatternTrack>,
 }
 
 impl OctamedicPatternLine {
@@ -121,17 +138,17 @@ impl OctamedicPatternLine {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 
 pub struct OctamedicPatternTrack {
-    pub(crate) note: OctamedicNote,
-    pub(crate) instrument_id: InstrumentId,
-    pub(crate) command_id: CommandId,
-    pub(crate) command_value: UByte,
+    pub note: OctamedicNote,
+    pub instrument_id: InstrumentId,
+    pub command_id: CommandId,
+    pub command_value: UByte,
 }
 
 impl OctamedicPatternTrack {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
 
         return Self {
             note: OctamedicNote::new(),

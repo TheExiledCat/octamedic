@@ -8,14 +8,11 @@ use ggez::{
     graphics::{Canvas, Color, DrawParam, FontData, Image, Rect, Sampler},
     input::mouse,
 };
+use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
 use taffy::{FlexDirection, Size, prelude::percent};
 
 use crate::{
-    app::{
-        editor::{self, BlockEditor},
-        footer, header, status_bar,
-        title_bar::TitleBar,
-    },
+    app::{editor::BlockEditor, footer, header, state::AppState, status_bar, title_bar::TitleBar},
     framework::{
         input,
         ui::Ui,
@@ -46,10 +43,11 @@ pub const AMIGA_SCREEN: Rect = Rect {
 pub struct App {
     ui: Ui,
     cursor: Image,
+    state: AppState,
 }
 
 impl App {
-    pub fn new(ctx: &mut Context) -> GameResult<Self> {
+    pub fn new(ctx: &mut Context, project: OctamedicProject) -> GameResult<Self> {
 
         ctx.gfx
             .add_font(TEXT_FONT, FontData::from_slice(TOPAZ_FONT)?);
@@ -88,7 +86,24 @@ impl App {
         return Ok(Self {
             ui,
             cursor: Image::from_bytes(ctx, CURSOR)?,
+            state: Self::state_with_engine(project),
         });
+    }
+
+    // runs without sound rather than not at all when there's no audio device
+    fn state_with_engine(project: OctamedicProject) -> AppState {
+
+        return match EngineHandle::spawn() {
+            Ok(engine) => AppState::new(project, engine),
+            Err(error) => {
+
+                let mut state = AppState::new(project, EngineHandle::disconnected());
+
+                state.notify(format!("NO AUDIO: {error}"));
+
+                state
+            }
+        };
     }
 
     fn get_largest_res(ctx: &Context) -> (u32, u32) {
@@ -165,7 +180,7 @@ impl App {
 
             if ctx.mouse.button_just_released(ggez_button) {
 
-                self.ui.mouse_released(pos, button);
+                self.ui.mouse_released(pos, button, &mut self.state);
             }
         }
     }
@@ -177,7 +192,14 @@ impl EventHandler for App {
         ctx.gfx
             .set_window_title(&format!("OctaMEDIC ({:.02} FPS) ", ctx.time.fps()));
 
-        self.ui.update();
+        self.forward_mouse_input(ctx);
+
+        // nothing above the widgets handles events yet; drain them so they don't pile up.
+        self.ui.take_unhandled_events();
+
+        self.state.update();
+
+        self.ui.update(&mut self.state);
 
         let gfx: &Context = ctx;
 
@@ -189,10 +211,10 @@ impl EventHandler for App {
             |widget, known, available| widget.measure_content(gfx, known, available),
         );
 
-        self.forward_mouse_input(ctx);
+        if self.state.exit_requested {
 
-        // nothing above the widgets handles events yet; drain them so they don't pile up.
-        self.ui.take_unhandled_events();
+            ctx.request_quit();
+        }
 
         return Ok(());
     }
@@ -203,7 +225,7 @@ impl EventHandler for App {
 
         canvas.set_sampler(Sampler::nearest_clamp());
 
-        self.ui.draw(&mut canvas);
+        self.ui.draw(&mut canvas, &self.state);
 
         self.draw_cursor(ctx, &mut canvas);
 
@@ -217,6 +239,7 @@ impl EventHandler for App {
         return Ok(());
     }
 }
+
 
 pub trait DrawStretched {
     fn draw_stretched(&mut self, image: &graphics::Image, target: Rect, param: DrawParam);

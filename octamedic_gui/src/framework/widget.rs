@@ -6,7 +6,10 @@ use ggez::{
 };
 use taffy::{AvailableSpace, NodeId, Size, Style};
 
-use crate::framework::ui::{Ui, UiEvent};
+use crate::{
+    app::state::AppState,
+    framework::ui::{Ui, UiEvent},
+};
 
 pub trait AsAny: Any {
     fn as_any(&self) -> &dyn Any;
@@ -43,9 +46,9 @@ pub trait Widget: AsAny {
 
     fn mount(&mut self, _ui: &mut Ui, _node: NodeId) {}
 
-    fn draw(&self, canvas: &mut Canvas, state: &DrawState);
+    fn draw(&self, canvas: &mut Canvas, draw: &DrawState, state: &AppState);
 
-    fn draw_after_children(&self, _canvas: &mut Canvas, _state: &DrawState) {}
+    fn draw_after_children(&self, _canvas: &mut Canvas, _draw: &DrawState, _state: &AppState) {}
 
     fn measure_content(
         &self,
@@ -60,9 +63,15 @@ pub trait Widget: AsAny {
         };
     }
 
-    fn update(&mut self, _ui: &mut Ui, _node: NodeId) {}
+    fn update(&mut self, _ui: &mut Ui, _state: &mut AppState, _node: NodeId) {}
 
-    fn on_event(&mut self, _ui: &mut Ui, _node: NodeId, _event: &UiEvent) -> bool {
+    fn on_event(
+        &mut self,
+        _ui: &mut Ui,
+        _state: &mut AppState,
+        _node: NodeId,
+        _event: &UiEvent,
+    ) -> bool {
 
         return false;
     }

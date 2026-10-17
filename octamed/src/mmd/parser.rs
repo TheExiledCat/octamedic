@@ -418,6 +418,16 @@ impl OctamedMMDParser {
 
         for offset in instrument_ptrs {
 
+            // an empty instrument slot
+            if offset.is_null() {
+
+                sample_table.headers.push(None);
+
+                sample_table.samples.push(None);
+
+                continue;
+            }
+
             stream.seek(offset.into())?;
 
             let sample_length = Self::parse_ulong(stream)?;

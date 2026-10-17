@@ -31,6 +31,11 @@ impl OctamedicProject {
 
         return self.songs.get(id.0 as usize);
     }
+
+    pub fn get_song_mut(&mut self, id: SongId) -> Option<&mut OctamedicSong> {
+
+        return self.songs.get_mut(id.0 as usize);
+    }
 }
 
 impl FromModule for OctamedicProject {

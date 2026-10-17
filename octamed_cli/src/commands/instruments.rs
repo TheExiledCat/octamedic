@@ -18,13 +18,14 @@ impl Command for InstrumentsCommand {
 
             println!("Instrument {:02}", inst);
 
-            let header = mmd
-                .sample_table
-                .headers
-                .get(inst)
-                .unwrap()
-                .as_ref()
-                .unwrap();
+            let Some(Some(header)) = mmd.sample_table.headers.get(inst) else {
+
+                println!("(empty)");
+
+                println!();
+
+                continue;
+            };
 
             println!("Size (Bytes): {}", header.sample_length.0);
 

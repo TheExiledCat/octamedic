@@ -104,7 +104,7 @@ fn write_wav(path: &Path, samples: &[f32]) {
 
 fn example_songs_render_and_end() {
 
-    for file in ["example.mmd0", "example.mmd1"] {
+    for file in ["example.mmd0", "example.mmd1", "Bellsv2 mono.med"] {
 
         let rendered = render(file);
 
@@ -129,7 +129,7 @@ fn export_example_renders() {
         return;
     };
 
-    for file in ["example.mmd0", "example.mmd1"] {
+    for file in ["example.mmd0", "example.mmd1", "Bellsv2 mono.med"] {
 
         write_wav(&Path::new(&dir).join(format!("{file}.wav")), &render(file));
     }
