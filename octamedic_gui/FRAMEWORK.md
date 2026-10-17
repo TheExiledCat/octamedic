@@ -24,14 +24,26 @@ Only `draw` is required. Every other method has a default that does nothing.
 |---|---|---|
 | `style(&self) -> Style` | once, by `ui.add`, to get the node's taffy style | the widget's default layout. The default is `Style::default()` |
 | `mount(&mut self, ui, node)` | once, by `ui.add`, before the widget goes into the tree | adding child widgets and keeping their ids |
-| `update(&mut self, ui, node)` | every frame, before layout | timers, syncing children to state |
-| `on_event(&mut self, ui, node, event) -> bool` | an event on this widget or a descendant | reacting to clicks. Return `true` to stop bubbling |
-| `draw(&self, canvas, state)` | every frame, before its children | backgrounds, text |
-| `draw_after_children(&self, canvas, state)` | every frame, after its children | borders, overlays |
+| `update(&mut self, ui, state, node)` | every frame, before layout | timers, syncing children to the app state |
+| `on_event(&mut self, ui, state, node, event) -> bool` | an event on this widget or a descendant | reacting to clicks. Return `true` to stop bubbling |
+| `draw(&self, canvas, draw, state)` | every frame, before its children | backgrounds, text |
+| `draw_after_children(&self, canvas, draw, state)` | every frame, after its children | borders, overlays |
 | `measure_content(&self, ctx, known, available)` | during layout, for leaf nodes taffy can't size from their style | text size |
 | `is_interactive(&self) -> bool` | hit testing | `true` for widgets that take clicks. Clicks on non-interactive widgets go to the nearest interactive ancestor |
 
-`DrawState` gives `draw` the widget's screen `rect`, its `content_rect` (the rect without padding and border), and `hovered` / `pressed`.
+`DrawState` (the `draw` argument) gives `draw` the widget's screen `rect`, its `content_rect` (the rect without padding and border), and `hovered` / `pressed`.
+
+## The app state
+
+Every widget works on the one `AppState` (`app/state.rs`), which owns the project, the engine handle and the editing state (active block, instrument, octave and so on). Widgets get it as `&mut AppState` in `update`, `on_event` and button handlers, and as `&AppState` in `draw` and `draw_after_children`. `mount` gets none, so widgets read their initial values in their first `update`.
+
+Change project data through `AppState` methods like `enter_note` and `edit_track` rather than directly. They track which blocks changed and send those to the engine in `AppState::update`, so you hear edits during playback.
+
+In tests, use `EngineHandle::disconnected()` to build an `AppState` without an audio device:
+
+```rust
+let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+```
 
 ## Common tasks
 
@@ -42,13 +54,13 @@ let mut ui = Ui::new_styled(Panel::new(), |style| style.flex_direction = FlexDir
 ui.add(ui.root(), TitleBar::new());
 
 // every frame, in EventHandler::update:
-ui.update();
+ui.update(&mut state);
 ui.compute_layout(size, |widget, known, available| widget.measure_content(ctx, known, available));
-ui.mouse_moved(pos);                                  // plus mouse_pressed / mouse_released
+ui.mouse_moved(pos);                     // plus mouse_pressed, and mouse_released(pos, button, &mut state)
 for event in ui.take_unhandled_events() { /* app-level handling */ }
 
 // in EventHandler::draw:
-ui.draw(&mut canvas);
+ui.draw(&mut canvas, &state);
 ```
 
 Always drain `take_unhandled_events()`, even if you ignore the events, so they don't pile up.
@@ -105,7 +117,7 @@ Button::set_text(&mut ui, play, "Stop");    // reaches into the button's label
 The simplest option is to give the button its own handler. It runs when that button is clicked and returns whether it handled the click. Return `true` to stop there, or `false` to let the click bubble on to the button's ancestors as well:
 
 ```rust
-let timer = Button::new("00:00", 24.0).on_click(|ui, node, _mouse_button| {
+let timer = Button::new("00:00", 24.0).on_click(|ui, state, node, _mouse_button| {
     if let Some(bar) = ui.ancestor_mut::<TitleBar>(node) {
         bar.restart_timer();
     }
@@ -118,7 +130,7 @@ The handler can't capture the widget that owns the button, because that widget o
 A button without a handler lets its click bubble, so you can also handle it in the nearest widget that owns the button:
 
 ```rust
-fn on_event(&mut self, ui: &mut Ui, _node: NodeId, event: &UiEvent) -> bool {
+fn on_event(&mut self, ui: &mut Ui, state: &mut AppState, _node: NodeId, event: &UiEvent) -> bool {
     let UiEvent::Clicked { node, button: MouseButton::Left } = *event else { return false };
     if Some(node) != self.play { return false; }    // not ours: let it bubble on
     // ...
@@ -151,7 +163,7 @@ impl Widget for Counter {
         self.button = Some(ui.add(node, Button::new("+1", 18.0)));
     }
 
-    fn on_event(&mut self, ui: &mut Ui, _node: NodeId, event: &UiEvent) -> bool {
+    fn on_event(&mut self, ui: &mut Ui, state: &mut AppState, _node: NodeId, event: &UiEvent) -> bool {
         let UiEvent::Clicked { node, .. } = *event;
         if Some(node) != self.button { return false; }
         self.count += 1;
@@ -161,7 +173,7 @@ impl Widget for Counter {
         return true;
     }
 
-    fn draw(&self, _canvas: &mut Canvas, _state: &DrawState) {}
+    fn draw(&self, _canvas: &mut Canvas, _draw: &DrawState, _state: &AppState) {}
 }
 
 ui.add(parent, Counter { count: 0, label: None, button: None });
@@ -209,7 +221,7 @@ ui.compute_layout(Size { width: 800.0, height: 600.0 }, |_, known, _| Size {
     height: known.height.unwrap_or(0.0),
 });
 ui.mouse_pressed([20.0, 20.0], MouseButton::Left);
-ui.mouse_released([20.0, 20.0], MouseButton::Left);
+ui.mouse_released([20.0, 20.0], MouseButton::Left, &mut state);
 assert_eq!(ui.take_unhandled_events(), vec![UiEvent::Clicked { node: button, button: MouseButton::Left }]);
 ```
 

@@ -4,14 +4,17 @@ use taffy::{
     prelude::{auto, length},
 };
 
-use crate::framework::{
-    input::MouseButton,
-    ui::{Ui, UiEvent},
-    widget::{DrawState, Widget},
-    widgets::{label::Label, panel::fill_rect},
+use crate::{
+    app::state::AppState,
+    framework::{
+        input::MouseButton,
+        ui::{Ui, UiEvent},
+        widget::{DrawState, Widget},
+        widgets::{label::Label, panel::fill_rect},
+    },
 };
 
-type ClickHandler = Box<dyn FnMut(&mut Ui, NodeId, MouseButton) -> bool>;
+type ClickHandler = Box<dyn FnMut(&mut Ui, &mut AppState, NodeId, MouseButton) -> bool>;
 
 pub struct Button {
     initial_text: String,
@@ -39,7 +42,7 @@ impl Button {
     // bubbles on to the button's ancestors
     pub fn on_click(
         mut self,
-        handler: impl FnMut(&mut Ui, NodeId, MouseButton) -> bool + 'static,
+        handler: impl FnMut(&mut Ui, &mut AppState, NodeId, MouseButton) -> bool + 'static,
     ) -> Self {
 
         self.on_click = Some(Box::new(handler));
@@ -94,7 +97,7 @@ impl Widget for Button {
         self.label = Some(ui.add(node, label));
     }
 
-    fn update(&mut self, ui: &mut Ui, node: NodeId) {
+    fn update(&mut self, ui: &mut Ui, _state: &mut AppState, node: NodeId) {
 
         let color = self
             .text_colors
@@ -116,16 +119,20 @@ impl Widget for Button {
         }
     }
 
-    fn draw(&self, canvas: &mut Canvas, state: &DrawState) {
+    fn draw(&self, canvas: &mut Canvas, draw: &DrawState, _state: &AppState) {
 
-        let background = self
-            .background_colors
-            .for_state(state.hovered, state.pressed);
+        let background = self.background_colors.for_state(draw.hovered, draw.pressed);
 
-        fill_rect(canvas, state.rect, background);
+        fill_rect(canvas, draw.rect, background);
     }
 
-    fn on_event(&mut self, ui: &mut Ui, node: NodeId, event: &UiEvent) -> bool {
+    fn on_event(
+        &mut self,
+        ui: &mut Ui,
+        state: &mut AppState,
+        node: NodeId,
+        event: &UiEvent,
+    ) -> bool {
 
         let UiEvent::Clicked {
             node: clicked,
@@ -142,7 +149,7 @@ impl Widget for Button {
             return false;
         };
 
-        return handler(ui, node, button);
+        return handler(ui, state, node, button);
     }
 
     fn is_interactive(&self) -> bool {

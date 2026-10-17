@@ -2169,6 +2169,7 @@ name = "octamedic_gui"
 version = "0.1.0"
 dependencies = [
  "ggez",
+ "octamedic_core",
  "taffy",
 ]
 

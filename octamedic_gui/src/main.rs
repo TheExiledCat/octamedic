@@ -1,4 +1,5 @@
 use ggez::{ContextBuilder, GameResult, conf::WindowMode, event};
+use octamedic_core::data::project::OctamedicProject;
 
 use crate::app::app::App;
 
@@ -6,6 +7,8 @@ mod app;
 mod framework;
 
 fn main() -> GameResult<()> {
+
+    let project = OctamedicProject::new();
 
     let (mut ctx, event_loop) = ContextBuilder::new("OctaMEDIC", "Amano Rosuko")
         .backend(ggez::conf::Backend::Vulkan)
@@ -18,7 +21,7 @@ fn main() -> GameResult<()> {
         })
         .build()?;
 
-    let app = App::new(&mut ctx)?;
+    let app = App::new(&mut ctx, project)?;
 
     event::run(ctx, event_loop, app);
 }

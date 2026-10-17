@@ -1,6 +1,6 @@
 use octamed::utility::bytes::UByte;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct OctamedicNote {
     /// Raw OctaMED note number. 0 = no note, 1–128 = chromatic scale.
     pub value: u8,

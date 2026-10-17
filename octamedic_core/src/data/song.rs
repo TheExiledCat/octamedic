@@ -1,7 +1,7 @@
 use octamed::utility::bytes::{Byte, UByte, UWord};
 
 use crate::data::{
-    instrument::OctamedicInstrument,
+    instrument::{InstrumentId, OctamedicInstrument},
     pattern::{OctamedicPattern, PatternId},
     tempo::OctamedicTempo,
     volume::OctamedicVolume,
@@ -51,5 +51,55 @@ impl OctamedicSong {
     pub fn get_sequence(&self) -> Vec<UByte> {
 
         return self.sequence.clone();
+    }
+
+    pub fn name(&self) -> &str {
+
+        return &self.name;
+    }
+
+    pub fn patterns(&self) -> &[OctamedicPattern] {
+
+        return &self.patterns;
+    }
+
+    pub fn get_pattern_mut(&mut self, pattern_id: PatternId) -> Option<&mut OctamedicPattern> {
+
+        return self.patterns.get_mut(pattern_id.0 as usize);
+    }
+
+    // creates empty patterns up to `pattern_id` if the song has fewer
+    pub fn ensure_pattern(&mut self, pattern_id: PatternId) -> &mut OctamedicPattern {
+
+        let index = pattern_id.0 as usize;
+
+        if index >= self.patterns.len() {
+
+            self.patterns.resize_with(index + 1, OctamedicPattern::new);
+
+            self.block_count = UWord(self.patterns.len() as u16);
+        }
+
+        return &mut self.patterns[index];
+    }
+
+    pub fn sequence(&self) -> &[UByte] {
+
+        return &self.sequence;
+    }
+
+    pub fn tempo(&self) -> OctamedicTempo {
+
+        return self.tempo;
+    }
+
+    pub fn tempo_mut(&mut self) -> &mut OctamedicTempo {
+
+        return &mut self.tempo;
+    }
+
+    pub fn instrument(&self, id: InstrumentId) -> Option<&OctamedicInstrument> {
+
+        return self.instruments.get(id.index()?)?.as_ref();
     }
 }

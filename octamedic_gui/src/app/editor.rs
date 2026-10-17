@@ -6,13 +6,16 @@ use taffy::{
     prelude::{auto, length, percent},
 };
 
-use crate::framework::{
-    color::FromHex,
-    ui::Ui,
-    widget::{DrawState, Widget},
-    widgets::{
-        label::Label,
-        panel::{Borders, Panel, fill_rect},
+use crate::{
+    app::state::AppState,
+    framework::{
+        color::FromHex,
+        ui::Ui,
+        widget::{DrawState, Widget},
+        widgets::{
+            label::Label,
+            panel::{Borders, Panel, fill_rect},
+        },
     },
 };
 
@@ -23,14 +26,12 @@ const ROWS: usize = 15;
 
 const CENTER_ROW: usize = ROWS / 2;
 
-// a stand-in block length until the editor shows real blocks
-const LINE_COUNT: usize = 64;
-
 pub struct BlockEditor {
-    selected_row: u8,
+    selected_row: usize,
     selected_track: u8,
     visible_rows: Vec<Vec<NodeId>>, // visible row -> its labels, in column order
-    displayed_row: Option<u8>,
+    line_count: usize,
+    displayed: Option<(usize, usize)>, // the selected row and line count the labels show
     highlight: Option<ScreenRect>,
     last_instant: Instant,
 }
@@ -42,7 +43,8 @@ impl BlockEditor {
             selected_row: 0,
             selected_track: 0,
             visible_rows: Vec::new(),
-            displayed_row: None,
+            line_count: 0,
+            displayed: None,
             highlight: None,
             last_instant: Instant::now(),
         };
@@ -54,7 +56,7 @@ impl BlockEditor {
 
             let line = self.selected_row as isize + row as isize - CENTER_ROW as isize;
 
-            let in_block = (0..LINE_COUNT as isize).contains(&line);
+            let in_block = (0..self.line_count as isize).contains(&line);
 
             for (column, &label) in labels.iter().enumerate() {
 
@@ -155,28 +157,37 @@ impl Widget for BlockEditor {
         }
     }
 
-    fn update(&mut self, ui: &mut Ui, node: NodeId) {
+    fn update(&mut self, ui: &mut Ui, state: &mut AppState, node: NodeId) {
 
-        if self.last_instant.elapsed().as_secs() >= 1 {
+        self.line_count = state
+            .active_pattern()
+            .map_or(0, |pattern| pattern.line_count());
+
+        if state.is_playing() {
+
+            self.selected_row = state.engine.status().row();
+        } else if self.last_instant.elapsed().as_secs() >= 1 {
 
             self.last_instant = Instant::now();
 
-            self.selected_row = ((self.selected_row as usize + 1) % LINE_COUNT) as u8;
+            self.selected_row = (self.selected_row + 1) % self.line_count.max(1);
         }
 
-        if self.displayed_row != Some(self.selected_row) {
+        let shown = (self.selected_row, self.line_count);
+
+        if self.displayed != Some(shown) {
 
             self.show_lines_around_selection(ui);
 
-            self.displayed_row = Some(self.selected_row);
+            self.displayed = Some(shown);
         }
 
         self.highlight = self.highlight_rect(ui, node);
     }
 
-    fn draw(&self, canvas: &mut Canvas, state: &DrawState) {
+    fn draw(&self, canvas: &mut Canvas, draw: &DrawState, _state: &AppState) {
 
-        fill_rect(canvas, state.rect, Color::hex("000"));
+        fill_rect(canvas, draw.rect, Color::hex("000"));
 
         if let Some(highlight) = self.highlight {
 
@@ -189,11 +200,18 @@ impl Widget for BlockEditor {
 
 mod tests {
 
+    use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
+
     use super::*;
 
-    fn mounted(selected_row: u8) -> (Ui, NodeId) {
+    // the default project's block has 64 lines
+    const LINE_COUNT: usize = 64;
+
+    fn mounted(selected_row: usize) -> (Ui, NodeId) {
 
         let mut ui = Ui::new(Panel::new());
+
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
 
         let mut editor = BlockEditor::new();
 
@@ -203,7 +221,7 @@ mod tests {
 
         let node = ui.add(root, editor);
 
-        ui.update();
+        ui.update(&mut state);
 
         return (ui, node);
     }
@@ -240,7 +258,7 @@ mod tests {
 
         assert_eq!(row(&ui, editor, CENTER_ROW), ("000 ".to_string(), true));
 
-        let (ui, editor) = mounted(LINE_COUNT as u8 - 1);
+        let (ui, editor) = mounted(LINE_COUNT - 1);
 
         assert!(!row(&ui, editor, CENTER_ROW + 1).1);
     }

@@ -3,9 +3,12 @@ use std::collections::HashMap;
 use ggez::graphics::{Canvas, Rect};
 use taffy::{AvailableSpace, Display, NodeId, Style, TaffyTree, TraversePartialTree};
 
-use crate::framework::{
-    input::MouseButton,
-    widget::{DrawState, Widget},
+use crate::{
+    app::state::AppState,
+    framework::{
+        input::MouseButton,
+        widget::{DrawState, Widget},
+    },
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -27,7 +30,7 @@ pub struct Ui {
 struct Placeholder;
 
 impl Widget for Placeholder {
-    fn draw(&self, _canvas: &mut Canvas, _state: &DrawState) {}
+    fn draw(&self, _canvas: &mut Canvas, _draw: &DrawState, _state: &AppState) {}
 }
 
 impl Ui {
@@ -236,7 +239,7 @@ impl Ui {
         return Some(result);
     }
 
-    pub fn update(&mut self) {
+    pub fn update(&mut self, state: &mut AppState) {
 
         let mut nodes = vec![self.root];
 
@@ -257,11 +260,11 @@ impl Ui {
 
         for node in nodes {
 
-            self.with_widget_detached(node, |widget, ui| widget.update(ui, node));
+            self.with_widget_detached(node, |widget, ui| widget.update(ui, state, node));
         }
     }
 
-    pub fn bubble_event(&mut self, node: NodeId, event: UiEvent) {
+    pub fn bubble_event(&mut self, node: NodeId, event: UiEvent, state: &mut AppState) {
 
         let mut path = vec![];
 
@@ -276,8 +279,8 @@ impl Ui {
 
         for node in path {
 
-            let handled =
-                self.with_widget_detached(node, |widget, ui| widget.on_event(ui, node, &event));
+            let handled = self
+                .with_widget_detached(node, |widget, ui| widget.on_event(ui, state, node, &event));
 
             if handled == Some(true) {
 
@@ -431,7 +434,7 @@ impl Ui {
         }
     }
 
-    pub fn mouse_released(&mut self, point: [f32; 2], button: MouseButton) {
+    pub fn mouse_released(&mut self, point: [f32; 2], button: MouseButton, state: &mut AppState) {
 
         self.mouse_moved(point);
 
@@ -455,6 +458,7 @@ impl Ui {
                     node,
                     button,
                 },
+                state,
             );
         }
     }
@@ -464,12 +468,12 @@ impl Ui {
         return std::mem::take(&mut self.unhandled_events);
     }
 
-    pub fn draw(&self, canvas: &mut Canvas) {
+    pub fn draw(&self, canvas: &mut Canvas, state: &AppState) {
 
-        self.draw_node(canvas, self.root, (0.0, 0.0));
+        self.draw_node(canvas, self.root, (0.0, 0.0), state);
     }
 
-    fn draw_node(&self, canvas: &mut Canvas, node: NodeId, origin: (f32, f32)) {
+    fn draw_node(&self, canvas: &mut Canvas, node: NodeId, origin: (f32, f32), state: &AppState) {
 
         if self.is_hidden(node) {
 
@@ -496,7 +500,7 @@ impl Ui {
             rect.h - inset(|r| r.top) - inset(|r| r.bottom),
         );
 
-        let state = DrawState {
+        let draw = DrawState {
             rect,
             content_rect,
             hovered: self.is_hovered(node),
@@ -507,20 +511,20 @@ impl Ui {
 
         if let Some(widget) = widget {
 
-            widget.draw(canvas, &state);
+            widget.draw(canvas, &draw, state);
         }
 
         for index in 0..self.tree.child_count(node) {
 
             if let Ok(child) = self.tree.child_at_index(node, index) {
 
-                self.draw_node(canvas, child, (rect.x, rect.y));
+                self.draw_node(canvas, child, (rect.x, rect.y), state);
             }
         }
 
         if let Some(widget) = widget {
 
-            widget.draw_after_children(canvas, &state);
+            widget.draw_after_children(canvas, &draw, state);
         }
     }
 
@@ -543,6 +547,7 @@ mod tests {
 
     use std::{cell::Cell, rc::Rc};
 
+    use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
     use taffy::{
         Position, Size,
         prelude::{length, percent},
@@ -551,12 +556,17 @@ mod tests {
     use super::*;
     use crate::framework::widgets::{button::Button, panel::Panel};
 
+    fn state() -> AppState {
+
+        return AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+    }
+
     /// An interactive widget with no looks, standing in for a button.
 
     struct Clickable;
 
     impl Widget for Clickable {
-        fn draw(&self, _canvas: &mut Canvas, _state: &DrawState) {}
+        fn draw(&self, _canvas: &mut Canvas, _draw: &DrawState, _state: &AppState) {}
 
         fn is_interactive(&self) -> bool {
 
@@ -619,7 +629,7 @@ mod tests {
 
         ui.mouse_pressed(point, MouseButton::Left);
 
-        ui.mouse_released(point, MouseButton::Left);
+        ui.mouse_released(point, MouseButton::Left, &mut state());
     }
 
     #[test]
@@ -657,7 +667,7 @@ mod tests {
 
         ui.mouse_pressed([20.0, 20.0], MouseButton::Left);
 
-        ui.mouse_released([200.0, 200.0], MouseButton::Left);
+        ui.mouse_released([200.0, 200.0], MouseButton::Left, &mut state());
 
         assert!(ui.take_unhandled_events().is_empty());
     }
@@ -797,7 +807,7 @@ mod tests {
 
         layout(&mut ui);
 
-        ui.mouse_released([20.0, 20.0], MouseButton::Left);
+        ui.mouse_released([20.0, 20.0], MouseButton::Left, &mut state());
 
         assert!(ui.take_unhandled_events().is_empty());
 
@@ -813,7 +823,7 @@ mod tests {
     }
 
     impl Widget for Tabs {
-        fn draw(&self, _canvas: &mut Canvas, _state: &DrawState) {}
+        fn draw(&self, _canvas: &mut Canvas, _draw: &DrawState, _state: &AppState) {}
 
         fn mount(&mut self, ui: &mut Ui, node: NodeId) {
 
@@ -831,7 +841,13 @@ mod tests {
             }
         }
 
-        fn on_event(&mut self, ui: &mut Ui, _node: NodeId, event: &UiEvent) -> bool {
+        fn on_event(
+            &mut self,
+            ui: &mut Ui,
+            _state: &mut AppState,
+            _node: NodeId,
+            event: &UiEvent,
+        ) -> bool {
 
             let UiEvent::Clicked {
                 node: clicked, ..
@@ -946,18 +962,18 @@ mod tests {
     struct Counter(u32);
 
     impl Widget for Counter {
-        fn draw(&self, _canvas: &mut Canvas, _state: &DrawState) {}
+        fn draw(&self, _canvas: &mut Canvas, _draw: &DrawState, _state: &AppState) {}
     }
 
     impl Widget for Ticker {
-        fn draw(&self, _canvas: &mut Canvas, _state: &DrawState) {}
+        fn draw(&self, _canvas: &mut Canvas, _draw: &DrawState, _state: &AppState) {}
 
         fn mount(&mut self, ui: &mut Ui, node: NodeId) {
 
             self.counter = Some(ui.add(node, Counter(0)));
         }
 
-        fn update(&mut self, ui: &mut Ui, _node: NodeId) {
+        fn update(&mut self, ui: &mut Ui, _state: &mut AppState, _node: NodeId) {
 
             if let Some(counter) = self.counter.and_then(|node| ui.get_mut::<Counter>(node)) {
 
@@ -983,9 +999,9 @@ mod tests {
 
         let counter = ui.get::<Ticker>(ticker).unwrap().counter;
 
-        ui.update();
+        ui.update(&mut state());
 
-        ui.update();
+        ui.update(&mut state());
 
         assert_eq!(ui.get::<Counter>(counter.unwrap()).unwrap().0, 2);
     }
@@ -995,14 +1011,20 @@ mod tests {
     struct CloseButton;
 
     impl Widget for CloseButton {
-        fn draw(&self, _canvas: &mut Canvas, _state: &DrawState) {}
+        fn draw(&self, _canvas: &mut Canvas, _draw: &DrawState, _state: &AppState) {}
 
         fn is_interactive(&self) -> bool {
 
             return true;
         }
 
-        fn on_event(&mut self, ui: &mut Ui, node: NodeId, _event: &UiEvent) -> bool {
+        fn on_event(
+            &mut self,
+            ui: &mut Ui,
+            _state: &mut AppState,
+            node: NodeId,
+            _event: &UiEvent,
+        ) -> bool {
 
             ui.remove(node);
 
@@ -1068,7 +1090,7 @@ mod tests {
 
         let counted = clicks.clone();
 
-        let button = Button::new("Play", 12.0).on_click(move |_, _, _| {
+        let button = Button::new("Play", 12.0).on_click(move |_, _, _, _| {
 
             counted.set(counted.get() + 1);
 
@@ -1095,7 +1117,7 @@ mod tests {
     impl Widget for Owner {
         fn mount(&mut self, ui: &mut Ui, node: NodeId) {
 
-            let button = Button::new("+1", 12.0).on_click(|ui, node, _| {
+            let button = Button::new("+1", 12.0).on_click(|ui, _, node, _| {
 
                 if let Some(owner) = ui.ancestor_mut::<Owner>(node) {
 
@@ -1108,7 +1130,7 @@ mod tests {
             ui.add_styled(node, button, sized(10.0, 10.0, 100.0, 40.0));
         }
 
-        fn draw(&self, _canvas: &mut Canvas, _state: &DrawState) {}
+        fn draw(&self, _canvas: &mut Canvas, _draw: &DrawState, _state: &AppState) {}
     }
 
     #[test]
@@ -1169,7 +1191,7 @@ mod tests {
 
         let mut ui = ui();
 
-        let button = Button::new("Play", 12.0).on_click(|_, _, _| false);
+        let button = Button::new("Play", 12.0).on_click(|_, _, _, _| false);
 
         let node = ui.add_styled(ui.root(), button, sized(10.0, 10.0, 100.0, 40.0));
 

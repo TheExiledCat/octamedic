@@ -6,7 +6,10 @@ use taffy::{
     prelude::{length, percent},
 };
 
-use crate::framework::widget::{DrawState, Widget};
+use crate::{
+    app::state::AppState,
+    framework::widget::{DrawState, Widget},
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 
@@ -138,22 +141,22 @@ impl Widget for Panel {
         };
     }
 
-    fn draw(&self, canvas: &mut Canvas, state: &DrawState) {
+    fn draw(&self, canvas: &mut Canvas, draw: &DrawState, _state: &AppState) {
 
         if self.background.a > 0.0 {
 
-            fill_rect(canvas, state.rect, self.background);
+            fill_rect(canvas, draw.rect, self.background);
         }
     }
 
-    fn draw_after_children(&self, canvas: &mut Canvas, state: &DrawState) {
+    fn draw_after_children(&self, canvas: &mut Canvas, draw: &DrawState, _state: &AppState) {
 
         let Rect {
             x,
             y,
             w,
             h,
-        } = state.rect;
+        } = draw.rect;
 
         let borders = self.borders;
 

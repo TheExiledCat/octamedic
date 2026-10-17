@@ -6,10 +6,13 @@ use taffy::{
     prelude::{auto, length, percent},
 };
 
-use crate::framework::{
-    ui::Ui,
-    widget::{DrawState, Widget},
-    widgets::{button::Button, label::Label, panel::Panel},
+use crate::{
+    app::state::AppState,
+    framework::{
+        ui::Ui,
+        widget::{DrawState, Widget},
+        widgets::{button::Button, label::Label, panel::Panel},
+    },
 };
 
 pub struct TitleBar {
@@ -62,7 +65,7 @@ impl Widget for TitleBar {
 
         ui.add(bar, Label::new("TIMER", 24.0));
 
-        let timer = Button::new("00:00", 24.0).on_click(|ui, node, _| {
+        let timer = Button::new("00:00", 24.0).on_click(|ui, _state, node, _| {
 
             if let Some(bar) = ui.ancestor_mut::<TitleBar>(node) {
 
@@ -82,12 +85,12 @@ impl Widget for TitleBar {
         });
     }
 
-    fn draw(&self, canvas: &mut Canvas, state: &DrawState) {
+    fn draw(&self, canvas: &mut Canvas, draw: &DrawState, state: &AppState) {
 
-        self.background.draw(canvas, state);
+        self.background.draw(canvas, draw, state);
     }
 
-    fn update(&mut self, ui: &mut Ui, _node: NodeId) {
+    fn update(&mut self, ui: &mut Ui, _state: &mut AppState, _node: NodeId) {
 
         let seconds = self.started.elapsed().as_secs();
 

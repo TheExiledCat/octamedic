@@ -4,7 +4,10 @@ use ggez::{
 };
 use taffy::{AvailableSpace, Size};
 
-use crate::framework::widget::{DrawState, Widget};
+use crate::{
+    app::state::AppState,
+    framework::widget::{DrawState, Widget},
+};
 
 pub const TEXT_FONT: &str = "Topaz";
 
@@ -53,9 +56,9 @@ impl Label {
 }
 
 impl Widget for Label {
-    fn draw(&self, canvas: &mut Canvas, state: &DrawState) {
+    fn draw(&self, canvas: &mut Canvas, draw: &DrawState, _state: &AppState) {
 
-        draw_text(canvas, &self.text, self.font_size, self.color, state);
+        draw_text(canvas, &self.text, self.font_size, self.color, draw);
     }
 
     fn measure_content(
@@ -80,18 +83,12 @@ fn text(text: &str, font_size: f32) -> Text {
     return text;
 }
 
-pub fn draw_text(
-    canvas: &mut Canvas,
-    value: &str,
-    font_size: f32,
-    color: Color,
-    state: &DrawState,
-) {
+pub fn draw_text(canvas: &mut Canvas, value: &str, font_size: f32, color: Color, draw: &DrawState) {
 
     canvas.draw(
         &text(value, font_size),
         DrawParam::default()
-            .dest([state.content_rect.x, state.content_rect.y])
+            .dest([draw.content_rect.x, draw.content_rect.y])
             .color(color),
     );
 }

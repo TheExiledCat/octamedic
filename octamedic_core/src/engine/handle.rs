@@ -255,6 +255,20 @@ impl EngineHandle {
         });
     }
 
+    // a handle with no engine behind it: commands go nowhere and the status stays paused, for
+    // running the UI without an audio device
+    pub fn disconnected() -> Self {
+
+        let (commands, _) = mpsc::channel();
+
+        return Self {
+            commands,
+            shutdown: None,
+            status: Arc::new(EngineStatus::default()),
+            thread: None,
+        };
+    }
+
     pub fn status(&self) -> &EngineStatus {
 
         return &self.status;
