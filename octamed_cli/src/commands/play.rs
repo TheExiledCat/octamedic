@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use clap_derive::Args;
+use clap_num::number_range;
 use octamed::mmd::conversion::FromModule;
 use octamedic_core::{
     data::{project::OctamedicProject, song::SongId},
@@ -12,7 +13,16 @@ use crate::commands::repl::{Command, CommandError, CommandResult};
 #[derive(Args, Debug, Clone)]
 #[command(about = "Play the module.")]
 
-pub struct PlayCommand {}
+pub struct PlayCommand {
+    #[arg(
+        short,
+        long,
+        help = "The volume to play the song at (0-64)",
+        default_value = "32",
+        value_parser = zero_to_64
+    )]
+    volume: u8,
+}
 
 impl Command for PlayCommand {
     fn run(&self, mmd: &mut octamed::mmd::module::OctamedMMD) -> CommandResult {
@@ -24,6 +34,8 @@ impl Command for PlayCommand {
             .ok_or_else(|| CommandError::Generic("module has no song".into()))?;
 
         let engine = EngineHandle::spawn().map_err(|e| CommandError::Generic(e.to_string()))?;
+
+        engine.set_volume(self.volume);
 
         engine.load_song(song);
 
@@ -54,4 +66,9 @@ impl Command for PlayCommand {
 
         return Ok(());
     }
+}
+
+fn zero_to_64(text: &str) -> Result<u8, String> {
+
+    return number_range(text, 0, 64);
 }
