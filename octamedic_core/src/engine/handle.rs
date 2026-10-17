@@ -340,6 +340,11 @@ impl EngineHandle {
         });
     }
 
+    pub fn set_volume(&self, volume: u8) {
+
+        self.send(EngineCommand::SetMasterVolume(volume));
+    }
+
     pub fn play_note(&self, track: usize, note: OctamedicNote, instrument: InstrumentId) {
 
         self.send(EngineCommand::PlayNote {
