@@ -80,6 +80,8 @@ pub struct OctamedicEngine {
     track_volumes: [u8; MAX_TRACKS],
     master_volume: u8,
     global_transpose: i8,
+    // the listener's volume, applied to the whole mix; not part of the song
+    output_volume: u8,
 
     mode: PlayMode,
     position: Position,
@@ -107,6 +109,7 @@ impl OctamedicEngine {
             track_volumes: [MAX_INSTRUMENT_VOLUME; MAX_TRACKS],
             master_volume: MAX_INSTRUMENT_VOLUME,
             global_transpose: 0,
+            output_volume: MAX_INSTRUMENT_VOLUME,
             mode: PlayMode::Paused,
             position: Position {
                 sequence_index: 0,
@@ -165,8 +168,10 @@ impl OctamedicEngine {
             frame += frames;
         }
 
+        let gain = self.output_volume as f32 / MAX_INSTRUMENT_VOLUME as f32;
+
         out.iter_mut()
-            .for_each(|sample| *sample = sample.clamp(-1.0, 1.0));
+            .for_each(|sample| *sample = (*sample * gain).clamp(-1.0, 1.0));
     }
 
     /// Handles one command sent from the UI.
@@ -208,6 +213,9 @@ impl OctamedicEngine {
                 self.master_volume = volume.min(MAX_INSTRUMENT_VOLUME)
             }
             EngineCommand::SetGlobalTranspose(transpose) => self.global_transpose = transpose,
+            EngineCommand::SetOutputVolume(volume) => {
+                self.output_volume = volume.min(MAX_INSTRUMENT_VOLUME)
+            }
             EngineCommand::PlayNote {
                 track,
                 note,
@@ -782,5 +790,55 @@ mod tests {
         let rate = engine.voices.rate(0).unwrap();
 
         assert!((rate - 2.0 * 8287.1369).abs() < 0.1, "{rate}");
+    }
+
+    #[test]
+
+    fn output_volume_scales_the_whole_mix_right_away() {
+
+        let (mut engine, commands, _) = engine();
+
+        commands
+            .send(EngineCommand::SetInstrument {
+                id: InstrumentId(1),
+                instrument: Some(instrument()),
+            })
+            .unwrap();
+
+        commands
+            .send(EngineCommand::PlayNote {
+                track: 0,
+                note: OctamedicNote {
+                    value: 13,
+                },
+                instrument: InstrumentId(1),
+            })
+            .unwrap();
+
+        let full = run(&mut engine, 1)[0];
+
+        // a note that is already playing gets quieter too
+        commands.send(EngineCommand::SetOutputVolume(16)).unwrap();
+
+        let quarter = run(&mut engine, 1)[0];
+
+        assert!(full > 0.0);
+
+        assert!((quarter - full / 4.0).abs() < 1e-6, "{full} {quarter}");
+    }
+
+    #[test]
+
+    fn loading_a_song_keeps_the_output_volume() {
+
+        let (mut engine, commands, _) = engine();
+
+        commands.send(EngineCommand::SetOutputVolume(10)).unwrap();
+
+        commands.send(EngineCommand::SetMasterVolume(64)).unwrap();
+
+        run(&mut engine, 1);
+
+        assert_eq!(engine.output_volume, 10);
     }
 }

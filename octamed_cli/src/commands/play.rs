@@ -35,7 +35,7 @@ impl Command for PlayCommand {
 
         let engine = EngineHandle::spawn().map_err(|e| CommandError::Generic(e.to_string()))?;
 
-        engine.set_volume(self.volume);
+        engine.set_output_volume(self.volume);
 
         engine.load_song(song);
 
