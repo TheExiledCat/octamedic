@@ -715,9 +715,10 @@ impl OctamedMMD0SongFlags {
         return bit_flag(self.0, Self::IS_HQ_V2_COMPATIBILITY_FLAG);
     }
 
+    // in lines, 1-32; the file stores one less, so 0 means 1 line
     pub fn bpm_beat_length(&self) -> UByte {
 
-        return UByte(self.1.0 & Self::BPM_BEAT_LENGTH_MASK);
+        return UByte((self.1.0 & Self::BPM_BEAT_LENGTH_MASK) + 1);
     }
 
     pub fn is_bpm_mode(&self) -> bool {
@@ -775,5 +776,27 @@ impl Display for OctamedMMD0SongFlags {
         }
 
         return Ok(());
+    }
+}
+
+#[cfg(test)]
+
+mod tests {
+
+    use super::*;
+
+    #[test]
+
+    fn bpm_beat_length_is_one_more_than_the_stored_bits() {
+
+        let flags = |flags2: u8| OctamedMMD0SongFlags::from_bytes(UByte(0), UByte(flags2));
+
+        assert_eq!(flags(0x00).bpm_beat_length(), UByte(1));
+
+        assert_eq!(flags(0x23).bpm_beat_length(), UByte(4));
+
+        assert_eq!(flags(0x2F).bpm_beat_length(), UByte(16));
+
+        assert_eq!(flags(0x1F).bpm_beat_length(), UByte(32));
     }
 }

@@ -68,7 +68,7 @@ impl Command for PlayCommand {
     }
 }
 
-fn zero_to_64(text: &str) -> Result<u8, String> {
+pub(crate) fn zero_to_64(text: &str) -> Result<u8, String> {
 
     return number_range(text, 0, 64);
 }

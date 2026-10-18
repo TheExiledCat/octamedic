@@ -14,6 +14,7 @@ use crate::commands::{
     instruments::InstrumentsCommand,
     pallete::PalleteCommand,
     play::PlayCommand,
+    record::RecordCommand,
     rewrite::RewriteCommand,
     sample::SampleCommand,
     sequence::ShowSequenceCommand,
@@ -83,6 +84,8 @@ pub enum MMDCommandKind {
     Pallete(PalleteCommand),
     #[command(name = "play")]
     Play(PlayCommand),
+    #[command(name = "record")]
+    Record(RecordCommand),
 }
 
 impl MMDCommandKind {
@@ -101,6 +104,7 @@ impl MMDCommandKind {
             MMDCommandKind::Rewrite(c) => c.run(mmd),
             MMDCommandKind::Pallete(c) => c.run(mmd),
             MMDCommandKind::Play(c) => c.run(mmd),
+            MMDCommandKind::Record(c) => c.run(mmd),
         }
     }
 }

@@ -379,10 +379,25 @@ impl OctamedicEngine {
 
         let ticks_per_line = self.ticks_per_line();
 
+        // the previous row ends when this tick starts, so the last row of a song gets its last tick
+        if self
+            .clock
+            .as_ref()
+            .is_some_and(|clock| clock.tick >= ticks_per_line)
+        {
+
+            self.advance_row();
+        }
+
         let Some(clock) = &mut self.clock else {
 
             return;
         };
+
+        if clock.tick >= ticks_per_line {
+
+            clock.tick = 0;
+        }
 
         clock.frames_until_tick += frames_per_tick;
 
@@ -390,24 +405,12 @@ impl OctamedicEngine {
 
         clock.tick += 1;
 
-        let row_done = clock.tick >= ticks_per_line;
-
-        if row_done {
-
-            clock.tick = 0;
-        }
-
         if tick == 0 {
 
             self.play_row();
         }
 
         // todo effects: run the tick's effects here.
-
-        if row_done {
-
-            self.advance_row();
-        }
     }
 
     /// Moves the position forward a row, stopping when the song ends.
