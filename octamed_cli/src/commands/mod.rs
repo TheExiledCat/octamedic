@@ -5,6 +5,7 @@ pub mod inspect;
 pub mod instruments;
 pub mod pallete;
 pub mod play;
+pub mod record;
 pub mod repl;
 pub mod rewrite;
 pub mod sample;

@@ -98,6 +98,14 @@ impl OctamedicSong {
         return &mut self.tempo;
     }
 
+    pub fn set_instrument(&mut self, id: InstrumentId, instrument: Option<OctamedicInstrument>) {
+
+        if let Some(slot) = id.index().and_then(|index| self.instruments.get_mut(index)) {
+
+            *slot = instrument;
+        }
+    }
+
     pub fn instrument(&self, id: InstrumentId) -> Option<&OctamedicInstrument> {
 
         return self.instruments.get(id.index()?)?.as_ref();
