@@ -2,7 +2,7 @@
 
 A faithful clone of OctaMED Professional v4
 
-![Octamed Placeholder](image.png)
+![Octamed Placeholder](octamedic.png)
 
 ## Features
 
