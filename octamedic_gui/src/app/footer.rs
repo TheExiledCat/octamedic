@@ -1,25 +1,25 @@
-use ggez::graphics::Color;
-use taffy::{NodeId, Size, prelude::percent};
+use crate::{
+    app::state::AppState,
+    framework::{
+        painter::{Painter, Pen},
+        rect::Rect,
+        widget::OctamedicWidget,
+    },
+};
 
-use crate::framework::{ui::Ui, widgets::panel::Panel};
+const INFO_HEIGHT: i32 = 10;
 
-pub fn build(ui: &mut Ui, parent: NodeId) -> NodeId {
-    let border = Color::BLACK;
-    let fill = Color::from_rgb(211, 211, 211);
-    let footer = ui.add_styled(
-        parent,
-        Panel::new().with_background(fill).with_border(border, 2.0),
-        |style| style.size.height = percent(0.25_f32),
-    );
-    ui.add_styled(
-        footer,
-        Panel::new().with_background(fill).with_border(border, 2.0),
-        |style| {
-            style.size = Size {
-                width: percent(1.0_f32),
-                height: percent(1.0_f32),
-            };
-        },
-    );
-    return footer;
+/// The message line and, below it, the scopes.
+pub struct Footer;
+
+impl OctamedicWidget for Footer {
+    fn render(&mut self, state: &AppState, area: Rect, painter: &mut Painter) {
+        painter.fill(area, Pen::FILL);
+        let (info, scopes) = area.split_top(INFO_HEIGHT);
+        painter.frame(info);
+        if let Some(notification) = &state.notification {
+            painter.text(info.x + 4, info.y + 1, notification, Pen::BLACK);
+        }
+        painter.frame(scopes);
+    }
 }

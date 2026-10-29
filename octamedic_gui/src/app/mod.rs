@@ -1,7 +1,10 @@
 pub mod app;
+pub mod cursor;
 pub mod editor;
 pub mod footer;
 pub mod header;
+pub mod keybinds;
+pub mod main_view;
 pub mod state;
 pub mod status_bar;
 pub mod title_bar;

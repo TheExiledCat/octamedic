@@ -1,168 +1,181 @@
-use ggez::graphics::{Canvas, Color};
-use taffy::{
-    AlignItems, JustifyContent, NodeId, Rect, Size, Style,
-    prelude::{auto, length},
-};
-
 use crate::{
     app::state::AppState,
     framework::{
-        input::MouseButton,
-        ui::{Ui, UiEvent},
-        widget::{DrawState, Widget},
-        widgets::{label::Label, panel::fill_rect},
+        clickable::{Click, Clickable},
+        event::{Event, MouseButton},
+        painter::{CHAR_WIDTH, Painter, Pen, centered_text_x},
+        rect::{Point, Rect},
+        widget::OctamedicWidget,
     },
 };
 
-type ClickHandler = Box<dyn FnMut(&mut Ui, &mut AppState, NodeId, MouseButton) -> bool>;
+/// What a button's click handler is told.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ButtonClick {
+    pub button: MouseButton,
+    /// The label's character under the pointer, counting from 0, if it was over the label.
+    pub char_index: Option<usize>,
+}
 
+type ClickHandler = Box<dyn FnMut(&mut AppState, ButtonClick)>;
+
+/// A text gadget, which changes the state when clicked.
 pub struct Button {
-    initial_text: String,
-    font_size: f32,
-    label: Option<NodeId>,
+    text: String,
+    clickable: Clickable,
     on_click: Option<ClickHandler>,
-    background_colors: ButtonColors,
-    text_colors: ButtonColors,
+    /// Drawn inverted, like OctaMED's buttons that are switched on.
+    toggled: bool,
+    /// Where the label started when last rendered.
+    label_x: i32,
 }
 
 impl Button {
-    pub fn new(text: impl Into<String>, font_size: f32) -> Self {
+    pub fn new(text: impl Into<String>) -> Self {
         return Self {
-            initial_text: text.into(),
-            font_size,
-            label: None,
+            text: text.into(),
+            clickable: Clickable::default(),
             on_click: None,
-            background_colors: ButtonColors::background(),
-            text_colors: ButtonColors::text(),
+            toggled: false,
+            label_x: 0,
         };
     }
 
-    // the handler returns whether it handled the click; if not, or without a handler, the click
-    // bubbles on to the button's ancestors
-    pub fn on_click(
-        mut self,
-        handler: impl FnMut(&mut Ui, &mut AppState, NodeId, MouseButton) -> bool + 'static,
-    ) -> Self {
+    pub fn on_click(mut self, handler: impl FnMut(&mut AppState, ButtonClick) + 'static) -> Self {
         self.on_click = Some(Box::new(handler));
         return self;
     }
 
-    pub fn label_node(&self) -> Option<NodeId> {
-        return self.label;
+    pub fn set_text(&mut self, text: impl Into<String>) {
+        self.text = text.into();
     }
 
-    pub fn set_text(ui: &mut Ui, node: NodeId, text: impl Into<String>) {
-        let Some(label) = ui.get::<Button>(node).and_then(Button::label_node) else {
-            return;
-        };
-        if let Some(label) = ui.get_mut::<Label>(label) {
-            label.set_text(text);
-        }
-    }
-}
-
-impl Widget for Button {
-    fn style(&self) -> Style {
-        return Style {
-            size: Size {
-                width: auto(),
-                height: auto(),
-            },
-            padding: Rect {
-                left: length(2.0_f32),
-                right: length(2.0_f32),
-                bottom: length(1.0_f32),
-                top: length(1.0_f32),
-            },
-            justify_content: Some(JustifyContent::Center),
-            align_items: Some(AlignItems::Center),
-            ..Default::default()
-        };
+    /// Switches between drawn normally and inverted.
+    pub fn toggle(&mut self) {
+        self.toggled = !self.toggled;
     }
 
-    fn mount(&mut self, ui: &mut Ui, node: NodeId) {
-        let label = Label::new(std::mem::take(&mut self.initial_text), self.font_size)
-            .with_color(self.text_colors.default_color);
-        self.label = Some(ui.add(node, label));
+    pub fn set_toggled(&mut self, toggled: bool) {
+        self.toggled = toggled;
     }
 
-    fn update(&mut self, ui: &mut Ui, _state: &mut AppState, node: NodeId) {
-        let color = self
-            .text_colors
-            .for_state(ui.is_hovered(node), ui.is_pressed(node));
-        let Some(label) = self.label else {
-            return;
-        };
-        // only through `get_mut` when it changes, since that marks the label for layout.
-        if ui
-            .get::<Label>(label)
-            .is_some_and(|label| label.color() != color)
-            && let Some(label) = ui.get_mut::<Label>(label)
-        {
-            label.set_color(color);
-        }
+    pub fn is_toggled(&self) -> bool {
+        return self.toggled;
     }
 
-    fn draw(&self, canvas: &mut Canvas, draw: &DrawState, _state: &AppState) {
-        let background = self.background_colors.for_state(draw.hovered, draw.pressed);
-        fill_rect(canvas, draw.rect, background);
-    }
-
-    fn on_event(
-        &mut self,
-        ui: &mut Ui,
-        state: &mut AppState,
-        node: NodeId,
-        event: &UiEvent,
-    ) -> bool {
-        let UiEvent::Clicked {
-            node: clicked,
-            button,
-        } = *event;
-        if clicked != node {
-            return false;
-        }
-        let Some(handler) = &mut self.on_click else {
-            return false;
-        };
-        return handler(ui, state, node, button);
-    }
-
-    fn is_interactive(&self) -> bool {
-        return true;
-    }
-}
-
-pub struct ButtonColors {
-    default_color: Color,
-    hover_color: Color,
-    press_color: Color,
-}
-
-impl ButtonColors {
-    pub fn background() -> Self {
-        return Self {
-            default_color: Color::WHITE,
-            hover_color: Color::from_rgb(211, 211, 211),
-            press_color: Color::BLACK,
-        };
-    }
-
-    pub fn text() -> Self {
-        return Self {
-            default_color: Color::BLACK,
-            hover_color: Color::BLACK,
-            press_color: Color::WHITE,
-        };
-    }
-
-    fn for_state(&self, hovered: bool, pressed: bool) -> Color {
-        return if pressed {
-            self.press_color
-        } else if hovered {
-            self.hover_color
+    /// The fill and text pens. Toggled and pressed each swap them, so pressing a toggled button
+    /// shows it normally, as a preview of letting go.
+    fn pens(&self) -> (Pen, Pen) {
+        let (fill, text) = (Pen::FILL, Pen::BLACK);
+        return if self.toggled != self.clickable.is_pressed() {
+            (text, fill)
         } else {
-            self.default_color
+            (fill, text)
         };
+    }
+
+    fn char_at(&self, pos: Point) -> Option<usize> {
+        let offset = pos[0] - self.label_x;
+        if offset < 0 {
+            return None;
+        }
+        let index = (offset / CHAR_WIDTH) as usize;
+        return (index < self.text.chars().count()).then_some(index);
+    }
+}
+
+impl OctamedicWidget for Button {
+    fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
+        let click = self.clickable.handle(event);
+        if let Click::Clicked { button, pos } = click {
+            let char_index = self.char_at(pos);
+            if let Some(handler) = &mut self.on_click {
+                handler(state, ButtonClick { button, char_index });
+            }
+        }
+        return click.handled();
+    }
+
+    fn render(&mut self, _state: &AppState, area: Rect, painter: &mut Painter) {
+        self.clickable.set_area(area);
+        self.label_x = centered_text_x(area, &self.text);
+        let (fill, text) = self.pens();
+        painter.fill(area, fill);
+        painter.frame(area);
+        painter.text_centered(area, &self.text, text);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{cell::Cell, rc::Rc};
+
+    use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
+
+    use super::*;
+
+    fn state() -> AppState {
+        return AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+    }
+
+    fn click(button: &mut Button, state: &mut AppState, pos: Point) {
+        let mouse = MouseButton::Left;
+        button.handle_event(state, &Event::MouseDown { pos, button: mouse });
+        button.handle_event(state, &Event::MouseUp { pos, button: mouse });
+    }
+
+    /// "NEXT" centred in 40 pixels starts at x 4.
+    fn next_button(handler: impl FnMut(&mut AppState, ButtonClick) + 'static) -> Button {
+        let mut button = Button::new("NEXT").on_click(handler);
+        let area = Rect::new(0, 0, 40, 10);
+        button.clickable.set_area(area);
+        button.label_x = centered_text_x(area, "NEXT");
+        return button;
+    }
+
+    #[test]
+    fn toggling_and_pressing_each_invert_the_button() {
+        let normal = (Pen::FILL, Pen::BLACK);
+        let inverted = (Pen::BLACK, Pen::FILL);
+        let mut button = next_button(|_, _| {});
+        assert_eq!(button.pens(), normal);
+        button.toggle();
+        assert!(button.is_toggled());
+        assert_eq!(button.pens(), inverted);
+        let pos = [5, 5];
+        let down = Event::MouseDown {
+            pos,
+            button: MouseButton::Left,
+        };
+        button.handle_event(&mut state(), &down);
+        assert_eq!(button.pens(), normal);
+        button.set_toggled(false);
+        assert_eq!(button.pens(), inverted);
+    }
+
+    #[test]
+    fn a_click_runs_the_handler_on_the_state() {
+        let mut state = state();
+        let mut button = next_button(|state, _| state.next_pattern());
+        click(&mut button, &mut state, [5, 5]);
+        assert_eq!(state.active_pattern.0, 1);
+    }
+
+    #[test]
+    fn a_click_says_which_character_of_the_label_it_was_on() {
+        let clicked = Rc::new(Cell::new(None));
+        let seen = clicked.clone();
+        let mut button = next_button(move |_, click| seen.set(Some(click.char_index)));
+        let mut state = state();
+        for (x, index) in [
+            (4, Some(0)),
+            (13, Some(1)),
+            (35, Some(3)),
+            (2, None),
+            (37, None),
+        ] {
+            click(&mut button, &mut state, [x, 5]);
+            assert_eq!(clicked.get(), Some(index), "x {x}");
+        }
     }
 }

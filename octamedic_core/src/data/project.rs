@@ -7,6 +7,7 @@ use octamed::mmd::{
 
 use crate::data::{
     instrument::{MAX_INSTRUMENT_VOLUME, OctamedicInstrument, OctamedicSample},
+    palette::OctamedColorPallete,
     pattern::{OctamedicPattern, PatternId},
     song::{OctamedicSong, OctamedicSongFlags, SongId},
     tempo::OctamedicTempo,
@@ -16,6 +17,7 @@ use crate::data::{
 pub struct OctamedicProject {
     name: String,
     songs: Vec<OctamedicSong>,
+    pallete: OctamedColorPallete,
 }
 
 impl OctamedicProject {
@@ -23,6 +25,7 @@ impl OctamedicProject {
         return Self {
             name: String::new(),
             songs: vec![OctamedicSong::new("unnamed")],
+            pallete: OctamedColorPallete::DEFAULT,
         };
     }
 
@@ -32,6 +35,14 @@ impl OctamedicProject {
 
     pub fn get_song_mut(&mut self, id: SongId) -> Option<&mut OctamedicSong> {
         return self.songs.get_mut(id.0 as usize);
+    }
+
+    pub fn song_count(&self) -> usize {
+        return self.songs.len();
+    }
+
+    pub fn pallete(&self) -> OctamedColorPallete {
+        return self.pallete;
     }
 }
 
@@ -46,7 +57,13 @@ impl FromModule for OctamedicProject {
         let mut s = Self {
             name: String::new(),
             songs: vec![],
+            pallete: OctamedColorPallete::DEFAULT,
         };
+        if let Some(expansion) = &module.expansion_data
+            && !expansion.header.rgb_table_ptr.is_null()
+        {
+            s.pallete = OctamedColorPallete::from_octamed(&expansion.color_pallete);
+        }
         s.name = module
             .expansion_data
             .as_ref()

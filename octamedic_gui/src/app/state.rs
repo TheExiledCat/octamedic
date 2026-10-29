@@ -7,6 +7,7 @@ use octamedic_core::{
     data::{
         instrument::{InstrumentId, MAX_INSTRUMENTS},
         note::OctamedicNote,
+        palette::OctamedColorPallete,
         pattern::{OctamedicPattern, OctamedicPatternTrack, PatternId},
         project::OctamedicProject,
         song::{OctamedicSong, SongId},
@@ -14,6 +15,8 @@ use octamedic_core::{
     },
     engine::{engine::PlayMode, handle::EngineHandle},
 };
+
+use crate::app::cursor::EditCursor;
 
 const NOTIFICATION_DURATION: Duration = Duration::from_secs(2);
 
@@ -36,6 +39,7 @@ pub struct AppState {
 
     pub active_song: SongId,
     pub active_pattern: PatternId,
+    pub cursor: EditCursor,
     pub active_sequence_index: usize,
     pub active_instrument: InstrumentId,
     pub current_octave: u8,
@@ -43,7 +47,9 @@ pub struct AppState {
     pub recording: bool,
     pub exit_requested: bool,
     pub notification: Option<String>,
+    pub pallete: OctamedColorPallete,
     notified_at: Instant,
+    timer_started: Instant,
     time: Duration,
     playback_start_time: Option<Instant>,
     has_changes: bool,
@@ -53,11 +59,13 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(project: OctamedicProject, engine: EngineHandle) -> Self {
+        let pallete = project.pallete();
         let mut state = Self {
             project,
             engine,
             active_song: SongId(0),
             active_pattern: PatternId(0),
+            cursor: EditCursor::default(),
             active_sequence_index: 0,
             active_instrument: InstrumentId(1),
             current_octave: 2,
@@ -65,7 +73,9 @@ impl AppState {
             recording: false,
             exit_requested: false,
             notification: None,
+            pallete,
             notified_at: Instant::now(),
+            timer_started: Instant::now(),
             time: Duration::ZERO,
             playback_start_time: None,
             has_changes: false,
@@ -134,6 +144,15 @@ impl AppState {
         return self.time;
     }
 
+    /// The title bar's timer.
+    pub fn timer(&self) -> Duration {
+        return self.timer_started.elapsed();
+    }
+
+    pub fn restart_timer(&mut self) {
+        self.timer_started = Instant::now();
+    }
+
     pub fn is_saved(&self) -> bool {
         return !self.has_changes;
     }
@@ -193,6 +212,16 @@ impl AppState {
     pub fn prev_pattern(&mut self) {
         self.active_pattern.0 = self.active_pattern.0.saturating_sub(1);
         self.ensure_pattern(self.active_pattern);
+    }
+
+    /// Shows block `index`, or the last block past the end, keeping the cursor inside it.
+    pub fn select_block(&mut self, index: usize) {
+        let last = self.song().patterns().len().saturating_sub(1);
+        self.active_pattern = PatternId(index.min(last).min(u8::MAX as usize) as u8);
+        if let Some(pattern) = self.active_pattern() {
+            let (lines, tracks) = (pattern.line_count(), pattern.track_count());
+            self.cursor.clamp(lines, tracks);
+        }
     }
 
     fn ensure_pattern(&mut self, id: PatternId) {

@@ -23,8 +23,12 @@ cargo build
 cargo run -p octamed_cli -- example_meds/example.mmd0
 ```
 
-On WSL, `./run-windows.sh` builds and runs the Windows build instead, for native audio
-(`PACKAGE=octamedic_gui ./run-windows.sh` for the GUI).
+On WSL, each program has two scripts in its folder, which pass their arguments on:
+
+- `run-windows.sh` builds and runs the Windows build, for native audio, e.g.
+  `octamedic_gui/run-windows.sh`.
+- `run-x11.sh` runs it in WSL itself through X11, since windows exit straight away under WSLg's
+  Wayland.
 
 Inside the REPL:
 ```
@@ -57,6 +61,17 @@ Inside the REPL:
 [docs/PLAYER.md](docs/PLAYER.md) explains how playback works: Paula, DMA, the CIA timer and how
 the engine in `octamedic_core/src/engine/` follows them. The hardware itself is modelled in
 `octamedic_core/src/amiga/`.
+
+### GUI
+
+The GUI draws OctaMED's 640×256 PAL hires screen in its own pixels, then scales it into the window
+(`framework/screen.rs`); hires pixels are twice as tall as they are wide. Each widget draws itself
+from `AppState` every frame in `render`, with the song's palette pens (`Painter`), and gets input
+through `handle_event`, which returns whether it took the event. Clickable areas use `Clickable`,
+which clicks on release over the area it was pressed in, like an Amiga gadget. A `Button`'s click
+handler changes `AppState`, so anything a button changes lives in the state. Keys go through a
+`Keymap` of actions (`KeyActions`), as in mTrak, so they can be rebound later by action id, e.g.
+`main.quit`.
 
 ### MMD format reference
 

@@ -1,6 +1,7 @@
 pub mod command;
 pub mod instrument;
 pub mod note;
+pub mod palette;
 pub mod pattern;
 pub mod project;
 pub mod song;
