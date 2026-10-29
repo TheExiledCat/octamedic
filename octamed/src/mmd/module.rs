@@ -462,22 +462,30 @@ pub struct OctamedMMD0ExpansionHeader {
     pub tag_end: ULong,
 }
 
+/// An `InstrExt` entry. v4 writes only these four fields; later versions add more, which are kept
+/// as they are in `rest`.
 pub struct OctamedMMD0ExternalInstrument {
     pub hold: UByte,
     pub decay: UByte,
     pub supress_midi_off: UByte,
+    /// -8 to 7
     pub fine_tune: Byte,
-    /* Below fields saved by >= V5
-    UBYTE default_pitch;
-    UBYTE instr_flags;
-    UWORD long_midi_preset;
-    /* Below fields saved by >= V5.02 */
-    UBYTE output_device;
-    UBYTE reserved;
-    /* Below fields saved by >= V7 */
-    ULONG long_repeat;
-    ULONG long_replen;
-                    */
+    pub rest: Vec<UByte>,
+}
+
+impl OctamedMMD0ExternalInstrument {
+    pub const V4_SIZE: usize = 4;
+
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = vec![
+            self.hold.0,
+            self.decay.0,
+            self.supress_midi_off.0,
+            self.fine_tune.0 as u8,
+        ];
+        bytes.extend(self.rest.iter().map(|b| b.0));
+        return bytes;
+    }
 }
 
 pub struct OctamedMMD0InstrumentInfo {

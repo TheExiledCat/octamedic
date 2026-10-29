@@ -9,10 +9,11 @@ use crate::{
     mmd::module::{
         OctamedMMD, OctamedMMD0Block, OctamedMMD0BlockHeader, OctamedMMD0BlockLine,
         OctamedMMD0ColorPallete, OctamedMMD0Dump, OctamedMMD0Expansion, OctamedMMD0ExpansionHeader,
-        OctamedMMD0Header, OctamedMMD0Info, OctamedMMD0InstrumentInfo, OctamedMMD0InstrumentType,
-        OctamedMMD0MidiCommands, OctamedMMD0NotationInfo, OctamedMMD0Rexx, OctamedMMD0Sample,
-        OctamedMMD0SampleHeader, OctamedMMD0SampleTable, OctamedMMD0Song, OctamedMMD0SongFlags,
-        OctamedMMD1Block, OctamedMMD1BlockHeader, OctamedMMD1BlockInfo, OctamedMMD1BlockInfoHeader,
+        OctamedMMD0ExternalInstrument, OctamedMMD0Header, OctamedMMD0Info,
+        OctamedMMD0InstrumentInfo, OctamedMMD0InstrumentType, OctamedMMD0MidiCommands,
+        OctamedMMD0NotationInfo, OctamedMMD0Rexx, OctamedMMD0Sample, OctamedMMD0SampleHeader,
+        OctamedMMD0SampleTable, OctamedMMD0Song, OctamedMMD0SongFlags, OctamedMMD1Block,
+        OctamedMMD1BlockHeader, OctamedMMD1BlockInfo, OctamedMMD1BlockInfoHeader,
         OctamedMMD1HighlightMask, OctamedMMD2BlockCommandPageTable, OctamedMMDBlockTable,
         OctamedMMDTrackLine,
     },
@@ -508,7 +509,7 @@ impl OctamedMMDParser {
             }
             OctamedMMD0ColorPallete::from_bytes(pallete)
         };
-        let external_instruments = vec![];
+        let external_instruments = Self::parse_external_instruments(stream, &header)?;
         let instrument_infos = {
             if header.instrument_info_ptr.is_null() {
                 vec![]
@@ -561,6 +562,36 @@ impl OctamedMMDParser {
             notation_info,
             song_name,
         }));
+    }
+
+    /// The `InstrExt` entries. Entries shorter than v4's leave the missing fields at 0.
+    fn parse_external_instruments<R: Read + Seek>(
+        stream: &mut R,
+        header: &OctamedMMD0ExpansionHeader,
+    ) -> Result<Vec<OctamedMMD0ExternalInstrument>> {
+        if header.expanded_instruments_array_ptr.is_null() {
+            return Ok(vec![]);
+        }
+        let size = header.extpanded_instruments_struct_size.0 as usize;
+        stream.seek(header.expanded_instruments_array_ptr.into())?;
+        let mut instruments = vec![];
+        for _ in 0..header.expanded_instruments_array_length.0 {
+            let mut bytes = Self::parse_exact(stream, size)?;
+            let rest = bytes
+                .split_off(size.min(OctamedMMD0ExternalInstrument::V4_SIZE))
+                .into_iter()
+                .map(UByte)
+                .collect();
+            bytes.resize(OctamedMMD0ExternalInstrument::V4_SIZE, 0);
+            instruments.push(OctamedMMD0ExternalInstrument {
+                hold: UByte(bytes[0]),
+                decay: UByte(bytes[1]),
+                supress_midi_off: UByte(bytes[2]),
+                fine_tune: Byte(bytes[3] as i8),
+                rest,
+            });
+        }
+        return Ok(instruments);
     }
 
     fn parse_expansion_data_header<R: Read + Seek>(

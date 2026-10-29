@@ -34,7 +34,7 @@ pub enum EngineCommand {
     Stop,
     SetPattern {
         id: PatternId,
-        pattern: OctamedicPattern,
+        pattern: Arc<OctamedicPattern>,
     },
     SetSequence {
         sequence: Vec<PatternId>,
@@ -248,7 +248,7 @@ impl EngineHandle {
         self.send(EngineCommand::Stop);
     }
 
-    pub fn set_pattern(&self, id: PatternId, pattern: OctamedicPattern) {
+    pub fn set_pattern(&self, id: PatternId, pattern: Arc<OctamedicPattern>) {
         self.send(EngineCommand::SetPattern { id, pattern });
     }
 

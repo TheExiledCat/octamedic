@@ -114,6 +114,6 @@ Hold off on this until Milestone 1 produces audible output. The `octamedic_gui` 
 - ~~`command_value` in `OctamedicPatternTrack` was being copied from `command_number`~~ — **fixed**
 - ~~`OctamedicTransport::process()` returned early before incrementing `tick`~~ — **fixed**
 - ~~`OctamedicEngine::process()` had an infinite loop because `pos` was never mutated~~ — **fixed**
-- `OctamedTempo::get_tick_rate` is duplicated verbatim in `OctamedicTempo` — the copy in `octamedic_core/src/data/tempo.rs` should delegate to avoid the two drifting out of sync
+- ~~`OctamedTempo::get_tick_rate` was duplicated in `OctamedicTempo`~~ — **fixed**: `OctamedTempo` only holds the stored fields, timing lives in `octamedic_core`
 - `OctamedMMD::get_type()` panics on unknown format IDs — should return a `Result`
 - Several `.unwrap()` calls in `octamed/src/mmd/parser.rs` will panic on malformed files — needs proper error propagation

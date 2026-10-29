@@ -60,7 +60,7 @@ pub struct OctamedicEngine {
     /// PAL or NTSC timing.
     machine: AmigaClock,
 
-    patterns: Vec<OctamedicPattern>,
+    patterns: Vec<Arc<OctamedicPattern>>,
     sequence: Vec<PatternId>,
     instruments: Vec<Option<OctamedicInstrument>>,
     tempo: OctamedicTempo,
@@ -186,10 +186,10 @@ impl OctamedicEngine {
         }
     }
 
-    fn set_pattern(&mut self, id: PatternId, pattern: OctamedicPattern) {
+    fn set_pattern(&mut self, id: PatternId, pattern: Arc<OctamedicPattern>) {
         if id.0 as usize >= self.patterns.len() {
             self.patterns
-                .resize_with(id.0 as usize + 1, OctamedicPattern::new);
+                .resize_with(id.0 as usize + 1, || Arc::new(OctamedicPattern::new()));
         }
         self.patterns[id.0 as usize] = pattern;
     }
@@ -259,7 +259,10 @@ impl OctamedicEngine {
     }
 
     fn current_pattern(&self) -> Option<&OctamedicPattern> {
-        return self.patterns.get(self.position.pattern.0 as usize);
+        return self
+            .patterns
+            .get(self.position.pattern.0 as usize)
+            .map(Arc::as_ref);
     }
 
     fn ticks_per_line(&self) -> u32 {
@@ -518,7 +521,7 @@ mod tests {
         commands
             .send(EngineCommand::SetPattern {
                 id: PatternId(0),
-                pattern: pattern(4, &[]),
+                pattern: Arc::new(pattern(4, &[])),
             })
             .unwrap();
         commands
@@ -548,7 +551,7 @@ mod tests {
         commands
             .send(EngineCommand::SetPattern {
                 id: PatternId(0),
-                pattern: pattern(2, &[(1, 13)]),
+                pattern: Arc::new(pattern(2, &[(1, 13)])),
             })
             .unwrap();
         commands
@@ -570,7 +573,7 @@ mod tests {
             commands
                 .send(EngineCommand::SetPattern {
                     id: PatternId(id),
-                    pattern: pattern(2, &[]),
+                    pattern: Arc::new(pattern(2, &[])),
                 })
                 .unwrap();
         }

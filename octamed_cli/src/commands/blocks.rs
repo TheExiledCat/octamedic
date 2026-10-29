@@ -69,7 +69,7 @@ impl Command for InspectBlockCommand {
                 let tempo = mmd.song.get_tempo();
                 println!(
                     "Tempo ({}): {} \n",
-                    if tempo.is_bpm_mode() { "BPM" } else { "SPD" },
+                    if tempo.is_bpm_mode { "BPM" } else { "SPD" },
                     tempo
                 );
                 println!(
@@ -108,7 +108,7 @@ impl Command for InspectBlockCommand {
                 let tempo = mmd.song.get_tempo();
                 println!(
                     "Tempo ({}): {} \n",
-                    if tempo.is_bpm_mode() { "BPM" } else { "SPD" },
+                    if tempo.is_bpm_mode { "BPM" } else { "SPD" },
                     tempo
                 );
                 println!(
