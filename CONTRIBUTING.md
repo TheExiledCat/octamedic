@@ -54,26 +54,8 @@ Inside the REPL:
 
 ### Sound engine
 
-The engine is in `octamedic_core/src/engine/`. The key interfaces:
-
-- **`OctamedicEngine::process(&mut [u8], u32) -> bool`** — called by the `cpal` audio callback to fill a PCM buffer (u8, 128 = silence). Returns `true` when the song ends.
-- **`OctamedicTransport::process(&OctamedicProject) -> bool`** — advances the sequencer by one tick. Returns `true` when playback is finished (paused).
-
-The transport handles row/tick sequencing and pattern navigation. The engine is responsible for calling the transport at the right sample offsets and mixing audio into the output buffer.
-
-### Data flow: file → playback
-
-```
-.mmd file
-  └─ octamed::parser  →  OctamedMMD
-       └─ OctamedicProject::from_module()  →  OctamedicProject
-            └─ OctamedicEngine::new()
-                 └─ OctamedicEngine::process()  →  PCM buffer  →  cpal output
-```
-
-### Tempo
-
-`OctamedicTempo::timer_count()` gives the CIA timer count OctaMED v4 uses for a tempo, and `tick_seconds()` how long a tick lasts on a PAL or NTSC Amiga (`AmigaClock`). The engine turns that into output frames per tick. `octamed`'s `OctamedTempo` only holds the tempo fields as stored.
+[docs/PLAYER.md](docs/PLAYER.md) explains how playback works: Paula, DMA, the CIA timer and how
+the engine in `octamedic_core/src/engine/` follows them.
 
 ### MMD format reference
 

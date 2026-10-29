@@ -29,14 +29,14 @@ pub enum PaulaWrite {
     Period(u16),
     /// `AUDxVOL`, 0-64
     Volume(u8),
-    /// `AUDxLC` and `AUDxLEN`, taken when DMA turns on or the playing block ends. The length is
+    /// `AUDxLC` and `AUDxLEN`, taken when DMA turns on or the playing range ends. The length is
     /// in bytes, not words, so odd-length samples keep their last byte.
     Sample {
         sample: Arc<OctamedicSample>,
         start: usize,
         len: usize,
     },
-    /// Starts the block last written.
+    /// Starts the range last written.
     DmaOn,
     DmaOff,
 }
@@ -50,20 +50,20 @@ pub trait Renderer: Send {
 }
 
 #[derive(Clone)]
-struct Block {
+struct SampleRange {
     sample: Arc<OctamedicSample>,
     start: usize,
     len: usize,
 }
 
-impl Block {
+impl SampleRange {
     fn end(&self) -> usize {
         return self.start + self.len;
     }
 }
 
 struct Playing {
-    block: Block,
+    range: SampleRange,
     /// In bytes, with the fraction played.
     position: f64,
 }
@@ -72,8 +72,8 @@ struct Playing {
 struct Channel {
     period: u16,
     volume: u8,
-    /// Taken when the next block starts.
-    latch: Option<Block>,
+    /// Taken when the next range starts.
+    latch: Option<SampleRange>,
     /// `None` while DMA is off.
     playing: Option<Playing>,
 }
@@ -84,13 +84,13 @@ impl Channel {
             PaulaWrite::Period(period) => self.period = period,
             PaulaWrite::Volume(volume) => self.volume = volume.min(MAX_VOLUME),
             PaulaWrite::Sample { sample, start, len } => {
-                self.latch = Some(Block { sample, start, len })
+                self.latch = Some(SampleRange { sample, start, len })
             }
             PaulaWrite::DmaOn => {
                 if self.playing.is_none() {
-                    self.playing = self.latch.clone().map(|block| Playing {
-                        position: block.start as f64,
-                        block,
+                    self.playing = self.latch.clone().map(|range| Playing {
+                        position: range.start as f64,
+                        range,
                     });
                 }
             }
@@ -100,7 +100,7 @@ impl Channel {
 
     /// The output over the next `step` bytes (one output frame). Each byte counts for the part
     /// of the frame it's held over, so bytes that don't line up with frames don't alias. When a
-    /// block ends the latched one starts, which is how samples loop.
+    /// range ends the latched one starts, which is how samples loop.
     fn next(&mut self, step: f64) -> Option<f32> {
         let Channel {
             volume,
@@ -112,12 +112,12 @@ impl Channel {
         let mut remaining = step;
         let mut sum = 0.0;
         while remaining > 0.0 {
-            if playing.block.len == 0 {
+            if playing.range.len == 0 {
                 break;
             }
             let index = playing.position as usize;
             // chip memory past the sample, read as zero
-            let byte = playing.block.sample.data.get(index).copied().unwrap_or(0);
+            let byte = playing.range.sample.data.get(index).copied().unwrap_or(0);
             let next_byte = (index + 1) as f64;
             let held = (next_byte - playing.position).min(remaining);
             sum += byte as f64 * held;
@@ -128,12 +128,12 @@ impl Channel {
             } else {
                 playing.position + held
             };
-            if playing.position >= playing.block.end() as f64 {
-                let overshoot = playing.position - playing.block.end() as f64;
-                if let Some(block) = latch {
-                    playing.block = block.clone();
+            if playing.position >= playing.range.end() as f64 {
+                let overshoot = playing.position - playing.range.end() as f64;
+                if let Some(range) = latch {
+                    playing.range = range.clone();
                 }
-                playing.position = playing.block.start as f64 + overshoot;
+                playing.position = playing.range.start as f64 + overshoot;
             }
         }
         return Some((sum / step) as f32 * *volume as f32);
@@ -193,7 +193,7 @@ mod tests {
         return Arc::new(OctamedicSample { data, repeat: None });
     }
 
-    fn block(sample: &Arc<OctamedicSample>, start: usize, len: usize) -> PaulaWrite {
+    fn range(sample: &Arc<OctamedicSample>, start: usize, len: usize) -> PaulaWrite {
         return PaulaWrite::Sample {
             sample: sample.clone(),
             start,
@@ -234,7 +234,7 @@ mod tests {
     fn a_one_shot_sample_falls_into_silence() {
         let mut renderer = renderer();
         let data = sample(vec![127, 127]);
-        play(&mut renderer, block(&data, 0, 2), 5, block(&SILENCE, 0, 2));
+        play(&mut renderer, range(&data, 0, 2), 5, range(&SILENCE, 0, 2));
         assert_near(&render(&mut renderer, 4), &[FULL, FULL, 0.0, 0.0]);
     }
 
@@ -242,7 +242,7 @@ mod tests {
     fn a_looped_sample_wraps_into_its_loop() {
         let mut renderer = renderer();
         let data = sample(vec![0, 127, -127]);
-        play(&mut renderer, block(&data, 0, 3), 5, block(&data, 1, 2));
+        play(&mut renderer, range(&data, 0, 3), 5, range(&data, 1, 2));
         assert_near(&render(&mut renderer, 5), &[0.0, FULL, -FULL, FULL, -FULL]);
     }
 
@@ -250,7 +250,7 @@ mod tests {
     fn double_the_period_holds_each_byte_twice_as_long() {
         let mut renderer = renderer();
         let data = sample(vec![0, 127]);
-        play(&mut renderer, block(&data, 0, 2), 10, block(&SILENCE, 0, 2));
+        play(&mut renderer, range(&data, 0, 2), 10, range(&SILENCE, 0, 2));
         assert_near(&render(&mut renderer, 4), &[0.0, 0.0, FULL, FULL]);
     }
 
@@ -259,7 +259,7 @@ mod tests {
         let mut renderer = renderer();
         let data = sample(vec![0, 127]);
         // 1.6 output frames per byte, so the bytes change partway through frames
-        play(&mut renderer, block(&data, 0, 2), 8, block(&SILENCE, 0, 2));
+        play(&mut renderer, range(&data, 0, 2), 8, range(&SILENCE, 0, 2));
         let out = render(&mut renderer, 5);
         assert_near(&out, &[0.0, FULL * 0.4, FULL, FULL * 0.2, 0.0]);
     }
@@ -269,18 +269,18 @@ mod tests {
         let mut renderer = renderer();
         let data = sample(vec![127, -127, 127, -127, 127]);
         // 2.5 bytes per output frame
-        play(&mut renderer, block(&data, 0, 5), 2, block(&SILENCE, 0, 2));
+        play(&mut renderer, range(&data, 0, 5), 2, range(&SILENCE, 0, 2));
         assert_near(&render(&mut renderer, 2), &[FULL * 0.2, FULL * 0.2]);
     }
 
     #[test]
-    fn a_new_block_waits_until_the_playing_one_ends() {
+    fn a_new_range_waits_until_the_playing_one_ends() {
         let mut renderer = renderer();
         let first = sample(vec![127, 127, 127]);
         let second = sample(vec![-127]);
-        play(&mut renderer, block(&first, 0, 3), 5, block(&first, 0, 3));
+        play(&mut renderer, range(&first, 0, 3), 5, range(&first, 0, 3));
         render(&mut renderer, 1);
-        renderer.write(0, block(&second, 0, 1));
+        renderer.write(0, range(&second, 0, 1));
         assert_near(&render(&mut renderer, 4), &[FULL, FULL, -FULL, -FULL]);
     }
 
@@ -288,17 +288,17 @@ mod tests {
     fn dma_on_again_while_playing_changes_nothing() {
         let mut renderer = renderer();
         let data = sample(vec![0, 127, -127]);
-        play(&mut renderer, block(&data, 0, 3), 5, block(&data, 0, 3));
+        play(&mut renderer, range(&data, 0, 3), 5, range(&data, 0, 3));
         render(&mut renderer, 1);
         renderer.write(0, PaulaWrite::DmaOn);
         assert_near(&render(&mut renderer, 2), &[FULL, -FULL]);
     }
 
     #[test]
-    fn dma_off_silences_the_channel_and_dma_on_restarts_the_latched_block() {
+    fn dma_off_silences_the_channel_and_dma_on_restarts_the_latched_range() {
         let mut renderer = renderer();
         let data = sample(vec![127, -127]);
-        play(&mut renderer, block(&data, 0, 2), 5, block(&data, 0, 2));
+        play(&mut renderer, range(&data, 0, 2), 5, range(&data, 0, 2));
         render(&mut renderer, 1);
         renderer.write(0, PaulaWrite::DmaOff);
         assert_near(&render(&mut renderer, 2), &[0.0, 0.0]);
@@ -310,7 +310,7 @@ mod tests {
     fn a_new_period_applies_straight_away() {
         let mut renderer = renderer();
         let data = sample(vec![127, -127, 127, -127]);
-        play(&mut renderer, block(&data, 0, 4), 5, block(&data, 0, 4));
+        play(&mut renderer, range(&data, 0, 4), 5, range(&data, 0, 4));
         render(&mut renderer, 1);
         renderer.write(0, PaulaWrite::Period(10));
         assert_near(&render(&mut renderer, 2), &[-FULL, -FULL]);
@@ -320,7 +320,7 @@ mod tests {
     fn volume_scales_like_paula() {
         let mut renderer = renderer();
         let data = sample(vec![127]);
-        play(&mut renderer, block(&data, 0, 1), 5, block(&data, 0, 1));
+        play(&mut renderer, range(&data, 0, 1), 5, range(&data, 0, 1));
         renderer.write(0, PaulaWrite::Volume(32));
         assert_near(&render(&mut renderer, 1), &[FULL / 2.0]);
         renderer.write(0, PaulaWrite::Volume(200));
@@ -331,7 +331,7 @@ mod tests {
     fn every_output_channel_gets_the_voice() {
         let mut renderer = renderer();
         let data = sample(vec![127]);
-        play(&mut renderer, block(&data, 0, 1), 5, block(&data, 0, 1));
+        play(&mut renderer, range(&data, 0, 1), 5, range(&data, 0, 1));
         let mut out = [0.0; 2];
         renderer.render(&mut out, 2);
         assert_near(&out, &[FULL, FULL]);

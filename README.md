@@ -33,6 +33,7 @@ A faithful clone of OctaMED Professional v4
 
 - [CONTRIBUTING.md](CONTRIBUTING.md) — setup, architecture overview, code style, and PR process
 - [TODO.md](TODO.md) — ordered developer roadmap; start here if you want to help
+- [docs/PLAYER.md](docs/PLAYER.md) — how the player works: Paula, DMA and the CIA timer
 - [Bug report](.github/ISSUE_TEMPLATE/bug_report.md) / [Feature request](.github/ISSUE_TEMPLATE/feature_request.md) — issue templates
 
 ## Documentation

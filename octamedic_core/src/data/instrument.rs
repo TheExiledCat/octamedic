@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+pub use octamed::mmd::module::MAX_INSTRUMENTS;
 use octamed::mmd::module::{OctamedMMD0Sample, OctamedMMD0SampleHeader};
 
 /// Also Paula's highest channel volume.

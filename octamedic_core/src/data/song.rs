@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
-use octamed::utility::bytes::{Byte, UByte, UWord};
+use octamed::mmd::module::SONG_TRACKS;
 
 use crate::data::{
-    instrument::{InstrumentId, OctamedicInstrument},
+    instrument::{InstrumentId, MAX_INSTRUMENTS, OctamedicInstrument},
     pattern::{OctamedicPattern, PatternId},
     tempo::OctamedicTempo,
     volume::OctamedicVolume,
@@ -27,14 +27,12 @@ pub struct OctamedicSongFlags {
 
 pub struct OctamedicSong {
     pub(crate) name: String,
-    pub(crate) instruments: [Option<OctamedicInstrument>; 63],
-    pub(crate) block_count: UWord,
-    pub(crate) song_length: UWord,
-    pub(crate) sequence: Vec<UByte>,
+    pub(crate) instruments: [Option<OctamedicInstrument>; MAX_INSTRUMENTS],
+    pub(crate) sequence: Vec<PatternId>,
     pub(crate) tempo: OctamedicTempo,
     pub(crate) flags: OctamedicSongFlags,
-    pub(crate) global_transpose: Byte,
-    pub(crate) track_volumes: [OctamedicVolume; 16],
+    pub(crate) global_transpose: i8,
+    pub(crate) track_volumes: [OctamedicVolume; SONG_TRACKS],
     pub(crate) master_volume: OctamedicVolume,
     pub(crate) patterns: Vec<Arc<OctamedicPattern>>,
 }
@@ -45,13 +43,11 @@ impl OctamedicSong {
         return Self {
             name: name.into(),
             instruments: std::array::from_fn(|_| None),
-            block_count: UWord(1),
-            song_length: UWord(1),
-            sequence: vec![UByte(0)],
+            sequence: vec![PatternId(0)],
             tempo: OctamedicTempo::new(),
             flags: OctamedicSongFlags::default(),
-            global_transpose: Byte(0),
-            track_volumes: [OctamedicVolume::new(64); 16],
+            global_transpose: 0,
+            track_volumes: [OctamedicVolume::new(64); SONG_TRACKS],
             master_volume: OctamedicVolume::new(64),
             patterns: vec![Arc::new(OctamedicPattern::new())],
         };
@@ -64,10 +60,6 @@ impl OctamedicSong {
     /// For handing to the engine without copying it.
     pub fn get_shared_pattern(&self, pattern_id: &PatternId) -> Option<Arc<OctamedicPattern>> {
         return self.patterns.get(pattern_id.0 as usize).cloned();
-    }
-
-    pub fn get_sequence(&self) -> Vec<UByte> {
-        return self.sequence.clone();
     }
 
     pub fn name(&self) -> &str {
@@ -92,12 +84,11 @@ impl OctamedicSong {
         if index >= self.patterns.len() {
             self.patterns
                 .resize_with(index + 1, || Arc::new(OctamedicPattern::new()));
-            self.block_count = UWord(self.patterns.len() as u16);
         }
         return Arc::make_mut(&mut self.patterns[index]);
     }
 
-    pub fn sequence(&self) -> &[UByte] {
+    pub fn sequence(&self) -> &[PatternId] {
         return &self.sequence;
     }
 

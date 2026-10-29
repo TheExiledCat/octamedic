@@ -106,12 +106,16 @@ impl MMDCommandKind {
 impl MMDRepl {
     pub fn start(path: PathBuf) {
         println!("Parsing file {}", path.to_string_lossy());
-        let mut mmd = OctamedMMDParser::new()
-            .parse_file(&path)
-            .unwrap()
-            .into_iter()
-            .next()
-            .unwrap();
+        let mut mmd = match OctamedMMDParser::new().parse_file(&path) {
+            Ok(modules) => modules
+                .into_iter()
+                .next()
+                .expect("a parsed file has a module"),
+            Err(error) => {
+                eprintln!("Couldn't open {}: {error}", path.to_string_lossy());
+                return;
+            }
+        };
         println!("Module parsed\nStarting Repl...");
         let future_font = Toilet::future().unwrap();
         println!("{}", future_font.convert("MMD CLI").unwrap());

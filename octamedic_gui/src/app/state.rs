@@ -5,7 +5,7 @@ use std::{
 
 use octamedic_core::{
     data::{
-        instrument::InstrumentId,
+        instrument::{InstrumentId, MAX_INSTRUMENTS},
         note::OctamedicNote,
         pattern::{OctamedicPattern, OctamedicPatternTrack, PatternId},
         project::OctamedicProject,
@@ -17,7 +17,7 @@ use octamedic_core::{
 
 const NOTIFICATION_DURATION: Duration = Duration::from_secs(2);
 
-const MAX_INSTRUMENT: u8 = 63;
+const MAX_INSTRUMENT: u8 = MAX_INSTRUMENTS as u8;
 
 const MAX_OCTAVE: u8 = 9;
 
@@ -302,12 +302,7 @@ impl AppState {
         }
         if self.sequence_changed {
             self.sequence_changed = false;
-            self.engine.set_sequence(
-                song.sequence()
-                    .iter()
-                    .map(|&id| PatternId::from(id))
-                    .collect(),
-            );
+            self.engine.set_sequence(song.sequence().to_vec());
         }
     }
 }
@@ -336,8 +331,8 @@ mod tests {
     fn instruments_stay_between_1_and_63() {
         let mut state = state();
         assert_eq!(state.prev_instrument(), InstrumentId(1));
-        state.active_instrument = InstrumentId(63);
-        assert_eq!(state.next_instrument(), InstrumentId(63));
+        state.active_instrument = InstrumentId(MAX_INSTRUMENT);
+        assert_eq!(state.next_instrument(), InstrumentId(MAX_INSTRUMENT));
     }
 
     #[test]
