@@ -66,7 +66,7 @@ impl EngineCommand {
         let mut commands = vec![
             EngineCommand::SetTempo(song.tempo),
             EngineCommand::SetMasterVolume(song.master_volume.get()),
-            EngineCommand::SetGlobalTranspose(song.global_transpose.0),
+            EngineCommand::SetGlobalTranspose(song.global_transpose),
         ];
         for (track, volume) in song.track_volumes.iter().enumerate() {
             commands.push(EngineCommand::SetTrackVolume {
@@ -87,11 +87,7 @@ impl EngineCommand {
             });
         }
         commands.push(EngineCommand::SetSequence {
-            sequence: song
-                .sequence
-                .iter()
-                .map(|&id| PatternId::from(id))
-                .collect(),
+            sequence: song.sequence.to_vec(),
         });
         return commands;
     }

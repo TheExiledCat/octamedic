@@ -6,6 +6,15 @@ use crate::utility::{
     octamed_tempo::OctamedTempo,
 };
 
+/// Instrument slots in a module.
+pub const MAX_INSTRUMENTS: usize = 63;
+
+/// Tracks the song keeps a volume and notation settings for.
+pub const SONG_TRACKS: usize = 16;
+
+/// Most tracks an MMD1 block can have.
+pub const MAX_TRACKS: usize = 64;
+
 pub enum OctamedMMDType {
     MMD0,
     MMD1,
@@ -65,8 +74,7 @@ impl Display for OctamedMMD0Header {
         writeln!(f, "OctaMED File Header")?;
         writeln!(f, "{}", (0..20).map(|_| "_").collect::<String>())?;
         let id_bytes = self.id.0.to_be_bytes();
-        let id_text = str::from_utf8(&id_bytes).unwrap();
-        writeln!(f, "Format: {}", id_text)?;
+        writeln!(f, "Format: {}", String::from_utf8_lossy(&id_bytes))?;
         writeln!(f, "Module Length: {} Bytes", self.module_length)?;
         writeln!(f, "Song struct Pointer: {}", self.song_ptr)?;
         writeln!(f, "Pattern blocks table Pointer: {}", self.block_array_ptr)?;
@@ -86,19 +94,20 @@ pub struct OctamedMMD {
 }
 
 impl OctamedMMD {
-    pub fn get_type(&self) -> OctamedMMDType {
-        match self.header.id.0 {
-            0x4d4d4430 => OctamedMMDType::MMD0,
-            0x4d4d4431 => OctamedMMDType::MMD1,
-            0x4d4d4432 => OctamedMMDType::MMD2,
-            0x4d4d4433 => OctamedMMDType::MMD3,
-            _ => panic!(),
-        }
+    /// `None` for a module built in memory with an unknown id; parsed modules always have one.
+    pub fn get_type(&self) -> Option<OctamedMMDType> {
+        return match self.header.id.0 {
+            0x4d4d4430 => Some(OctamedMMDType::MMD0),
+            0x4d4d4431 => Some(OctamedMMDType::MMD1),
+            0x4d4d4432 => Some(OctamedMMDType::MMD2),
+            0x4d4d4433 => Some(OctamedMMDType::MMD3),
+            _ => None,
+        };
     }
 }
 
 pub struct OctamedMMD0Song {
-    pub samples: [OctamedMMD0Sample; 63],
+    pub samples: [OctamedMMD0Sample; MAX_INSTRUMENTS],
     pub block_count: UWord,
     pub song_length: UWord,
     pub player_sequence_list: [UByte; 256],
@@ -106,7 +115,7 @@ pub struct OctamedMMD0Song {
     pub global_transpose: Byte,
     pub flags: OctamedMMD0SongFlags,
     pub secondary_tempo: UByte,
-    pub track_volumes: [UByte; 16],
+    pub track_volumes: [UByte; SONG_TRACKS],
     pub master_volume: UByte,
     pub sample_count: UByte,
 }
@@ -301,9 +310,7 @@ impl AsInstrumentString for UByte {
                     text.push(c);
                 }
             }
-            _ => {
-                panic!();
-            }
+            _ => text.push_str("??"),
         }
         return text;
     }
@@ -407,8 +414,8 @@ impl Display for OctamedMMD0InstrumentType {
 }
 
 impl OctamedMMD0InstrumentType {
-    pub fn from_word(word: Word) -> Self {
-        match word.0 {
+    pub fn from_word(word: Word) -> Option<Self> {
+        return Some(match word.0 {
             -2 => OctamedMMD0InstrumentType::Hybrid,
             -1 => OctamedMMD0InstrumentType::Synth,
             0 => OctamedMMD0InstrumentType::Sample,
@@ -419,8 +426,8 @@ impl OctamedMMD0InstrumentType {
             5 => OctamedMMD0InstrumentType::SampleOct6,
             6 => OctamedMMD0InstrumentType::SampleOct7,
             7 => OctamedMMD0InstrumentType::ExtSample,
-            _ => panic!("Instrument type {} not known", word.0),
-        }
+            _ => return None,
+        });
     }
 }
 
@@ -536,9 +543,9 @@ pub struct OctamedMMD0NotationInfo {
     pub sharp_count: UByte,
     pub flags: UByte,
     pub selected_tracks: [UWord; 5],
-    pub shown_tracks: [UByte; 16],
-    pub ghosted_tracks: [UByte; 16],
-    pub note_transposes: [Byte; 63],
+    pub shown_tracks: [UByte; SONG_TRACKS],
+    pub ghosted_tracks: [UByte; SONG_TRACKS],
+    pub note_transposes: [Byte; MAX_INSTRUMENTS],
     pub _pad: UByte,
 }
 
@@ -548,9 +555,9 @@ impl OctamedMMD0NotationInfo {
             sharp_count: UByte(0),
             flags: UByte(0),
             selected_tracks: [UWord(0); 5],
-            shown_tracks: [UByte(0); 16],
-            ghosted_tracks: [UByte(0); 16],
-            note_transposes: [Byte(0); 63],
+            shown_tracks: [UByte(0); SONG_TRACKS],
+            ghosted_tracks: [UByte(0); SONG_TRACKS],
+            note_transposes: [Byte(0); MAX_INSTRUMENTS],
             _pad: UByte(0),
         };
     }

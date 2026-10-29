@@ -1,6 +1,7 @@
 use std::{collections::HashMap, fs::File, io::Write, path::PathBuf};
 
 use crate::{
+    mmd::error::{MmdError, MmdResult},
     mmd::{
         conversion::{BinarySize, BinaryWriter},
         module::{
@@ -11,9 +12,32 @@ use crate::{
     utility::bytes::{Offset, UByte, ULong, UWord, ValueMap}, // UByte used in MMD0 track encoding
 };
 
+/// A part of the module file, placed by the layout before anything is written.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum Slot {
+    Header,
+    Song,
+    BlockTable,
+    BlockHeader(usize),
+    BlockData(usize),
+    BlockInfo(usize),
+    BlockHighlights(usize),
+    BlockName(usize),
+    SampleTable,
+    SampleHeader(usize),
+    SampleData(usize),
+    Expansion,
+    ExternalInstruments,
+    Annotation,
+    InstrumentInfos,
+    Palette,
+    NotationInfo,
+    SongName,
+}
+
 struct AllocatorLayout {
     cursor: u32,
-    positions: HashMap<*const (), Offset>,
+    positions: HashMap<Slot, Offset>,
 }
 
 impl AllocatorLayout {
@@ -24,29 +48,21 @@ impl AllocatorLayout {
         }
     }
 
-    pub fn alloc<T>(&mut self, obj: &T, size: u32) {
-        self.positions
-            .insert(obj as *const _ as *const (), Offset(self.cursor));
+    pub fn alloc(&mut self, slot: Slot, size: u32) {
+        self.positions.insert(slot, Offset(self.cursor));
         self.cursor += size;
     }
 
-    fn get<T>(&self, obj: &T) -> Offset {
-        return self
-            .positions
-            .get(&(obj as *const _ as *const ()))
-            .copied()
-            .unwrap_or(Offset(0));
-    }
-
-    fn get_expect<T>(&self, obj: &T) -> Offset {
+    /// Panics if `slot` wasn't allocated, which is a bug in the writer.
+    fn at(&self, slot: Slot) -> Offset {
         return *self
             .positions
-            .get(&(obj as *const _ as *const ()))
-            .expect("layout position not found — was this object allocated?");
+            .get(&slot)
+            .unwrap_or_else(|| panic!("{slot:?} wasn't allocated"));
     }
 }
 
-type Result<T> = std::io::Result<T>;
+type Result<T> = MmdResult<T>;
 
 pub struct OctamedMMDWriter {
     layout: AllocatorLayout,
@@ -98,7 +114,8 @@ impl OctamedMMDWriter {
     pub fn write_module_file(self, path: PathBuf, mmd: &OctamedMMD) -> Result<()> {
         let bytes = self.write_module(mmd)?;
         let mut file = File::create(path)?;
-        return file.write_all(&bytes);
+        file.write_all(&bytes)?;
+        return Ok(());
     }
 
     fn alloc_module(&mut self, mmd: &OctamedMMD) -> Result<()> {
@@ -111,13 +128,13 @@ impl OctamedMMDWriter {
 
     fn alloc_header(&mut self, mmd: &OctamedMMD) -> Result<()> {
         let header = &mmd.header;
-        self.layout.alloc(header, header.get_size(mmd));
+        self.layout.alloc(Slot::Header, header.get_size(mmd));
         return Ok(());
     }
 
     fn alloc_song(&mut self, mmd: &OctamedMMD) -> Result<()> {
         let song = &mmd.song;
-        self.layout.alloc(song, song.get_size(mmd));
+        self.layout.alloc(Slot::Song, song.get_size(mmd));
         return Ok(());
     }
 
@@ -125,15 +142,16 @@ impl OctamedMMDWriter {
         let block_table = &mmd.block_table;
         //table
         self.layout
-            .alloc(block_table, mmd.block_table.get_size(mmd));
+            .alloc(Slot::BlockTable, mmd.block_table.get_size(mmd));
         //actual blocks
         match block_table {
-            crate::mmd::module::OctamedMMDBlockTable::MMD0BlockTable { headers, blocks } => {
+            crate::mmd::module::OctamedMMDBlockTable::MMD0BlockTable { headers, blocks: _ } => {
                 for (i, header) in headers.iter().enumerate() {
-                    self.layout.alloc(header, header.get_size(mmd));
+                    self.layout
+                        .alloc(Slot::BlockHeader(i), header.get_size(mmd));
                     let (track_count, line_count) = (header.track_count, header.line_count);
                     self.layout.alloc(
-                        &blocks[i],
+                        Slot::BlockData(i),
                         (track_count.0 as u32)
                             * ((line_count.0 as u32) + 1)
                             * ((size_of::<UByte>() as u32) * 3),
@@ -142,27 +160,26 @@ impl OctamedMMDWriter {
             }
             crate::mmd::module::OctamedMMDBlockTable::MMD1BlockTable { headers, blocks } => {
                 for (i, header) in headers.iter().enumerate() {
-                    self.layout.alloc(header, header.get_size(mmd));
+                    self.layout
+                        .alloc(Slot::BlockHeader(i), header.get_size(mmd));
                     let (track_count, line_count) = (header.track_count, header.line_count);
                     self.layout.alloc(
-                        &blocks[i],
+                        Slot::BlockData(i),
                         (track_count.0 as u32)
                             * ((line_count.0 as u32) + 1)
                             * ((size_of::<UByte>() as u32) * 4),
                     );
                     if let Some(info_block) = &blocks[i].info {
-                        // keyed by the block itself: info_ptr is the header's first field, so
-                        // its address is the header's
                         self.layout
-                            .alloc(info_block, info_block.header.get_size(mmd));
+                            .alloc(Slot::BlockInfo(i), info_block.header.get_size(mmd));
                         let bits_per_ulong = size_of::<ULong>() * 8;
                         let count = ((line_count.0 as usize) + 1).div_ceil(bits_per_ulong);
                         self.layout.alloc(
-                            &info_block.header.highlight_mask_array_ptr,
+                            Slot::BlockHighlights(i),
                             (count * size_of::<ULong>()) as u32,
                         );
                         self.layout.alloc(
-                            &info_block.header.block_name_string_ptr,
+                            Slot::BlockName(i),
                             (info_block.block_name.chars().count() as u32) + 1, //\0
                         );
                         //page table is ignored as only mmd1 is supported, default to  null
@@ -175,15 +192,15 @@ impl OctamedMMDWriter {
 
     fn alloc_samples(&mut self, mmd: &OctamedMMD) -> Result<()> {
         self.layout
-            .alloc(&mmd.sample_table, mmd.sample_table.get_size(mmd));
+            .alloc(Slot::SampleTable, mmd.sample_table.get_size(mmd));
         for (i, header) in mmd.sample_table.headers.iter().enumerate() {
             if let Some(h) = header {
-                self.layout.alloc(h, h.get_size(mmd));
+                self.layout.alloc(Slot::SampleHeader(i), h.get_size(mmd));
                 if (h.sample_type as i16) < 0 {
-                    todo!("Synth instruments not implemented");
+                    return Err(MmdError::Unsupported("synth instruments"));
                 }
                 self.layout.alloc(
-                    &mmd.sample_table.samples[i],
+                    Slot::SampleData(i),
                     mmd.sample_table.samples[i].as_deref().unwrap().len() as u32,
                 );
             }
@@ -193,36 +210,36 @@ impl OctamedMMDWriter {
 
     fn alloc_expansions(&mut self, mmd: &OctamedMMD) -> Result<()> {
         if let Some(e) = &mmd.expansion_data {
-            self.layout.alloc(&e.header, e.header.get_size(mmd));
+            self.layout.alloc(Slot::Expansion, e.header.get_size(mmd));
             //single only for now
             //self.layout.alloc(&e.header.next_module_ptr, size);
             // empty writes a null pointer and a count of 0 instead
             if !e.external_instruments.is_empty() {
                 self.layout.alloc(
-                    &e.header.expanded_instruments_array_ptr,
+                    Slot::ExternalInstruments,
                     (e.external_instruments.len() as u32)
                         * (e.header.extpanded_instruments_struct_size.0 as u32),
                 );
             }
             self.layout.alloc(
-                &e.header.annotation_text_char_array_ptr,
+                Slot::Annotation,
                 (e.annotation.len() as u32) + 1, // +1 for null terminator, matches IntoBytes for String
             );
             self.layout.alloc(
-                &e.header.instrument_info_ptr,
+                Slot::InstrumentInfos,
                 (e.header.instrument_info_struct_size.0 * e.header.instrument_info_array_length.0)
                     as u32,
             );
             if !e.header.rgb_table_ptr.is_null() {
                 self.layout
-                    .alloc(&e.header.rgb_table_ptr, e.color_pallete.get_size(mmd));
+                    .alloc(Slot::Palette, e.color_pallete.get_size(mmd));
             }
             if !e.header.notation_info_ptr.is_null() {
                 self.layout
-                    .alloc(&e.header.notation_info_ptr, e.notation_info.get_size(mmd));
+                    .alloc(Slot::NotationInfo, e.notation_info.get_size(mmd));
             }
             self.layout.alloc(
-                &e.header.song_name_char_array_ptr,
+                Slot::SongName,
                 (e.song_name.len() as u32) + 1, // +1 for null terminator, matches IntoBytes for String
             );
             // todo: mmd_dump, info, rexx and midi are written as null pointers for now
@@ -233,22 +250,19 @@ impl OctamedMMDWriter {
     fn write_header(&mut self, mmd: &OctamedMMD) -> Result<()> {
         self.push_size();
         let header = &mmd.header;
-        let song = &mmd.song;
-        let blocks = &mmd.block_table;
-        let samples = &mmd.sample_table;
         self.writer.write_bytes(&header.id)?;
         self.writer.write_bytes(&ULong(self.layout.cursor))?; // module_length = total alloc size
-        self.writer.write_bytes(&self.layout.get_expect(song))?; // spec: song MUST ALWAYS EXIST
+        self.writer.write_bytes(&self.layout.at(Slot::Song))?;
         self.writer.write_bytes(&header.player_seconds_num)?;
         self.writer.write_bytes(&header.player_sequence)?;
-        self.writer.write_bytes(&self.layout.get_expect(blocks))?; // spec: blockarr required
+        self.writer.write_bytes(&self.layout.at(Slot::BlockTable))?;
         self.writer.write_bytes(&header.flags)?;
         self.writer.write_bytes(&header.reserved)?;
-        self.writer.write_bytes(&self.layout.get_expect(samples))?; // always written by our writer
+        self.writer
+            .write_bytes(&self.layout.at(Slot::SampleTable))?;
         self.writer.write_bytes(&header.reserved2)?;
-        if let Some(e) = &mmd.expansion_data {
-            self.writer
-                .write_bytes(&self.layout.get_expect(&e.header))?;
+        if mmd.expansion_data.is_some() {
+            self.writer.write_bytes(&self.layout.at(Slot::Expansion))?;
         } else {
             self.writer.write_bytes(&Offset(0))?; // spec: expdata is optional
         }
@@ -293,14 +307,16 @@ impl OctamedMMDWriter {
         //blocks
         return match &mmd.block_table {
             OctamedMMDBlockTable::MMD0BlockTable { headers, blocks } => {
-                for header in headers {
-                    self.writer.write_bytes(&self.layout.get_expect(header))?;
+                for i in 0..headers.len() {
+                    self.writer
+                        .write_bytes(&self.layout.at(Slot::BlockHeader(i)))?;
                 }
                 self.write_blocks_mmd0(mmd, headers, blocks)
             }
             OctamedMMDBlockTable::MMD1BlockTable { headers, blocks } => {
-                for header in headers {
-                    self.writer.write_bytes(&self.layout.get_expect(header))?;
+                for i in 0..headers.len() {
+                    self.writer
+                        .write_bytes(&self.layout.at(Slot::BlockHeader(i)))?;
                 }
                 self.write_blocks_mmd1(headers, blocks)
             }
@@ -359,8 +375,8 @@ impl OctamedMMDWriter {
         for (i, header) in headers.iter().enumerate() {
             self.writer.write_bytes(&header.track_count)?;
             self.writer.write_bytes(&header.line_count)?;
-            let info_ptr = if let Some(info_blk) = &blocks[i].info {
-                self.layout.get_expect(info_blk)
+            let info_ptr = if blocks[i].info.is_some() {
+                self.layout.at(Slot::BlockInfo(i))
             } else {
                 Offset(0) // spec: info pointer "can be NULL"
             };
@@ -391,20 +407,14 @@ impl OctamedMMDWriter {
                 let line_count = header.line_count;
                 // line_count is zero-indexed; actual count is line_count.0 + 1
                 let count = ((line_count.0 as usize) + 1).div_ceil(bits_per_ulong);
-                self.writer.write_bytes(
-                    &self
-                        .layout
-                        .get_expect(&info_blk.header.highlight_mask_array_ptr),
-                )?;
-                self.writer.write_bytes(
-                    &self
-                        .layout
-                        .get_expect(&info_blk.header.block_name_string_ptr),
-                )?;
+                self.writer
+                    .write_bytes(&self.layout.at(Slot::BlockHighlights(i)))?;
+                self.writer
+                    .write_bytes(&self.layout.at(Slot::BlockName(i)))?;
                 self.writer
                     .write_bytes(&ULong((info_blk.block_name.chars().count() as u32) + 1))?;
-                self.writer
-                    .write_bytes(&self.layout.get(&info_blk.page_table))?; // spec: pagetable is MMD2+ only, null for MMD1
+                // the page table is MMD2+ only
+                self.writer.write_bytes(&Offset(0))?;
                 self.writer.write_bytes(&info_blk.header.reserved)?;
                 //for now highlight mask not implemented; write count ULongs of zeros
                 self.writer.write_bytes(&vec![ULong(0); count])?;
@@ -418,8 +428,8 @@ impl OctamedMMDWriter {
         //table
         for sample in 0..mmd.song.sample_count.0 {
             let header = &mmd.sample_table.headers[sample as usize];
-            if let Some(h) = header {
-                let ptr = self.layout.get_expect(h);
+            if header.is_some() {
+                let ptr = self.layout.at(Slot::SampleHeader(sample as usize));
                 self.writer.write_bytes(&ptr)?;
             } else {
                 self.writer.write_bytes(&Offset(0))?;
@@ -443,8 +453,7 @@ impl OctamedMMDWriter {
         } else {
             return Ok(());
         };
-        // next_module_ptr, null for single-song modules. Not looked up in the layout, since it's
-        // the header's first field and would find the header's own position.
+        // next_module_ptr, null for single-song modules
         self.writer.write_bytes(&Offset(0))?;
         if exp.external_instruments.is_empty() {
             self.writer.write_bytes(&Offset(0))?;
@@ -452,25 +461,18 @@ impl OctamedMMDWriter {
             self.writer
                 .write_bytes(&exp.header.extpanded_instruments_struct_size)?;
         } else {
-            self.writer.write_bytes(
-                &self
-                    .layout
-                    .get_expect(&exp.header.expanded_instruments_array_ptr),
-            )?;
+            self.writer
+                .write_bytes(&self.layout.at(Slot::ExternalInstruments))?;
             self.writer
                 .write_bytes(&UWord(exp.external_instruments.len() as u16))?;
             self.writer
                 .write_bytes(&exp.header.extpanded_instruments_struct_size)?;
         }
-        self.writer.write_bytes(
-            &self
-                .layout
-                .get_expect(&exp.header.annotation_text_char_array_ptr),
-        )?;
+        self.writer.write_bytes(&self.layout.at(Slot::Annotation))?;
         self.writer
             .write_bytes(&exp.header.annotation_text_length)?;
         self.writer
-            .write_bytes(&self.layout.get_expect(&exp.header.instrument_info_ptr))?;
+            .write_bytes(&self.layout.at(Slot::InstrumentInfos))?;
         self.writer
             .write_bytes(&exp.header.instrument_info_array_length)?;
         self.writer
@@ -479,18 +481,16 @@ impl OctamedMMDWriter {
         if exp.header.rgb_table_ptr.is_null() {
             self.writer.write_bytes(&Offset(0))?;
         } else {
-            self.writer
-                .write_bytes(&self.layout.get_expect(&exp.header.rgb_table_ptr))?;
+            self.writer.write_bytes(&self.layout.at(Slot::Palette))?;
         }
         self.writer.write_bytes(&exp.header.channel_split)?;
         if exp.header.notation_info_ptr.is_null() {
             self.writer.write_bytes(&Offset(0))?;
         } else {
             self.writer
-                .write_bytes(&self.layout.get_expect(&exp.header.notation_info_ptr))?;
+                .write_bytes(&self.layout.at(Slot::NotationInfo))?;
         }
-        self.writer
-            .write_bytes(&self.layout.get_expect(&exp.header.song_name_char_array_ptr))?;
+        self.writer.write_bytes(&self.layout.at(Slot::SongName))?;
         self.writer.write_bytes(&exp.header.song_name_length)?;
         // not parsed yet, so null rather than a stale pointer from the original file
         self.writer.write_bytes(&Offset(0))?; // mmd_dump_ptr

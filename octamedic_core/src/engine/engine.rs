@@ -271,7 +271,7 @@ impl OctamedicEngine {
         .speed()
         .unwrap_or(self.tempo.ticks_per_line)
         .max(1); */
-        return self.tempo.ticks_per_line.0.max(1) as u32;
+        return self.tempo.ticks_per_line.max(1) as u32;
     }
 
     fn frames_per_tick(&self) -> f64 {
@@ -410,7 +410,7 @@ impl OctamedicEngine {
         self.trigger(track, sample, period, volume as u8);
     }
 
-    /// Like an Amiga player: DMA off, first block, period, volume, DMA on, then the block to
+    /// Like an Amiga player: DMA off, first range, period, volume, DMA on, then the range to
     /// repeat after the first, which is the loop or silence.
     fn trigger(&mut self, channel: usize, sample: Arc<OctamedicSample>, period: u16, volume: u8) {
         let (first, repeat) = match sample.repeat {
@@ -466,8 +466,6 @@ mod tests {
         mpsc::{self, Sender},
     };
 
-    use octamed::utility::bytes::UByte;
-
     use super::*;
 
     const SAMPLE_RATE: u32 = 1000;
@@ -482,9 +480,9 @@ mod tests {
     /// About 10 ticks a second: 99.997 frames per tick at `SAMPLE_RATE`.
     fn tempo(ticks_per_line: u8) -> OctamedicTempo {
         let mut tempo = OctamedicTempo::new();
-        tempo.primary_tempo.0 = 25;
-        tempo.lines_per_beat = UByte(4);
-        tempo.ticks_per_line = UByte(ticks_per_line);
+        tempo.primary_tempo = 25;
+        tempo.lines_per_beat = 4;
+        tempo.ticks_per_line = ticks_per_line;
         return tempo;
     }
 

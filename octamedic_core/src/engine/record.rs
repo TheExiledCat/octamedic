@@ -178,8 +178,8 @@ mod tests {
     fn song() -> OctamedicSong {
         let mut song = OctamedicSong::new("test");
         let mut tempo = OctamedicTempo::new();
-        tempo.primary_tempo.0 = 25;
-        tempo.ticks_per_line.0 = 1;
+        tempo.primary_tempo = 25;
+        tempo.ticks_per_line = 1;
         *song.tempo_mut() = tempo;
         let pattern = song.ensure_pattern(PatternId(0));
         pattern.lines.truncate(4);
@@ -284,9 +284,9 @@ mod tests {
         // 96 BPM, 16 lines per beat, 6 ticks per line: a 16-line block is exactly one beat
         let mut tempo = OctamedicTempo::new();
         tempo.is_bpm_mode = true;
-        tempo.primary_tempo.0 = 96;
-        tempo.lines_per_beat.0 = 16;
-        tempo.ticks_per_line.0 = 6;
+        tempo.primary_tempo = 96;
+        tempo.lines_per_beat = 16;
+        tempo.ticks_per_line = 6;
         *song.tempo_mut() = tempo;
         let line = song.get_pattern(&PatternId(0)).unwrap().lines[0].clone();
         song.ensure_pattern(PatternId(0)).lines.resize(16, line);

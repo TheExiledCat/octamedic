@@ -1,4 +1,3 @@
-use core::panic;
 use std::{
     fs::File,
     io::{Read, Seek},
@@ -6,21 +5,24 @@ use std::{
 };
 
 use crate::{
-    mmd::module::{
-        OctamedMMD, OctamedMMD0Block, OctamedMMD0BlockHeader, OctamedMMD0BlockLine,
-        OctamedMMD0ColorPallete, OctamedMMD0Dump, OctamedMMD0Expansion, OctamedMMD0ExpansionHeader,
-        OctamedMMD0ExternalInstrument, OctamedMMD0Header, OctamedMMD0Info,
-        OctamedMMD0InstrumentInfo, OctamedMMD0InstrumentType, OctamedMMD0MidiCommands,
-        OctamedMMD0NotationInfo, OctamedMMD0Rexx, OctamedMMD0Sample, OctamedMMD0SampleHeader,
-        OctamedMMD0SampleTable, OctamedMMD0Song, OctamedMMD0SongFlags, OctamedMMD1Block,
-        OctamedMMD1BlockHeader, OctamedMMD1BlockInfo, OctamedMMD1BlockInfoHeader,
-        OctamedMMD1HighlightMask, OctamedMMD2BlockCommandPageTable, OctamedMMDBlockTable,
-        OctamedMMDTrackLine,
+    mmd::{
+        error::{MmdError, MmdResult},
+        module::{
+            MAX_INSTRUMENTS, OctamedMMD, OctamedMMD0Block, OctamedMMD0BlockHeader,
+            OctamedMMD0BlockLine, OctamedMMD0ColorPallete, OctamedMMD0Dump, OctamedMMD0Expansion,
+            OctamedMMD0ExpansionHeader, OctamedMMD0ExternalInstrument, OctamedMMD0Header,
+            OctamedMMD0Info, OctamedMMD0InstrumentInfo, OctamedMMD0InstrumentType,
+            OctamedMMD0MidiCommands, OctamedMMD0NotationInfo, OctamedMMD0Rexx, OctamedMMD0Sample,
+            OctamedMMD0SampleHeader, OctamedMMD0SampleTable, OctamedMMD0Song, OctamedMMD0SongFlags,
+            OctamedMMD1Block, OctamedMMD1BlockHeader, OctamedMMD1BlockInfo,
+            OctamedMMD1BlockInfoHeader, OctamedMMD1HighlightMask, OctamedMMD2BlockCommandPageTable,
+            OctamedMMDBlockTable, OctamedMMDTrackLine, SONG_TRACKS,
+        },
     },
     utility::bytes::{Byte, Offset, UByte, ULong, UWord, Word},
 };
 
-type Result<T> = std::io::Result<T>;
+type Result<T> = MmdResult<T>;
 
 enum OctamedModuleKind {
     MMD0,
@@ -39,22 +41,17 @@ impl OctamedModuleKind {
     const MMD3_ID: u32 = 0x4d4d4433;
 }
 
-impl From<ULong> for OctamedModuleKind {
-    fn from(value: ULong) -> Self {
-        let value = value.0;
-        if value == Self::MMD0_ID {
-            return Self::MMD0;
-        }
-        if value == Self::MMD1_ID {
-            return Self::MMD1;
-        }
-        if value == Self::MMD2_ID {
-            return Self::MMD2;
-        }
-        if value == Self::MMD3_ID {
-            return Self::MMD3;
-        }
-        panic!("Unknown mmd format: {}", value);
+impl TryFrom<ULong> for OctamedModuleKind {
+    type Error = MmdError;
+
+    fn try_from(value: ULong) -> Result<Self> {
+        return match value.0 {
+            Self::MMD0_ID => Ok(Self::MMD0),
+            Self::MMD1_ID => Ok(Self::MMD1),
+            Self::MMD2_ID => Ok(Self::MMD2),
+            Self::MMD3_ID => Ok(Self::MMD3),
+            id => Err(MmdError::UnknownFormat(id)),
+        };
     }
 }
 
@@ -76,13 +73,17 @@ impl OctamedMMDParser {
     ) -> Result<OctamedMMD> {
         stream.seek(offset.into())?;
         let header = Self::parse_header(stream)?;
-        self.mode = header.id.into();
-        if header.song_ptr.is_null()
-            || header.block_array_ptr.is_null()
-            || header.sample_array_ptr.is_null()
-            || header.expansion_data_ptr.is_null()
-        {
-            panic!("Null pointer in file");
+        self.mode = header.id.try_into()?;
+        let required = [
+            (header.song_ptr, "song"),
+            (header.block_array_ptr, "block array"),
+            (header.expansion_data_ptr, "expansion data"),
+        ];
+        if let Some((_, name)) = required.iter().find(|(ptr, _)| ptr.is_null()) {
+            return Err(MmdError::MissingPointer(name));
+        }
+        if header.sample_array_ptr.is_null() {
+            return Err(MmdError::Unsupported("modules without instruments"));
         }
         let song = self.parse_song_mmd0(header.song_ptr, stream)?;
         let block_table = self.parse_blocks(header.block_array_ptr, stream, &song)?;
@@ -100,19 +101,20 @@ impl OctamedMMDParser {
     pub fn parse_file(&mut self, path: &Path) -> Result<Vec<OctamedMMD>> {
         let mut file = File::open(path)?;
         let mut modules = vec![];
-        let mut module = self.parse_module(&mut file, Offset(0))?;
+        let mut offset = Offset(0);
         loop {
-            let extra_songs = module.header.extra_songs.0;
+            let module = self.parse_module(&mut file, offset)?;
+            let next = module
+                .expansion_data
+                .as_ref()
+                .map_or(Offset(0), |e| e.header.next_module_ptr);
             modules.push(module);
-            if extra_songs > 0 {
-                //todo parse others
-                // module = Self:: etc.
-                module = self.parse_module(&mut file, Offset(1))?;
-            } else {
-                break;
+            // each module points at the next; a pointer back would loop forever
+            if next.is_null() || next.0 <= offset.0 {
+                return Ok(modules);
             }
+            offset = next;
         }
-        return Ok(modules);
     }
 
     fn parse_ulong<R: Read>(stream: &mut R) -> Result<ULong> {
@@ -171,9 +173,6 @@ impl OctamedMMDParser {
         }
         let reserved = reserved_buffer;
         let sample_array_ptr = Self::parse_offset(stream)?;
-        if sample_array_ptr.is_null() {
-            panic!("MMD1+NoInstr not supported at this time");
-        }
         let reserved2 = Self::parse_ulong(stream)?;
         let expansion_data_ptr = Self::parse_offset(stream)?;
         let reserved3 = Self::parse_ulong(stream)?;
@@ -214,7 +213,7 @@ impl OctamedMMDParser {
         stream: &mut R,
     ) -> Result<OctamedMMD0Song> {
         stream.seek(song_offset.into())?;
-        let mut samples = [OctamedMMD0Sample::new(); 63];
+        let mut samples = [OctamedMMD0Sample::new(); MAX_INSTRUMENTS];
         self.parse_samples(&mut samples, stream)?;
         let block_count = Self::parse_uword(stream)?;
         let song_length = Self::parse_uword(stream)?;
@@ -230,7 +229,7 @@ impl OctamedMMDParser {
         let flags2_byte = Self::parse_ubyte(stream)?;
         let flags = OctamedMMD0SongFlags::from_bytes(flags_byte, flags2_byte);
         let pulses_per_line = Self::parse_ubyte(stream)?;
-        let mut track_volumes = [UByte(0); 16];
+        let mut track_volumes = [UByte(0); SONG_TRACKS];
         for i in 0..track_volumes.len() {
             let vol = Self::parse_ubyte(stream)?;
             track_volumes[i] = vol;
@@ -254,10 +253,10 @@ impl OctamedMMDParser {
 
     fn parse_samples<R: Read + Seek>(
         &self,
-        buf: &mut [OctamedMMD0Sample; 63],
+        buf: &mut [OctamedMMD0Sample; MAX_INSTRUMENTS],
         stream: &mut R,
     ) -> Result<()> {
-        for i in 0..63 {
+        for i in 0..MAX_INSTRUMENTS {
             let mut buffer = [0_u8; 8];
             stream.read_exact(&mut buffer)?;
             let repeat = buffer[0..2].try_into().unwrap();
@@ -315,7 +314,8 @@ impl OctamedMMDParser {
                 sample_table.samples.push(None);
                 continue;
             }
-            let sample_type = OctamedMMD0InstrumentType::from_word(sample_type);
+            let sample_type = OctamedMMD0InstrumentType::from_word(sample_type)
+                .ok_or(MmdError::UnknownInstrumentType(sample_type.0))?;
             let samples = Self::parse_exact(stream, sample_length.0 as usize)?
                 .iter()
                 .map(|s| Byte(*s as i8))
@@ -416,7 +416,7 @@ impl OctamedMMDParser {
                 }
                 return Ok(OctamedMMDBlockTable::MMD1BlockTable { headers, blocks });
             }
-            _ => panic!("No support for mmd2+ yet"),
+            _ => Err(MmdError::Unsupported("MMD2 and MMD3 blocks")),
         }
     }
 

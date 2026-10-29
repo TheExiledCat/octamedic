@@ -1,8 +1,4 @@
-use octamed::utility::{
-    bytes::{UByte, UWord, ValueMap},
-    frequency::Frequency,
-    octamed_tempo::OctamedTempo,
-};
+use octamed::utility::{frequency::Frequency, octamed_tempo::OctamedTempo};
 
 pub const MAX_BPM: u8 = 240;
 
@@ -56,18 +52,18 @@ fn divu(dividend: u32, divisor: u16) -> u16 {
 
 #[derive(Clone, Copy)]
 pub struct OctamedicTempo {
-    pub primary_tempo: UWord,
-    pub lines_per_beat: UByte,
-    pub ticks_per_line: UByte,
+    pub primary_tempo: u16,
+    pub lines_per_beat: u8,
+    pub ticks_per_line: u8,
     pub is_bpm_mode: bool,
 }
 
 impl OctamedicTempo {
     pub fn new() -> Self {
         return Self {
-            primary_tempo: UWord(120),
-            lines_per_beat: UByte(4),
-            ticks_per_line: UByte(6),
+            primary_tempo: 120,
+            lines_per_beat: 4,
+            ticks_per_line: 6,
             is_bpm_mode: true,
         };
     }
@@ -80,31 +76,31 @@ impl OctamedicTempo {
             is_bpm_mode,
         } = *tempo;
         return Self {
-            primary_tempo,
-            lines_per_beat,
-            ticks_per_line,
+            primary_tempo: primary_tempo.0,
+            lines_per_beat: lines_per_beat.0,
+            ticks_per_line: ticks_per_line.0,
             is_bpm_mode,
         };
     }
 
-    pub fn as_bpm(&self) -> UWord {
+    pub fn as_bpm(&self) -> u16 {
         if self.is_bpm_mode {
             return self.primary_tempo;
         }
-        let lines_per_beat = self.lines_per_beat.0.max(1) as f32;
+        let lines_per_beat = self.lines_per_beat.max(1) as f32;
         let bpm = self.get_tick_rate().as_hertz() * 10.0 / lines_per_beat;
-        return UWord(bpm.round().clamp(1.0, u16::MAX as f32) as u16);
+        return bpm.round().clamp(1.0, u16::MAX as f32) as u16;
     }
 
     /// The CIA timer count OctaMED v4 uses for this tempo.
     pub fn timer_count(&self, clock: AmigaClock) -> u16 {
         if self.is_bpm_mode {
-            let divisor = self.primary_tempo.0 as u32 * self.lines_per_beat.0.max(1) as u32;
+            let divisor = self.primary_tempo as u32 * self.lines_per_beat.max(1) as u32;
             // DIVU only takes MULU's low word
             return divu(clock.bpm_timer_constant, divisor as u16);
         }
         // never stored by OctaMED; the original would read past its table
-        let tempo = self.primary_tempo.0.max(1);
+        let tempo = self.primary_tempo.max(1);
         if tempo <= COMPATIBILITY_COUNTS.len() as u16 {
             return COMPATIBILITY_COUNTS[tempo as usize - 1];
         }
@@ -129,16 +125,16 @@ impl OctamedicTempo {
         return Frequency::hertz((1.0 / self.tick_seconds(AmigaClock::PAL)) as f32);
     }
 
-    pub fn set_tempo(&mut self, value: UWord) {
-        self.primary_tempo = value.map(|v| v.clamp(1, MAX_BPM as u16));
+    pub fn set_tempo(&mut self, value: u16) {
+        self.primary_tempo = value.clamp(1, MAX_BPM as u16);
     }
 
-    pub fn set_lines_per_beat(&mut self, value: UByte) {
-        self.lines_per_beat = value.map(|v| v.clamp(1, 32));
+    pub fn set_lines_per_beat(&mut self, value: u8) {
+        self.lines_per_beat = value.clamp(1, 32);
     }
 
-    pub fn set_ticks_per_line(&mut self, value: UByte) {
-        self.ticks_per_line = value.map(|v| v.clamp(1, 32));
+    pub fn set_ticks_per_line(&mut self, value: u8) {
+        self.ticks_per_line = value.clamp(1, 32);
     }
 }
 
@@ -155,14 +151,14 @@ mod tests {
     fn tempo(primary: u16) -> OctamedicTempo {
         let mut tempo = OctamedicTempo::new();
         tempo.is_bpm_mode = false;
-        tempo.primary_tempo = UWord(primary);
+        tempo.primary_tempo = primary;
         return tempo;
     }
 
     fn bpm(bpm: u16, lines_per_beat: u8) -> OctamedicTempo {
         let mut tempo = OctamedicTempo::new();
-        tempo.primary_tempo = UWord(bpm);
-        tempo.lines_per_beat = UByte(lines_per_beat);
+        tempo.primary_tempo = bpm;
+        tempo.lines_per_beat = lines_per_beat;
         return tempo;
     }
 

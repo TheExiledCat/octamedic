@@ -7,7 +7,7 @@ use octamed::mmd::{
 
 use crate::data::{
     instrument::{MAX_INSTRUMENT_VOLUME, OctamedicInstrument, OctamedicSample},
-    pattern::OctamedicPattern,
+    pattern::{OctamedicPattern, PatternId},
     song::{OctamedicSong, OctamedicSongFlags, SongId},
     tempo::OctamedicTempo,
     volume::OctamedicVolume,
@@ -97,9 +97,10 @@ impl FromModule for OctamedicProject {
         }
         let song_length =
             (mmd_song.song_length.0 as usize).min(mmd_song.player_sequence_list.len());
-        song.sequence = mmd_song.player_sequence_list[..song_length].to_vec();
-        song.song_length = mmd_song.song_length;
-        song.block_count = mmd_song.block_count;
+        song.sequence = mmd_song.player_sequence_list[..song_length]
+            .iter()
+            .map(|&id| PatternId::from(id))
+            .collect();
         song.tempo = OctamedicTempo::from_octamed(&mmd_song.get_tempo());
         let flags = &mmd_song.flags;
         song.flags = OctamedicSongFlags {
@@ -108,7 +109,7 @@ impl FromModule for OctamedicProject {
             st_slides: flags.use_st_sliding(),
             eight_channel: flags.is_8_channels(),
         };
-        song.global_transpose = mmd_song.global_transpose;
+        song.global_transpose = mmd_song.global_transpose.0;
         song.master_volume = OctamedicVolume::new(mmd_song.master_volume.0);
         for (volume, mmd_volume) in song.track_volumes.iter_mut().zip(mmd_song.track_volumes) {
             *volume = OctamedicVolume::new(mmd_volume.0);
