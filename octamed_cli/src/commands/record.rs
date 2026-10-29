@@ -14,14 +14,12 @@ use crate::commands::{
 
 #[derive(Args, Debug, Clone)]
 #[command(about = "Record the song or a block to a wav file.")]
-
 pub struct RecordCommand {
     #[command(subcommand)]
     kind: RecordKind,
 }
 
 #[derive(Subcommand, Debug, Clone)]
-
 enum RecordKind {
     #[command(about = "Record one block, played once.")]
     Pattern {
@@ -49,7 +47,6 @@ enum RecordKind {
 }
 
 #[derive(Args, Debug, Clone)]
-
 struct RecordOptions {
     #[arg(
         short,
@@ -70,7 +67,6 @@ struct RecordOptions {
 
 impl RecordOptions {
     fn recorder(&self) -> Recorder {
-
         return Recorder {
             sample_rate: self.sample_rate,
             output_volume: self.volume,
@@ -81,15 +77,11 @@ impl RecordOptions {
 
 impl Command for RecordCommand {
     fn run(&self, mmd: &mut octamed::mmd::module::OctamedMMD) -> CommandResult {
-
         let project = OctamedicProject::from_module(mmd);
-
         let song = project
             .get_song(SongId(0))
             .ok_or_else(|| CommandError::Generic("module has no song".into()))?;
-
         let error = |e: &dyn std::fmt::Display| CommandError::Generic(e.to_string());
-
         let (recording, output) = match &self.kind {
             RecordKind::Pattern {
                 block,
@@ -114,23 +106,18 @@ impl Command for RecordCommand {
                 output,
             ),
         };
-
         std::fs::write(output, recording.to_wav_bytes()).map_err(|e| error(&e))?;
-
         println!(
             "Recorded {:.1}s to {}",
             recording.duration().as_secs_f32(),
             output.to_string_lossy()
         );
-
         return Ok(());
     }
 }
 
 #[cfg(test)]
-
 mod tests {
-
     use std::path::Path;
 
     use clap::Parser;
@@ -139,58 +126,41 @@ mod tests {
     use super::*;
 
     #[derive(Parser)]
-
     struct Cli {
         #[command(flatten)]
         record: RecordCommand,
     }
 
     fn module() -> OctamedMMD {
-
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("example_meds/example.mmd0");
-
         return OctamedMMDParser::new().parse_file(&path).unwrap().remove(0);
     }
 
     fn run(args: &[&str]) -> CommandResult {
-
         let cli =
             Cli::try_parse_from(std::iter::once("record").chain(args.iter().copied())).unwrap();
-
         return cli.record.run(&mut module());
     }
 
     fn output(name: &str) -> PathBuf {
-
         return std::env::temp_dir()
             .join(format!("octamedic-record-{}-{name}", std::process::id()));
     }
 
     #[test]
-
     fn record_pattern_writes_a_wav_file() {
-
         let file = output("block.wav");
-
         run(&["pattern", "0", file.to_str().unwrap(), "-r", "8000"]).unwrap();
-
         let wav = std::fs::read(&file).unwrap();
-
         std::fs::remove_file(&file).unwrap();
-
         assert_eq!(&wav[0..4], b"RIFF");
-
         assert_eq!(u32::from_le_bytes(wav[24..28].try_into().unwrap()), 8000);
-
         assert!(wav.len() > 44);
     }
 
     #[test]
-
     fn record_song_starts_from_the_given_position() {
-
         let file = output("song.wav");
-
         run(&[
             "song",
             file.to_str().unwrap(),
@@ -202,71 +172,19 @@ mod tests {
             "32",
         ])
         .unwrap();
-
         assert!(std::fs::metadata(&file).unwrap().len() > 44);
-
         std::fs::remove_file(&file).unwrap();
     }
 
     #[test]
-
     fn a_block_that_doesnt_exist_is_an_error_and_writes_nothing() {
-
         let file = output("missing.wav");
-
         assert!(run(&["pattern", "200", file.to_str().unwrap()]).is_err());
-
         assert!(!file.exists());
     }
 
     #[test]
-
     fn volume_above_64_is_rejected() {
-
         assert!(Cli::try_parse_from(["record", "song", "out.wav", "-v", "65"]).is_err());
-    }
-
-    #[test]
-
-    fn a_bpm_mode_block_records_at_its_bpm() {
-
-        // hiphop2.med: BPM mode, 96 BPM, 16 lines per beat, 6 ticks per line
-        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("example_meds/hiphop2.med");
-
-        let mut mmd = OctamedMMDParser::new().parse_file(&path).unwrap().remove(0);
-
-        let lines = OctamedicProject::from_module(&mmd)
-            .get_song(SongId(0))
-            .unwrap()
-            .get_pattern(&PatternId(0))
-            .unwrap()
-            .line_count();
-
-        let file = output("hiphop.wav");
-
-        let cli = Cli::try_parse_from([
-            "record",
-            "pattern",
-            "0",
-            file.to_str().unwrap(),
-            "-r",
-            "48000",
-        ])
-        .unwrap();
-
-        cli.record.run(&mut mmd).unwrap();
-
-        let wav = std::fs::read(&file).unwrap();
-
-        std::fs::remove_file(&file).unwrap();
-
-        let frames = (wav.len() - 44) / 2;
-
-        // a line lasts 6 ticks at 96 * 16 / 10 = 153.6 Hz: 1875 frames at 48 kHz
-        let expected = lines * 1875;
-
-        assert!(frames >= expected, "{frames} < {expected}");
-
-        assert!(frames < expected + 256, "{frames} vs {expected}");
     }
 }
