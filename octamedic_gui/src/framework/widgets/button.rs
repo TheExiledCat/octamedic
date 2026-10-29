@@ -3,7 +3,7 @@ use crate::{
     framework::{
         clickable::{Click, Clickable},
         event::{Event, MouseButton},
-        painter::{CHAR_WIDTH, Painter, Pen, centered_text_x},
+        painter::{CHAR_WIDTH, Painter, Pen, centered_text_x, inside_frame},
         rect::{Point, Rect},
         widget::OctamedicWidget,
     },
@@ -26,6 +26,8 @@ pub struct Button {
     on_click: Option<ClickHandler>,
     /// Drawn inverted, like OctaMED's buttons that are switched on.
     toggled: bool,
+    /// Pixels between the frame and the label, on every side.
+    padding: i32,
     /// Where the label started when last rendered.
     label_x: i32,
 }
@@ -37,6 +39,7 @@ impl Button {
             clickable: Clickable::default(),
             on_click: None,
             toggled: false,
+            padding: 1,
             label_x: 0,
         };
     }
@@ -44,6 +47,17 @@ impl Button {
     pub fn on_click(mut self, handler: impl FnMut(&mut AppState, ButtonClick) + 'static) -> Self {
         self.on_click = Some(Box::new(handler));
         return self;
+    }
+
+    pub fn padding(mut self, padding: i32) -> Self {
+        self.padding = padding;
+        return self;
+    }
+
+    /// Where the label is centred: inside the frame and the padding. When that's shorter than the
+    /// text, the text starts at its top.
+    fn content(&self, area: Rect) -> Rect {
+        return inside_frame(area).inset(self.padding, self.padding);
     }
 
     pub fn set_text(&mut self, text: impl Into<String>) {
@@ -98,11 +112,12 @@ impl OctamedicWidget for Button {
 
     fn render(&mut self, _state: &AppState, area: Rect, painter: &mut Painter) {
         self.clickable.set_area(area);
-        self.label_x = centered_text_x(area, &self.text);
+        let content = self.content(area);
+        self.label_x = centered_text_x(content, &self.text);
         let (fill, text) = self.pens();
         painter.fill(area, fill);
         painter.frame(area);
-        painter.text_centered(area, &self.text, text);
+        painter.text_centered(content, &self.text, text);
     }
 }
 
@@ -129,7 +144,7 @@ mod tests {
         let mut button = Button::new("NEXT").on_click(handler);
         let area = Rect::new(0, 0, 40, 10);
         button.clickable.set_area(area);
-        button.label_x = centered_text_x(area, "NEXT");
+        button.label_x = centered_text_x(button.content(area), "NEXT");
         return button;
     }
 
@@ -151,6 +166,16 @@ mod tests {
         assert_eq!(button.pens(), normal);
         button.set_toggled(false);
         assert_eq!(button.pens(), inverted);
+    }
+
+    #[test]
+    fn the_label_sits_inside_the_frame_and_padding() {
+        let area = Rect::new(3, 65, 84, 11);
+        assert_eq!(Button::new("").content(area), Rect::new(6, 67, 78, 7));
+        assert_eq!(
+            Button::new("").padding(0).content(area),
+            Rect::new(5, 66, 80, 9)
+        );
     }
 
     #[test]

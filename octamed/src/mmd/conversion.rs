@@ -18,11 +18,12 @@ pub trait FromModule {
     fn from_module(module: &OctamedMMD) -> Self;
 }
 
+#[allow(unused_variables)]
 pub trait BinarySize
 where
     Self: Sized,
 {
-    fn get_size(&self, _mmd: &OctamedMMD) -> u32 {
+    fn get_size(&self, mmd: &OctamedMMD) -> u32 {
         return size_of::<Self>() as u32;
     }
 }

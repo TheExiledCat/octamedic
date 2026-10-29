@@ -111,6 +111,11 @@ pub fn text_width(text: &str) -> i32 {
     return text.chars().count() as i32 * CHAR_WIDTH;
 }
 
+/// What's left inside `Painter::frame`'s edges.
+pub fn inside_frame(rect: Rect) -> Rect {
+    return Rect::new(rect.x + 2, rect.y + 1, rect.w - 4, rect.h - 2);
+}
+
 /// Where `text_centered` starts `text` across `rect`.
 pub fn centered_text_x(rect: Rect, text: &str) -> i32 {
     return rect.x + (rect.w - text_width(text)) / 2;
