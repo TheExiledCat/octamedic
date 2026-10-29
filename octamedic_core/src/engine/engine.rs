@@ -1,23 +1,16 @@
 use std::sync::{Arc, mpsc::Receiver};
 
-use octamed::utility::period::AmigaPalPeriod;
-
 use super::{
     handle::{EngineCommand, EngineStatus},
-    voice::Voices,
+    paula::{PaulaRenderer, PaulaWrite, Renderer, SILENCE},
+    period::note_period,
 };
 use crate::data::{
-    instrument::{InstrumentId, MAX_INSTRUMENT_VOLUME, OctamedicInstrument},
+    instrument::{InstrumentId, MAX_INSTRUMENT_VOLUME, OctamedicInstrument, OctamedicSample},
     note::OctamedicNote,
     pattern::{MAX_TRACKS, OctamedicPattern, OctamedicPatternTrack, PatternId},
-    tempo::OctamedicTempo,
+    tempo::{AmigaClock, OctamedicTempo},
 };
-
-/// OctaMED note number of C-2, which plays a sample at Amiga period 428 (about 8287 Hz).
-
-const C2_NOTE: i32 = 13;
-
-const C2_PERIOD: u16 = 428;
 
 /// Highest note number a pattern can hold; anything above is not a note.
 
@@ -72,6 +65,8 @@ pub struct OctamedicEngine {
     commands: Receiver<EngineCommand>,
     status: Arc<EngineStatus>,
     sample_rate: u32,
+    /// The Amiga whose timing playback follows.
+    machine: AmigaClock,
 
     patterns: Vec<OctamedicPattern>,
     sequence: Vec<PatternId>,
@@ -86,7 +81,7 @@ pub struct OctamedicEngine {
     mode: PlayMode,
     position: Position,
     clock: Option<Clock>,
-    voices: Voices,
+    renderer: Box<dyn Renderer>,
     /// The last instrument set on each track, used by notes without an instrument number.
     track_instruments: [Option<InstrumentId>; MAX_TRACKS],
 }
@@ -98,10 +93,25 @@ impl OctamedicEngine {
         sample_rate: u32,
     ) -> Self {
 
+        let renderer = PaulaRenderer::new(sample_rate, MAX_TRACKS);
+
+        return Self::with_renderer(commands, status, sample_rate, Box::new(renderer));
+    }
+
+    /// An engine that plays through `renderer` instead of the Amiga's own Paula channels.
+
+    pub fn with_renderer(
+        commands: Receiver<EngineCommand>,
+        status: Arc<EngineStatus>,
+        sample_rate: u32,
+        renderer: Box<dyn Renderer>,
+    ) -> Self {
+
         return Self {
             commands,
             status,
             sample_rate,
+            machine: AmigaClock::PAL,
             patterns: Vec::new(),
             sequence: Vec::new(),
             instruments: Vec::new(),
@@ -117,7 +127,7 @@ impl OctamedicEngine {
                 row: 0,
             },
             clock: None,
-            voices: Voices::new(),
+            renderer,
             track_instruments: [None; MAX_TRACKS],
         };
     }
@@ -154,10 +164,9 @@ impl OctamedicEngine {
                 None => frame_count - frame,
             };
 
-            self.voices.render(
+            self.renderer.render(
                 &mut out[frame * channels..(frame + frames) * channels],
                 channels,
-                self.sample_rate,
             );
 
             if let Some(clock) = &mut self.clock {
@@ -223,7 +232,7 @@ impl OctamedicEngine {
             } => self.note_on(track, note, Some(instrument)),
             EngineCommand::ReleaseNote {
                 track,
-            } => self.voices.release(track),
+            } => self.release(track),
         }
     }
 
@@ -312,7 +321,7 @@ impl OctamedicEngine {
             return;
         }
 
-        self.voices.release_all();
+        self.release_all();
 
         self.track_instruments = [None; MAX_TRACKS];
 
@@ -338,7 +347,7 @@ impl OctamedicEngine {
 
         self.status.set_play_mode(PlayMode::Paused);
 
-        self.voices.release_all();
+        self.release_all();
     }
 
     /// The pattern at the current play position.
@@ -366,9 +375,7 @@ impl OctamedicEngine {
     fn frames_per_tick(&self) -> f64 {
 
         // when tempo commands get added, they change the tempo used here.
-        let tick_rate = self.tempo.get_tick_rate().as_hertz().max(1.0) as f64;
-
-        return self.sample_rate as f64 / tick_rate;
+        return self.sample_rate as f64 * self.tempo.tick_seconds(self.machine);
     }
 
     /// One tick: plays the row on its first tick, and moves to the next row after the last.
@@ -540,23 +547,26 @@ impl OctamedicEngine {
             .and_then(Option::as_ref)
         else {
 
-            self.voices.release(track);
+            self.release(track);
 
             return;
         };
 
-        let Some(sample) = &instrument.sample else {
+        let Some(sample) = instrument.sample.clone() else {
 
-            self.voices.release(track);
+            self.release(track);
 
             return;
         };
 
         let note = note.value as i32 + instrument.transpose as i32 + self.global_transpose as i32;
 
-        let c2_rate = AmigaPalPeriod::new(C2_PERIOD).get_frequency().as_hertz() as f64;
+        let Some(period) = note_period(note) else {
 
-        let rate = c2_rate * 2f64.powf((note - C2_NOTE) as f64 / 12.0);
+            self.release(track);
+
+            return;
+        };
 
         let max = MAX_INSTRUMENT_VOLUME as u32;
 
@@ -564,8 +574,68 @@ impl OctamedicEngine {
             * self.master_volume as u32
             / max;
 
-        self.voices
-            .note_on(track, sample.clone(), rate, volume as u8);
+        self.trigger(track, sample, period, volume as u8);
+    }
+
+    /// Starts `sample` on a channel like an Amiga player: DMA off, the sample's first block,
+    /// period and volume, DMA on, then the block to repeat once the first one ends. That's the
+    /// loop, or silence for a sample that plays once.
+
+    fn trigger(&mut self, channel: usize, sample: Arc<OctamedicSample>, period: u16, volume: u8) {
+
+        let (first, repeat) = match sample.repeat {
+            Some((start, end)) => (
+                end,
+                PaulaWrite::Sample {
+                    sample: sample.clone(),
+                    start,
+                    len: end - start,
+                },
+            ),
+            None => (
+                sample.data.len(),
+                PaulaWrite::Sample {
+                    sample: SILENCE.clone(),
+                    start: 0,
+                    len: SILENCE.data.len(),
+                },
+            ),
+        };
+
+        let writes = [
+            PaulaWrite::DmaOff,
+            PaulaWrite::Sample {
+                sample,
+                start: 0,
+                len: first,
+            },
+            PaulaWrite::Period(period),
+            PaulaWrite::Volume(volume),
+            PaulaWrite::DmaOn,
+            repeat,
+        ];
+
+        for write in writes {
+
+            self.renderer.write(channel, write);
+        }
+    }
+
+    /// Stops the track's sample.
+
+    fn release(&mut self, track: usize) {
+
+        self.renderer.write(track, PaulaWrite::DmaOff);
+    }
+
+    /// Stops every track.
+
+    fn release_all(&mut self) {
+
+        for track in 0..MAX_TRACKS {
+
+            self.release(track);
+        }
     }
 }
 
@@ -573,12 +643,14 @@ impl OctamedicEngine {
 
 mod tests {
 
-    use std::sync::mpsc::{self, Sender};
+    use std::sync::{
+        Mutex,
+        mpsc::{self, Sender},
+    };
 
     use octamed::utility::bytes::UByte;
 
     use super::*;
-    use crate::data::instrument::OctamedicSample;
 
     const SAMPLE_RATE: u32 = 1000;
 
@@ -593,7 +665,8 @@ mod tests {
         return (engine, sender, status);
     }
 
-    /// A tempo of 10 ticks a second, so a tick lasts 100 frames at `SAMPLE_RATE`.
+    /// BPM 25 with 4 lines per beat, about 10 ticks a second, so a tick lasts just under 100
+    /// frames at `SAMPLE_RATE` (99.997).
 
     fn tempo(ticks_per_line: u8) -> OctamedicTempo {
 
@@ -765,16 +838,48 @@ mod tests {
         assert_eq!(status.play_mode(), PlayMode::Paused);
     }
 
-    #[test]
+    /// Remembers every Paula write, so tests can check what the player did.
 
-    fn c2_plays_at_the_amiga_c2_rate() {
+    #[derive(Clone, Default)]
 
-        let (mut engine, commands, _) = engine();
+    struct Recorder {
+        writes: Arc<Mutex<Vec<(usize, PaulaWrite)>>>,
+    }
+
+    impl Renderer for Recorder {
+        fn write(&mut self, channel: usize, write: PaulaWrite) {
+
+            self.writes.lock().unwrap().push((channel, write));
+        }
+
+        fn render(&mut self, _out: &mut [f32], _channels: usize) {}
+    }
+
+    fn recording_engine() -> (OctamedicEngine, Sender<EngineCommand>, Recorder) {
+
+        let (sender, receiver) = mpsc::channel();
+
+        let status = Arc::new(EngineStatus::default());
+
+        let recorder = Recorder::default();
+
+        let renderer = Box::new(recorder.clone());
+
+        let engine = OctamedicEngine::with_renderer(receiver, status, SAMPLE_RATE, renderer);
+
+        return (engine, sender, recorder);
+    }
+
+    /// Plays one note on track 0 and returns the writes to its channel.
+
+    fn note_writes(instrument: OctamedicInstrument, note: u8) -> Vec<PaulaWrite> {
+
+        let (mut engine, commands, recorder) = recording_engine();
 
         commands
             .send(EngineCommand::SetInstrument {
                 id: InstrumentId(1),
-                instrument: Some(instrument()),
+                instrument: Some(instrument),
             })
             .unwrap();
 
@@ -782,7 +887,7 @@ mod tests {
             .send(EngineCommand::PlayNote {
                 track: 0,
                 note: OctamedicNote {
-                    value: 25,
+                    value: note,
                 },
                 instrument: InstrumentId(1),
             })
@@ -790,9 +895,141 @@ mod tests {
 
         run(&mut engine, 1);
 
-        let rate = engine.voices.rate(0).unwrap();
+        return recorder
+            .writes
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(channel, _)| *channel == 0)
+            .map(|(_, write)| write.clone())
+            .collect();
+    }
 
-        assert!((rate - 2.0 * 8287.1369).abs() < 0.1, "{rate}");
+    #[test]
+
+    fn a_note_starts_its_sample_like_an_amiga_player() {
+
+        let instrument = instrument();
+
+        let sample = instrument.sample.clone().unwrap();
+
+        let writes = note_writes(instrument, 13);
+
+        assert_eq!(
+            writes,
+            vec![
+                PaulaWrite::DmaOff,
+                PaulaWrite::Sample {
+                    sample: sample.clone(),
+                    start: 0,
+                    len: 4,
+                },
+                PaulaWrite::Period(428),
+                PaulaWrite::Volume(64),
+                PaulaWrite::DmaOn,
+                PaulaWrite::Sample {
+                    sample,
+                    start: 0,
+                    len: 4,
+                },
+            ]
+        );
+    }
+
+    #[test]
+
+    fn notes_play_at_their_period() {
+
+        let period = |note| {
+
+            note_writes(instrument(), note)
+                .into_iter()
+                .find_map(|write| match write {
+                    PaulaWrite::Period(period) => Some(period),
+                    _ => None,
+                })
+        };
+
+        assert_eq!(period(1), Some(856));
+
+        assert_eq!(period(13), Some(428));
+
+        assert_eq!(period(25), Some(214));
+    }
+
+    #[test]
+
+    fn a_one_shot_sample_repeats_silence_once_it_ends() {
+
+        let mut instrument = instrument();
+
+        instrument.sample = Some(Arc::new(OctamedicSample {
+            data: vec![127; 6],
+            repeat: None,
+        }));
+
+        let writes = note_writes(instrument, 13);
+
+        assert!(matches!(
+            &writes[1],
+            PaulaWrite::Sample {
+                start: 0,
+                len: 6,
+                ..
+            }
+        ));
+
+        assert_eq!(
+            writes.last(),
+            Some(&PaulaWrite::Sample {
+                sample: SILENCE.clone(),
+                start: 0,
+                len: 2,
+            })
+        );
+    }
+
+    #[test]
+
+    fn a_looped_sample_plays_up_to_its_loop_end_then_repeats_the_loop() {
+
+        let mut instrument = instrument();
+
+        let sample = Arc::new(OctamedicSample {
+            data: vec![127; 10],
+            repeat: Some((2, 6)),
+        });
+
+        instrument.sample = Some(sample.clone());
+
+        let writes = note_writes(instrument, 13);
+
+        assert_eq!(
+            writes[1],
+            PaulaWrite::Sample {
+                sample: sample.clone(),
+                start: 0,
+                len: 6,
+            }
+        );
+
+        assert_eq!(
+            writes.last(),
+            Some(&PaulaWrite::Sample {
+                sample,
+                start: 2,
+                len: 4,
+            })
+        );
+    }
+
+    #[test]
+
+    fn a_note_without_a_period_silences_the_track() {
+
+        let writes = note_writes(instrument(), MAX_NOTE);
+
+        assert_eq!(writes, vec![PaulaWrite::DmaOff]);
     }
 
     #[test]

@@ -21,6 +21,8 @@ impl InstrumentId {
 
 /// 8-bit signed PCM data of a sample instrument, played back as is like on the Amiga.
 
+#[derive(Debug, PartialEq)]
+
 pub struct OctamedicSample {
     pub data: Vec<i8>,
     /// Loop range in frames; `None` when the sample plays once.
