@@ -19,7 +19,6 @@ pub struct Label {
 
 impl Label {
     pub fn new(text: impl Into<String>, font_size: f32) -> Self {
-
         return Self {
             text: text.into(),
             font_size,
@@ -28,36 +27,29 @@ impl Label {
     }
 
     pub fn with_color(mut self, color: Color) -> Self {
-
         self.color = color;
-
         return self;
     }
 
     pub fn color(&self) -> Color {
-
         return self.color;
     }
 
     pub fn set_color(&mut self, color: Color) {
-
         self.color = color;
     }
 
     pub fn text(&self) -> &str {
-
         return &self.text;
     }
 
     pub fn set_text(&mut self, text: impl Into<String>) {
-
         self.text = text.into();
     }
 }
 
 impl Widget for Label {
     fn draw(&self, canvas: &mut Canvas, draw: &DrawState, _state: &AppState) {
-
         draw_text(canvas, &self.text, self.font_size, self.color, draw);
     }
 
@@ -67,24 +59,19 @@ impl Widget for Label {
         known: Size<Option<f32>>,
         _available: Size<AvailableSpace>,
     ) -> Size<f32> {
-
         return measure_text(ctx, &self.text, self.font_size, known);
     }
 }
 
 fn text(text: &str, font_size: f32) -> Text {
-
     let mut text = Text::new(text);
-
     text.set_wrap(false)
         .set_font(TEXT_FONT)
         .set_scale(font_size);
-
     return text;
 }
 
 pub fn draw_text(canvas: &mut Canvas, value: &str, font_size: f32, color: Color, draw: &DrawState) {
-
     canvas.draw(
         &text(value, font_size),
         DrawParam::default()
@@ -99,11 +86,9 @@ pub fn measure_text(
     font_size: f32,
     known: Size<Option<f32>>,
 ) -> Size<f32> {
-
     let measured = text(value, font_size)
         .measure(ctx)
         .unwrap_or([0.0, 0.0].into());
-
     return Size {
         width: known.width.unwrap_or(measured.x),
         height: known.height.unwrap_or(measured.y),

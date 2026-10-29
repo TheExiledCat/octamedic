@@ -5,3 +5,6 @@ edition = "2024"
 
 [dependencies]
 binary_rw = "4.1.0"
+
+[lints]
+workspace = true

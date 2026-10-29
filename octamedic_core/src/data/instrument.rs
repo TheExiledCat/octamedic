@@ -2,95 +2,75 @@ use std::sync::Arc;
 
 use octamed::mmd::module::{OctamedMMD0Sample, OctamedMMD0SampleHeader};
 
-/// Highest instrument volume, also the Amiga's maximum channel volume.
-
+/// Also Paula's highest channel volume.
 pub const MAX_INSTRUMENT_VOLUME: u8 = 64;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-
 pub struct InstrumentId(pub u8);
 
 impl InstrumentId {
-    /// The index into the instrument list; pattern instrument numbers start at 1, 0 means none.
-
+    /// Pattern instrument numbers start at 1; 0 means none.
     pub fn index(&self) -> Option<usize> {
-
         return (self.0 as usize).checked_sub(1);
     }
 }
 
-/// 8-bit signed PCM data of a sample instrument, played back as is like on the Amiga.
-
+/// 8-bit signed sample data.
 #[derive(Debug, PartialEq)]
-
 pub struct OctamedicSample {
     pub data: Vec<i8>,
-    /// Loop range in frames; `None` when the sample plays once.
+    /// Loop range in bytes; `None` for a one-shot sample.
     pub repeat: Option<(usize, usize)>,
 }
 
 impl OctamedicSample {
-    /// Decodes raw MMD sample bytes. 16 bit (big endian) samples keep their high byte and stereo
-    /// samples (left half, then right half) are mixed down, so everything plays as 8-bit mono.
-
+    /// 16-bit samples keep their high byte and stereo ones are mixed down, so everything plays
+    /// as 8-bit mono.
     pub fn from_octamed(
         bytes: &[i8],
         header: &OctamedMMD0SampleHeader,
         info: &OctamedMMD0Sample,
     ) -> Self {
-
         let mono: Vec<i8> = if header.is_16_bit() {
-
-            bytes.chunks_exact(2).map(|pair| pair[0]).collect()
+            bytes
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|pair| pair[0])
+                .collect()
         } else {
-
             bytes.to_vec()
         };
-
         let data = if header.is_stereo() {
-
             let (left, right) = mono.split_at(mono.len() / 2);
-
             left.iter()
                 .zip(right)
                 .map(|(&l, &r)| ((l as i16 + r as i16) / 2) as i8)
                 .collect()
         } else {
-
             mono
         };
-
-        // repeat and repeat length are stored in words.
+        // stored in words
         let bytes_per_frame = if header.is_16_bit() { 2 } else { 1 };
-
         let start = info.repeat.0 as usize * 2 / bytes_per_frame;
-
         let length = info.repeat_length.0 as usize * 2 / bytes_per_frame;
-
         let end = (start + length).min(data.len());
-
         let repeat = (info.repeat_length.0 > 1 && start < end).then_some((start, end));
-
-        return Self {
-            data,
-            repeat,
-        };
+        return Self { data, repeat };
     }
 }
 
 #[derive(Clone)]
-
 pub struct OctamedicInstrument {
     pub name: String,
     pub volume: u8,
     pub transpose: i8,
-    /// `None` for instruments the engine cannot play yet, like synths.
+    /// `None` for instruments the engine can't play yet, like synths.
     pub sample: Option<Arc<OctamedicSample>>,
 }
 
 impl OctamedicInstrument {
     pub fn new(name: impl Into<String>) -> Self {
-
         return Self {
             name: name.into(),
             volume: MAX_INSTRUMENT_VOLUME,

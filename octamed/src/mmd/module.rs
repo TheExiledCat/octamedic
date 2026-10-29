@@ -43,7 +43,6 @@ impl OctamedMMD0HeaderFlags {
     const LOAD_TO_FAST_MEM_FLAG: u8 = 0x1;
 
     pub fn from_byte(byte: UByte) -> Self {
-
         return Self {
             load_to_fast_memory: bit_flag(byte, Self::LOAD_TO_FAST_MEM_FLAG),
         };
@@ -52,44 +51,28 @@ impl OctamedMMD0HeaderFlags {
 
 impl Display for OctamedMMD0HeaderFlags {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-
         if self.load_to_fast_memory {
-
             writeln!(f, "LOAD_TO_FAST_MEM")?;
         } else {
-
             writeln!(f, "N/A")?;
         }
-
         return Ok(());
     }
 }
 
 impl Display for OctamedMMD0Header {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-
         writeln!(f, "OctaMED File Header")?;
-
         writeln!(f, "{}", (0..20).map(|_| "_").collect::<String>())?;
-
         let id_bytes = self.id.0.to_be_bytes();
-
         let id_text = str::from_utf8(&id_bytes).unwrap();
-
         writeln!(f, "Format: {}", id_text)?;
-
         writeln!(f, "Module Length: {} Bytes", self.module_length)?;
-
         writeln!(f, "Song struct Pointer: {}", self.song_ptr)?;
-
         writeln!(f, "Pattern blocks table Pointer: {}", self.block_array_ptr)?;
-
         writeln!(f, "Flags: {}", self.flags)?;
-
         writeln!(f, "Sample Array Pointer: {}", self.sample_array_ptr)?;
-
         writeln!(f, "Expansion Data Offset: {}", self.expansion_data_ptr)?;
-
         return writeln!(f, "Extra songs count: {}", self.extra_songs);
     }
 }
@@ -104,7 +87,6 @@ pub struct OctamedMMD {
 
 impl OctamedMMD {
     pub fn get_type(&self) -> OctamedMMDType {
-
         match self.header.id.0 {
             0x4d4d4430 => OctamedMMDType::MMD0,
             0x4d4d4431 => OctamedMMDType::MMD1,
@@ -131,38 +113,24 @@ pub struct OctamedMMD0Song {
 
 impl OctamedMMD0Song {
     pub fn get_tempo(&self) -> OctamedTempo {
-
         return OctamedTempo::from_song(self);
     }
 }
 
 impl Display for OctamedMMD0Song {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-
         writeln!(f, "Song Metadata")?;
-
         writeln!(f, "{}", (0..20).map(|_| "_").collect::<String>())?;
-
         writeln!(f, "Block count: {}", self.block_count)?;
-
         writeln!(f, "Song Length: {}", self.song_length)?;
-
         writeln!(f, "Default Tempo: {}", self.primary_tempo)?;
-
         writeln!(f, "Global Transpose: {}", self.global_transpose)?;
-
         writeln!(f, "Flags:\n{}", self.flags)?;
-
         writeln!(f, "Pulses Per Line: {}", self.secondary_tempo)?;
-
         writeln!(f, "Master volume: {}", self.master_volume)?;
-
         writeln!(f, "Sample Count: {}", self.sample_count)?;
-
         writeln!(f, "Track Volumes: {:?}", self.track_volumes.map(|b| b.0))?;
-
         writeln!(f)?;
-
         // writeln!(f, "Sample info")?;
         // for i in 0..self.sample_count.0 as usize {
         //     let sample = self.samples[i];
@@ -173,16 +141,13 @@ impl Display for OctamedMMD0Song {
         //     writeln!(f, "Midi Preset: {}", sample.midi_preset)?;
         //     writeln!(f, "Volume: {}", sample.sample_volume)?;
         //     writeln!(f, "Transpose: {}", sample.sample_transpose)?;
-
         //     writeln!(f)?;
         // }
-
         return Ok(());
     }
 }
 
 #[derive(Clone, Copy)]
-
 pub struct OctamedMMD0Sample {
     pub repeat: UWord,
     pub repeat_length: UWord,
@@ -194,7 +159,6 @@ pub struct OctamedMMD0Sample {
 
 impl OctamedMMD0Sample {
     pub fn new() -> Self {
-
         return Self {
             repeat: UWord(0),
             repeat_length: UWord(0),
@@ -203,6 +167,12 @@ impl OctamedMMD0Sample {
             sample_volume: UByte(u8::MAX),
             sample_transpose: Byte(0),
         };
+    }
+}
+
+impl Default for OctamedMMD0Sample {
+    fn default() -> Self {
+        return Self::new();
     }
 }
 
@@ -247,18 +217,12 @@ impl OctamedMMDTrackLine {
     pub const BLOCK_LINE_NOTE_NUMBER_MASK_MMD1: u8 = 0x7f;
 
     pub fn from_bytes_mmd0(byte1: UByte, byte2: UByte, byte3: UByte) -> Self {
-
         let command_value = byte3;
-
         let command_number = UByte(byte2.0 & Self::BLOCK_LINE_COMMAND_NUMBER_MASK_MMD0);
-
         let note_number = UByte(byte1.0 & Self::BLOCK_LINE_NOTE_NUMBER_MASK_MMD0);
-
         let xy = (byte1.0 >> 6) << 4; // leftmost 2 bits of byte 1 need to be prepended to byte 2 to get the value for the instrument number
         let iiii = byte2.0 >> 4;
-
         let instrument_number = UByte(xy | iiii);
-
         return Self {
             note_number,
             instrument_number,
@@ -268,15 +232,10 @@ impl OctamedMMDTrackLine {
     }
 
     pub fn from_bytes_mmd1(byte1: UByte, byte2: UByte, byte3: UByte, byte4: UByte) -> Self {
-
         let command_value = byte4;
-
         let command_number = byte3;
-
         let note_number = UByte(byte1.0 & Self::BLOCK_LINE_NOTE_NUMBER_MASK_MMD1);
-
         let instrument_number = UByte(byte2.0 & Self::BLOCK_LINE_INSTRUMENT_NUMBER_MASK_MMD1);
-
         return Self {
             note_number,
             instrument_number,
@@ -288,7 +247,6 @@ impl OctamedMMDTrackLine {
 
 impl Display for OctamedMMDTrackLine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-
         write!(
             f,
             "{:3}{}{:02X}{:02X}",
@@ -306,20 +264,13 @@ trait AsInstrumentString {
 
 impl AsInstrumentString for UByte {
     fn as_inst_string(&self) -> String {
-
         let val = self.0;
-
         let ascii_start = 65;
-
         let mut text = String::with_capacity(2);
-
         match val {
             0..=31 => {
-
                 text.push(' ');
-
                 if val < 10 {
-
                     text.push(
                         *val.to_string()
                             .chars()
@@ -328,22 +279,15 @@ impl AsInstrumentString for UByte {
                             .unwrap(),
                     );
                 } else {
-
                     let index = val - 10;
-
                     let c = char::from_u32((ascii_start as u32) + (index as u32)).unwrap();
-
                     text.push(c);
                 }
             }
             32..=63 => {
-
                 text.push('1');
-
                 let val = val - 31;
-
                 if val < 10 {
-
                     text.push(
                         *val.to_string()
                             .chars()
@@ -352,20 +296,15 @@ impl AsInstrumentString for UByte {
                             .unwrap(),
                     );
                 } else {
-
                     let index = val - 10;
-
                     let c = char::from_u32((ascii_start as u32) + (index as u32)).unwrap();
-
                     text.push(c);
                 }
             }
             _ => {
-
                 panic!();
             }
         }
-
         return text;
     }
 }
@@ -412,12 +351,10 @@ impl OctamedMMD0SampleHeader {
     pub const STEREO_SAMPLE: i16 = 0x20;
 
     pub fn is_16_bit(&self) -> bool {
-
         return ((self.sample_type as i16) & Self::SIXTEEN_BIT_SAMPLE) != 0;
     }
 
     pub fn is_stereo(&self) -> bool {
-
         return ((self.sample_type as i16) & Self::STEREO_SAMPLE) != 0;
     }
 }
@@ -429,7 +366,6 @@ pub struct OctamedMMD0SampleTable {
 
 #[repr(i16)]
 #[derive(Clone, Copy, PartialEq, Eq)]
-
 pub enum OctamedMMD0InstrumentType {
     Hybrid = -2,
     Synth,
@@ -445,13 +381,10 @@ pub enum OctamedMMD0InstrumentType {
 
 impl Display for OctamedMMD0InstrumentType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-
         match self {
             OctamedMMD0InstrumentType::Hybrid => write!(f, "Hybrid"),
             OctamedMMD0InstrumentType::Synth => write!(f, "Synth"),
-
             _ => {
-
                 write!(
                     f,
                     "{}",
@@ -467,7 +400,6 @@ impl Display for OctamedMMD0InstrumentType {
                         _ => unreachable!(),
                     }
                 )?;
-
                 write!(f, " Sample")
             }
         }
@@ -476,7 +408,6 @@ impl Display for OctamedMMD0InstrumentType {
 
 impl OctamedMMD0InstrumentType {
     pub fn from_word(word: Word) -> Self {
-
         match word.0 {
             -2 => OctamedMMD0InstrumentType::Hybrid,
             -1 => OctamedMMD0InstrumentType::Synth,
@@ -559,26 +490,15 @@ pub struct OctamedMMD0ColorPallete {
 
 impl OctamedMMD0ColorPallete {
     pub fn from_bytes(bytes: [UWord; 8]) -> Self {
-
-        let mut colors = [OctamedMMD0Color {
-            value: UWord(0),
-        }; 8];
-
+        let mut colors = [OctamedMMD0Color { value: UWord(0) }; 8];
         for i in 0..bytes.len() {
-
-            colors[i] = OctamedMMD0Color {
-                value: bytes[i],
-            };
+            colors[i] = OctamedMMD0Color { value: bytes[i] };
         }
-
-        Self {
-            colors,
-        }
+        Self { colors }
     }
 }
 
 #[derive(Clone, Copy)]
-
 pub struct OctamedMMD0Color {
     pub value: UWord,
 }
@@ -591,15 +511,10 @@ impl OctamedMMD0Color {
     const B_MASK: u16 = 0x000f;
 
     /// The rgb values in in half byte accuracy, where 0 = 0 and 15 = 255 / lowest - maximum brightness
-
     pub fn as_rgb_4(&self) -> (UByte, UByte, UByte) {
-
         let r = (self.value.0 & Self::R_MASK) >> 8;
-
         let g = (self.value.0 & Self::G_MASK) >> 4;
-
         let b = self.value.0 & Self::B_MASK;
-
         return (
             UByte(((r * 255) / 15) as u8),
             UByte(((g * 255) / 15) as u8),
@@ -621,7 +536,6 @@ pub struct OctamedMMD0NotationInfo {
 
 impl OctamedMMD0NotationInfo {
     pub fn new() -> Self {
-
         return Self {
             sharp_count: UByte(0),
             flags: UByte(0),
@@ -631,6 +545,12 @@ impl OctamedMMD0NotationInfo {
             note_transposes: [Byte(0); 63],
             _pad: UByte(0),
         };
+    }
+}
+
+impl Default for OctamedMMD0NotationInfo {
+    fn default() -> Self {
+        return Self::new();
     }
 }
 
@@ -671,132 +591,95 @@ impl OctamedMMD0SongFlags {
     const MIXING_ENABLED_FLAG: u8 = 0x80;
 
     pub fn from_bytes(byte1: UByte, byte2: UByte) -> Self {
-
         return Self(byte1, byte2);
     }
 
     pub fn filter_is_on(&self) -> bool {
-
         return bit_flag(self.0, Self::FILTER_ON_FLAG);
     }
 
     pub fn jumping_is_on(&self) -> bool {
-
         return bit_flag(self.0, Self::JUMP_ON_FLAG);
     }
 
     pub fn jump_every_eight_lines(&self) -> bool {
-
         return bit_flag(self.0, Self::JUMP_EIGHT_FLAG);
     }
 
     pub fn song_samples_indicator(&self) -> bool {
-
         return bit_flag(self.0, Self::SONG_SAMPLES_MODULE_FLAG);
     }
 
     pub fn volumes_are_hex(&self) -> bool {
-
         return bit_flag(self.0, Self::VOLUMES_ARE_HEX_FLAG);
     }
 
     pub fn use_st_sliding(&self) -> bool {
-
         return bit_flag(self.0, Self::USE_ST_SLIDING_FLAG);
     }
 
     pub fn is_8_channels(&self) -> bool {
-
         return bit_flag(self.0, Self::IS_EIGHT_CHANNEL_FLAG);
     }
 
     pub fn is_hq_v2_compatability(&self) -> bool {
-
         return bit_flag(self.0, Self::IS_HQ_V2_COMPATIBILITY_FLAG);
     }
 
     // in lines, 1-32; the file stores one less, so 0 means 1 line
     pub fn bpm_beat_length(&self) -> UByte {
-
         return UByte((self.1.0 & Self::BPM_BEAT_LENGTH_MASK) + 1);
     }
 
     pub fn is_bpm_mode(&self) -> bool {
-
         return bit_flag(self.1, Self::IS_BPM_MODE_FLAG);
     }
 
     pub fn mixing_enabled(&self) -> bool {
-
         return bit_flag(self.1, Self::MIXING_ENABLED_FLAG);
     }
 }
 
 impl Display for OctamedMMD0SongFlags {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-
         if self.filter_is_on() {
-
             writeln!(f, "FILTER_ON")?;
         }
-
         if self.jumping_is_on() {
-
             writeln!(f, "JUMPING_ON")?;
         }
-
         if self.jump_every_eight_lines() {
-
             writeln!(f, "JUMP_8")?;
         }
-
         if self.song_samples_indicator() {
-
             writeln!(f, "SNG_SAMPLES")?;
         }
-
         if self.volumes_are_hex() {
-
             writeln!(f, "VOL_HEX")?;
         }
-
         if self.use_st_sliding() {
-
             writeln!(f, "ST_SLIDING")?;
         }
-
         if self.is_8_channels() {
-
             writeln!(f, "8_CHANNELS")?;
         }
-
         if self.is_hq_v2_compatability() {
-
             writeln!(f, "HQ_v2-v4")?;
         }
-
         return Ok(());
     }
 }
 
 #[cfg(test)]
-
 mod tests {
-
     use super::*;
 
     #[test]
-
     fn bpm_beat_length_is_one_more_than_the_stored_bits() {
-
         let flags = |flags2: u8| OctamedMMD0SongFlags::from_bytes(UByte(0), UByte(flags2));
-
         assert_eq!(flags(0x00).bpm_beat_length(), UByte(1));
-
         assert_eq!(flags(0x23).bpm_beat_length(), UByte(4));
-
         assert_eq!(flags(0x2F).bpm_beat_length(), UByte(16));
-
         assert_eq!(flags(0x1F).bpm_beat_length(), UByte(32));
     }
 }
