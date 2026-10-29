@@ -73,7 +73,7 @@ The transport handles row/tick sequencing and pattern navigation. The engine is 
 
 ### Tempo
 
-`OctamedicTempo::get_tick_rate()` returns ticks per second as a `Frequency`. The engine converts this to samples-per-tick using the output sample rate. The formula used comes from [NostalgicPlayer](https://github.com/neumatho/NostalgicPlayer/blob/main/Source/Agents/Players/OctaMed/Implementation/Mixer.cs) (line 150).
+`OctamedicTempo::timer_count()` gives the CIA timer count OctaMED v4 uses for a tempo, and `tick_seconds()` how long a tick lasts on a PAL or NTSC Amiga (`AmigaClock`). The engine turns that into output frames per tick. `octamed`'s `OctamedTempo` only holds the tempo fields as stored.
 
 ### MMD format reference
 

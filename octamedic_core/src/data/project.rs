@@ -8,7 +8,7 @@ use octamed::mmd::{
 use crate::data::{
     instrument::{MAX_INSTRUMENT_VOLUME, OctamedicInstrument, OctamedicSample},
     pattern::OctamedicPattern,
-    song::{OctamedicSong, SongId},
+    song::{OctamedicSong, OctamedicSongFlags, SongId},
     tempo::OctamedicTempo,
     volume::OctamedicVolume,
 };
@@ -61,8 +61,13 @@ impl FromModule for OctamedicProject {
                 blocks.iter().map(OctamedicPattern::from).collect()
             }
         };
+        let patterns = patterns.into_iter().map(Arc::new).collect();
         let mmd_song = &module.song;
         let names = module.expansion_data.as_ref().map(|e| &e.instrument_infos);
+        let extensions = module
+            .expansion_data
+            .as_ref()
+            .map(|e| &e.external_instruments);
         for (index, slot) in song.instruments.iter_mut().enumerate() {
             let Some(Some(header)) = module.sample_table.headers.get(index) else {
                 continue;
@@ -74,6 +79,11 @@ impl FromModule for OctamedicProject {
             let mut instrument = OctamedicInstrument::new(name);
             instrument.volume = info.sample_volume.0.min(MAX_INSTRUMENT_VOLUME);
             instrument.transpose = info.sample_transpose.0;
+            if let Some(extension) = extensions.and_then(|e| e.get(index)) {
+                instrument.finetune = extension.fine_tune.0.clamp(-8, 7);
+                instrument.hold = extension.hold.0;
+                instrument.decay = extension.decay.0;
+            }
             instrument.sample = module
                 .sample_table
                 .samples
@@ -91,6 +101,13 @@ impl FromModule for OctamedicProject {
         song.song_length = mmd_song.song_length;
         song.block_count = mmd_song.block_count;
         song.tempo = OctamedicTempo::from_octamed(&mmd_song.get_tempo());
+        let flags = &mmd_song.flags;
+        song.flags = OctamedicSongFlags {
+            filter_on: flags.filter_is_on(),
+            volumes_hex: flags.volumes_are_hex(),
+            st_slides: flags.use_st_sliding(),
+            eight_channel: flags.is_8_channels(),
+        };
         song.global_transpose = mmd_song.global_transpose;
         song.master_volume = OctamedicVolume::new(mmd_song.master_volume.0);
         for (volume, mmd_volume) in song.track_volumes.iter_mut().zip(mmd_song.track_volumes) {
@@ -106,5 +123,43 @@ impl FromModule for OctamedicProject {
 impl ToModule for OctamedicProject {
     fn to_module(&mut self) -> octamed::mmd::module::OctamedMMD {
         todo!()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use octamed::mmd::parser::OctamedMMDParser;
+
+    use super::*;
+
+    fn example(name: &str) -> OctamedicProject {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../octamed_cli/example_meds")
+            .join(name);
+        let module = OctamedMMDParser::new().parse_file(&path).unwrap().remove(0);
+        return OctamedicProject::from_module(&module);
+    }
+
+    #[test]
+    fn song_flags_come_from_the_module() {
+        let project = example("example.mmd0");
+        let flags = project.get_song(SongId(0)).unwrap().flags();
+        assert_eq!(
+            flags,
+            OctamedicSongFlags {
+                eight_channel: true,
+                ..OctamedicSongFlags::default()
+            }
+        );
+    }
+
+    #[test]
+    fn instruments_get_their_finetune() {
+        let project = example("example.mmd1");
+        let song = project.get_song(SongId(0)).unwrap();
+        let finetune = |index: usize| song.instruments[index].as_ref().unwrap().finetune;
+        assert_eq!((finetune(0), finetune(1), finetune(8)), (-1, 0, 1));
     }
 }

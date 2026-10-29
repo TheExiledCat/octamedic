@@ -446,7 +446,6 @@ impl OctamedMMDWriter {
         // next_module_ptr, null for single-song modules. Not looked up in the layout, since it's
         // the header's first field and would find the header's own position.
         self.writer.write_bytes(&Offset(0))?;
-        // todo: external instruments aren't parsed yet, so this is always empty
         if exp.external_instruments.is_empty() {
             self.writer.write_bytes(&Offset(0))?;
             self.writer.write_bytes(&UWord(0))?;
@@ -501,6 +500,15 @@ impl OctamedMMDWriter {
         self.writer.write_bytes(&exp.header.reserved)?;
         self.writer.write_bytes(&exp.header.tag_end)?;
         //structs
+        let size = exp.header.extpanded_instruments_struct_size.0 as usize;
+        for instrument in &exp.external_instruments {
+            let mut bytes = instrument.to_bytes();
+            // entries shorter than v4's were read with the missing fields at 0
+            bytes.resize(size, 0);
+            for byte in bytes {
+                self.writer.write_bytes(&UByte(byte))?;
+            }
+        }
         self.writer.write_bytes(&exp.annotation)?;
         for info in &exp.instrument_infos {
             self.writer.write_bytes(&info.name)?;

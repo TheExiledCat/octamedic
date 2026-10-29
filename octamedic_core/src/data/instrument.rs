@@ -65,6 +65,11 @@ pub struct OctamedicInstrument {
     pub name: String,
     pub volume: u8,
     pub transpose: i8,
+    /// -8 to 7, in eighths of a semitone.
+    pub finetune: i8,
+    /// OctaMED's hold and decay settings, as stored.
+    pub hold: u8,
+    pub decay: u8,
     /// `None` for instruments the engine can't play yet, like synths.
     pub sample: Option<Arc<OctamedicSample>>,
 }
@@ -75,6 +80,9 @@ impl OctamedicInstrument {
             name: name.into(),
             volume: MAX_INSTRUMENT_VOLUME,
             transpose: 0,
+            finetune: 0,
+            hold: 0,
+            decay: 0,
             sample: None,
         };
     }

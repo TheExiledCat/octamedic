@@ -296,8 +296,8 @@ impl AppState {
             .get_song(self.active_song)
             .expect("the active song should exist");
         for id in self.changed_patterns.drain() {
-            if let Some(pattern) = song.get_pattern(&id) {
-                self.engine.set_pattern(id, pattern.clone());
+            if let Some(pattern) = song.get_shared_pattern(&id) {
+                self.engine.set_pattern(id, pattern);
             }
         }
         if self.sequence_changed {
