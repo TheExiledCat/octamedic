@@ -2,6 +2,10 @@
 members = ["octamed", "octamed_cli", "octamedic_core", "octamedic_gui"]
 resolver = "3"
 
+# the code ends every function with an explicit return
+[workspace.lints.clippy]
+needless_return = "allow"
+
 [profile.dev]
 debug = "line-tables-only"
 opt-level = "z"

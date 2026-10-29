@@ -23,6 +23,9 @@ cargo build
 cargo run -p octamed_cli -- example_meds/example.mmd0
 ```
 
+On WSL, `./run-windows.sh` builds and runs the Windows build instead, for native audio
+(`PACKAGE=octamedic_gui ./run-windows.sh` for the GUI).
+
 Inside the REPL:
 ```
 > inspect      # show file metadata
@@ -34,7 +37,8 @@ Inside the REPL:
 
 ## Code style
 
-- `rustfmt` is configured via `rustfmt.toml` — run `cargo fmt` before committing.
+- Run `./fmt.sh` before committing. It applies clippy's fixes, formats with `rustfmt.toml` (import
+  grouping needs nightly rustfmt) and runs clippy again.
 - `cargo clippy` must pass with no errors.
 - Keep functions focused. If a function is growing to explain itself with comments, split it.
 - No doc comments are needed for internal types. Only add them when the _why_ is non-obvious.
@@ -43,7 +47,7 @@ Inside the REPL:
 
 1. Fork the repo and create a branch from `main`.
 2. Make your change. If it touches playback logic, test it against `example_meds/example.mmd0` and `example.mmd1`.
-3. Run `cargo fmt && cargo clippy && cargo build` — all must pass.
+3. Run `./fmt.sh && cargo build && cargo test` — all must pass.
 4. Open a PR with a clear description of what changed and why. Reference any related issue.
 
 ## Architecture notes

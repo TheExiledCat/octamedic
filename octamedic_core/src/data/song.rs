@@ -8,7 +8,6 @@ use crate::data::{
 };
 
 #[derive(Clone, Copy)]
-
 pub struct SongId(pub u8);
 
 pub struct OctamedicSong {
@@ -26,9 +25,7 @@ pub struct OctamedicSong {
 
 impl OctamedicSong {
     pub fn new(name: impl AsRef<str>) -> Self {
-
         let name = name.as_ref();
-
         return Self {
             name: name.into(),
             instruments: std::array::from_fn(|_| None),
@@ -44,70 +41,54 @@ impl OctamedicSong {
     }
 
     pub fn get_pattern(&self, pattern_id: &PatternId) -> Option<&OctamedicPattern> {
-
         return self.patterns.get(pattern_id.0 as usize);
     }
 
     pub fn get_sequence(&self) -> Vec<UByte> {
-
         return self.sequence.clone();
     }
 
     pub fn name(&self) -> &str {
-
         return &self.name;
     }
 
     pub fn patterns(&self) -> &[OctamedicPattern] {
-
         return &self.patterns;
     }
 
     pub fn get_pattern_mut(&mut self, pattern_id: PatternId) -> Option<&mut OctamedicPattern> {
-
         return self.patterns.get_mut(pattern_id.0 as usize);
     }
 
     // creates empty patterns up to `pattern_id` if the song has fewer
     pub fn ensure_pattern(&mut self, pattern_id: PatternId) -> &mut OctamedicPattern {
-
         let index = pattern_id.0 as usize;
-
         if index >= self.patterns.len() {
-
             self.patterns.resize_with(index + 1, OctamedicPattern::new);
-
             self.block_count = UWord(self.patterns.len() as u16);
         }
-
         return &mut self.patterns[index];
     }
 
     pub fn sequence(&self) -> &[UByte] {
-
         return &self.sequence;
     }
 
     pub fn tempo(&self) -> OctamedicTempo {
-
         return self.tempo;
     }
 
     pub fn tempo_mut(&mut self) -> &mut OctamedicTempo {
-
         return &mut self.tempo;
     }
 
     pub fn set_instrument(&mut self, id: InstrumentId, instrument: Option<OctamedicInstrument>) {
-
         if let Some(slot) = id.index().and_then(|index| self.instruments.get_mut(index)) {
-
             *slot = instrument;
         }
     }
 
     pub fn instrument(&self, id: InstrumentId) -> Option<&OctamedicInstrument> {
-
         return self.instruments.get(id.index()?)?.as_ref();
     }
 }
