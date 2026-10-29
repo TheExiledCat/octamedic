@@ -1,9 +1,6 @@
 use std::sync::{Arc, LazyLock};
 
-use crate::data::instrument::OctamedicSample;
-
-/// PAL, in Hz: a channel plays `PAULA_CLOCK / period` bytes a second.
-pub const PAULA_CLOCK: u32 = 3_546_895;
+use crate::{amiga::clock::AmigaClock, data::instrument::OctamedicSample};
 
 /// So four tracks at full volume fill the output.
 const VOICE_GAIN: f32 = 0.25;
@@ -143,13 +140,15 @@ impl Channel {
 /// Paula's own channels, for songs of up to 4 channels.
 pub struct PaulaRenderer {
     sample_rate: u32,
+    clock: AmigaClock,
     channels: Vec<Channel>,
 }
 
 impl PaulaRenderer {
-    pub fn new(sample_rate: u32, channel_count: usize) -> Self {
+    pub fn new(sample_rate: u32, clock: AmigaClock, channel_count: usize) -> Self {
         return Self {
             sample_rate,
+            clock,
             channels: (0..channel_count).map(|_| Channel::default()).collect(),
         };
     }
@@ -167,7 +166,7 @@ impl Renderer for PaulaRenderer {
             if channel.playing.is_none() || channel.period == 0 {
                 continue;
             }
-            let rate = PAULA_CLOCK as f64 / channel.period as f64;
+            let rate = self.clock.paula_clock as f64 / channel.period as f64;
             let step = rate / self.sample_rate as f64;
             for frame in out.chunks_exact_mut(channels) {
                 let Some(value) = channel.next(step) else {
@@ -187,7 +186,7 @@ mod tests {
     const FULL: f32 = 127.0 * 64.0 / VOICE_FULL_SCALE * VOICE_GAIN;
 
     /// A period of 5 plays one byte per frame.
-    const SAMPLE_RATE: u32 = PAULA_CLOCK / 5;
+    const SAMPLE_RATE: u32 = AmigaClock::PAL.paula_clock / 5;
 
     fn sample(data: Vec<i8>) -> Arc<OctamedicSample> {
         return Arc::new(OctamedicSample { data, repeat: None });
@@ -227,7 +226,7 @@ mod tests {
     }
 
     fn renderer() -> PaulaRenderer {
-        return PaulaRenderer::new(SAMPLE_RATE, 4);
+        return PaulaRenderer::new(SAMPLE_RATE, AmigaClock::PAL, 4);
     }
 
     #[test]

@@ -1,5 +1,7 @@
 use octamed::utility::{frequency::Frequency, octamed_tempo::OctamedTempo};
 
+use crate::amiga::{clock::AmigaClock, m68k::divu};
+
 pub const MAX_BPM: u8 = 240;
 
 /// Divided by the primary tempo for the timer count, on PAL and NTSC alike.
@@ -11,44 +13,13 @@ const COMPATIBILITY_COUNTS: [u16; 10] = [
     2417, 4833, 7250, 9666, 12083, 14500, 16916, 19332, 21436, 24163,
 ];
 
+/// BPM mode divides this by BPM × lines per beat: the E-clock × 2.5, rounded down.
+fn bpm_timer_constant(clock: AmigaClock) -> u32 {
+    return clock.e_clock * 5 / 2;
+}
+
 /// BPM mode runs a tick on every 4th timer interrupt.
 const BPM_INTERRUPTS_PER_TICK: u32 = 4;
-
-/// The clocks that differ between PAL and NTSC Amigas.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct AmigaClock {
-    /// The CIA timers' clock: the CPU clock / 10.
-    pub e_clock: u32,
-    /// BPM mode divides this by BPM × lines per beat (the E-clock × 2.5).
-    pub bpm_timer_constant: u32,
-    /// A channel plays `paula_clock / period` bytes a second.
-    pub paula_clock: u32,
-}
-
-impl AmigaClock {
-    pub const PAL: Self = Self {
-        e_clock: 709_379,
-        bpm_timer_constant: 1_773_447,
-        paula_clock: 3_546_895,
-    };
-
-    pub const NTSC: Self = Self {
-        e_clock: 715_909,
-        bpm_timer_constant: 1_789_772,
-        paula_clock: 3_579_545,
-    };
-}
-
-/// The 68000's `DIVU`: a quotient too big for 16 bits overflows and leaves the dividend's low
-/// word.
-fn divu(dividend: u32, divisor: u16) -> u16 {
-    if divisor == 0 {
-        // a 68000 would trap; only odd files get here
-        return dividend as u16;
-    }
-    let quotient = dividend / divisor as u32;
-    return u16::try_from(quotient).unwrap_or(dividend as u16);
-}
 
 #[derive(Clone, Copy)]
 pub struct OctamedicTempo {
@@ -97,7 +68,7 @@ impl OctamedicTempo {
         if self.is_bpm_mode {
             let divisor = self.primary_tempo as u32 * self.lines_per_beat.max(1) as u32;
             // DIVU only takes MULU's low word
-            return divu(clock.bpm_timer_constant, divisor as u16);
+            return divu(bpm_timer_constant(clock), divisor as u16);
         }
         // never stored by OctaMED; the original would read past its table
         let tempo = self.primary_tempo.max(1);

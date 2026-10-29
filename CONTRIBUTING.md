@@ -55,7 +55,8 @@ Inside the REPL:
 ### Sound engine
 
 [docs/PLAYER.md](docs/PLAYER.md) explains how playback works: Paula, DMA, the CIA timer and how
-the engine in `octamedic_core/src/engine/` follows them.
+the engine in `octamedic_core/src/engine/` follows them. The hardware itself is modelled in
+`octamedic_core/src/amiga/`.
 
 ### MMD format reference
 

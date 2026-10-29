@@ -97,6 +97,10 @@ effects like slides and arpeggios will do their work.
 
 ## The engine
 
+The code is split the same way as this page. `octamedic_core::amiga` is the hardware: Paula, the
+PAL and NTSC clocks and the 68000's `DIVU`. `octamedic_core::engine` is what OctaMED does with it:
+sequencing, tempo, notes and the order of the register writes.
+
 ### Ticks in output frames
 
 `OctamedicEngine::process` fills each audio buffer the callback asks for. It works out how many
@@ -109,10 +113,19 @@ remembers it for its next note, like in the original.
 
 ### Notes
 
-A note's pitch is its note number plus the instrument's transpose and the song's global transpose.
-That is turned into a period with ProTracker's period table for the three octaves it covers. Notes
-outside those octaves double or halve the nearest period per octave for now, until OctaMED's own
-table is in.
+A note's pitch is its note number plus the instrument's transpose and the song's global transpose,
+added as bytes, so a large transpose wraps around like it does on the Amiga. That gives an index
+into a period table covering C-1 to B-3, and the instrument's finetune (-8 to 7) picks which of 16
+tables to use. They're the same tables as ProTracker's.
+
+The range is only three octaves, so notes outside it are moved:
+
+- below C-1, they move up an octave at a time until they fit;
+- far above it, they drop an octave once;
+- everything left above B-3 plays in the top octave, B-3's octave.
+
+So notes never play lower than C-1 or higher than B-3. That's for plain samples; instruments with
+their own extra octaves look periods up differently.
 
 Its volume is the instrument's volume, scaled by the track's volume and the song's master volume
 (each out of 64). The listener's output volume is applied after everything else and isn't part of
@@ -145,7 +158,6 @@ can play.
 ## Not there yet
 
 - Effects (the command column) don't run yet; `tick` has a place for them.
-- Finetune is read from the file but doesn't change the period yet.
 - Songs with 5 to 8 channels: OctaMED mixes two tracks into each of Paula's channels in software
   for these. That will be its own renderer.
 - The Amiga's low-pass filter (the song's filter flag), and stereo: Paula plays channels 0 and 3
