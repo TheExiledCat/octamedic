@@ -2,14 +2,19 @@ use std::sync::{Arc, mpsc::Receiver};
 
 use super::{
     handle::{EngineCommand, EngineStatus},
-    paula::{PaulaRenderer, PaulaWrite, Renderer, SILENCE},
     period::note_period,
 };
-use crate::data::{
-    instrument::{InstrumentId, MAX_INSTRUMENT_VOLUME, OctamedicInstrument, OctamedicSample},
-    note::OctamedicNote,
-    pattern::{MAX_TRACKS, OctamedicPattern, OctamedicPatternTrack, PatternId},
-    tempo::{AmigaClock, OctamedicTempo},
+use crate::{
+    amiga::{
+        clock::AmigaClock,
+        paula::{PaulaRenderer, PaulaWrite, Renderer, SILENCE},
+    },
+    data::{
+        instrument::{InstrumentId, MAX_INSTRUMENT_VOLUME, OctamedicInstrument, OctamedicSample},
+        note::OctamedicNote,
+        pattern::{MAX_TRACKS, OctamedicPattern, OctamedicPatternTrack, PatternId},
+        tempo::OctamedicTempo,
+    },
 };
 
 /// Anything higher is not a note.
@@ -84,7 +89,7 @@ impl OctamedicEngine {
         status: Arc<EngineStatus>,
         sample_rate: u32,
     ) -> Self {
-        let renderer = PaulaRenderer::new(sample_rate, MAX_TRACKS);
+        let renderer = PaulaRenderer::new(sample_rate, AmigaClock::PAL, MAX_TRACKS);
         return Self::with_renderer(commands, status, sample_rate, Box::new(renderer));
     }
 
@@ -398,11 +403,8 @@ impl OctamedicEngine {
             self.release(track);
             return;
         };
-        let note = note.value as i32 + instrument.transpose as i32 + self.global_transpose as i32;
-        let Some(period) = note_period(note) else {
-            self.release(track);
-            return;
-        };
+        let transpose = instrument.transpose.wrapping_add(self.global_transpose);
+        let period = note_period(note.value, transpose, instrument.finetune);
         let max = MAX_INSTRUMENT_VOLUME as u32;
         let volume = instrument.volume as u32 * self.track_volumes[track] as u32 / max
             * self.master_volume as u32
@@ -741,9 +743,17 @@ mod tests {
     }
 
     #[test]
-    fn a_note_without_a_period_silences_the_track() {
-        let writes = note_writes(instrument(), MAX_NOTE);
-        assert_eq!(writes, vec![PaulaWrite::DmaOff]);
+    fn the_instruments_finetune_picks_the_period() {
+        let mut tuned = instrument();
+        tuned.finetune = -8;
+        let periods: Vec<u16> = note_writes(tuned, 13)
+            .into_iter()
+            .filter_map(|write| match write {
+                PaulaWrite::Period(period) => Some(period),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(periods, vec![453]);
     }
 
     #[test]
