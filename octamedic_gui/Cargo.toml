@@ -8,3 +8,5 @@ octamedic_core = {path="../octamedic_core"}
 ggez = { version = "0.9.3", default-features = false }
 taffy = "0.10.1"
 
+[lints]
+workspace = true

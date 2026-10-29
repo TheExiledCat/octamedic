@@ -6,3 +6,6 @@ edition = "2024"
 [dependencies]
 cpal = "0.17.3"
 octamed = {path="../octamed"}
+
+[lints]
+workspace = true

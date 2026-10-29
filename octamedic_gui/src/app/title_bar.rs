@@ -24,7 +24,6 @@ pub struct TitleBar {
 
 impl TitleBar {
     pub fn new() -> Self {
-
         return Self {
             background: Panel::new().with_background(Color::BLACK),
             timer: None,
@@ -34,16 +33,13 @@ impl TitleBar {
     }
 
     pub fn restart_timer(&mut self) {
-
         self.started = Instant::now();
-
         self.displayed_seconds = None;
     }
 }
 
 impl Widget for TitleBar {
     fn style(&self) -> Style {
-
         return Style {
             size: Size {
                 width: percent(1.0_f32),
@@ -62,47 +58,31 @@ impl Widget for TitleBar {
     }
 
     fn mount(&mut self, ui: &mut Ui, bar: NodeId) {
-
         ui.add(bar, Label::new("TIMER", 24.0));
-
         let timer = Button::new("00:00", 24.0).on_click(|ui, _state, node, _| {
-
             if let Some(bar) = ui.ancestor_mut::<TitleBar>(node) {
-
                 bar.restart_timer();
             }
-
             true
         });
-
         self.timer = Some(ui.add(bar, timer));
-
         ui.add(bar, Label::new("+-OctaMEDIC Professional (v4.00)", 28.0));
-
         ui.add_styled(bar, Label::new("By Amano Rosuko", 18.0), |style| {
-
             style.margin.left = auto();
         });
     }
 
     fn draw(&self, canvas: &mut Canvas, draw: &DrawState, state: &AppState) {
-
         self.background.draw(canvas, draw, state);
     }
 
     fn update(&mut self, ui: &mut Ui, _state: &mut AppState, _node: NodeId) {
-
         let seconds = self.started.elapsed().as_secs();
-
         if self.displayed_seconds == Some(seconds) {
-
             return;
         }
-
         self.displayed_seconds = Some(seconds);
-
         if let Some(timer) = self.timer {
-
             Button::set_text(
                 ui,
                 timer,

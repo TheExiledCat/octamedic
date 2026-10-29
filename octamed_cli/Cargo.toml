@@ -16,3 +16,6 @@ inquire = "0.9.4"
 octamed = {path="../octamed"}
 octamedic_core = {path="../octamedic_core"}
 progress_bar = "1.4.0"
+
+[lints]
+workspace = true

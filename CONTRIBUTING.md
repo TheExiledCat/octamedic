@@ -23,6 +23,9 @@ cargo build
 cargo run -p octamed_cli -- example_meds/example.mmd0
 ```
 
+On WSL, `./run-windows.sh` builds and runs the Windows build instead, for native audio
+(`PACKAGE=octamedic_gui ./run-windows.sh` for the GUI).
+
 Inside the REPL:
 ```
 > inspect      # show file metadata
@@ -34,7 +37,8 @@ Inside the REPL:
 
 ## Code style
 
-- `rustfmt` is configured via `rustfmt.toml` — run `cargo fmt` before committing.
+- Run `./fmt.sh` before committing. It applies clippy's fixes, formats with `rustfmt.toml` (import
+  grouping needs nightly rustfmt) and runs clippy again.
 - `cargo clippy` must pass with no errors.
 - Keep functions focused. If a function is growing to explain itself with comments, split it.
 - No doc comments are needed for internal types. Only add them when the _why_ is non-obvious.
@@ -43,33 +47,16 @@ Inside the REPL:
 
 1. Fork the repo and create a branch from `main`.
 2. Make your change. If it touches playback logic, test it against `example_meds/example.mmd0` and `example.mmd1`.
-3. Run `cargo fmt && cargo clippy && cargo build` — all must pass.
+3. Run `./fmt.sh && cargo build && cargo test` — all must pass.
 4. Open a PR with a clear description of what changed and why. Reference any related issue.
 
 ## Architecture notes
 
 ### Sound engine
 
-The engine is in `octamedic_core/src/engine/`. The key interfaces:
-
-- **`OctamedicEngine::process(&mut [u8], u32) -> bool`** — called by the `cpal` audio callback to fill a PCM buffer (u8, 128 = silence). Returns `true` when the song ends.
-- **`OctamedicTransport::process(&OctamedicProject) -> bool`** — advances the sequencer by one tick. Returns `true` when playback is finished (paused).
-
-The transport handles row/tick sequencing and pattern navigation. The engine is responsible for calling the transport at the right sample offsets and mixing audio into the output buffer.
-
-### Data flow: file → playback
-
-```
-.mmd file
-  └─ octamed::parser  →  OctamedMMD
-       └─ OctamedicProject::from_module()  →  OctamedicProject
-            └─ OctamedicEngine::new()
-                 └─ OctamedicEngine::process()  →  PCM buffer  →  cpal output
-```
-
-### Tempo
-
-`OctamedicTempo::get_tick_rate()` returns ticks per second as a `Frequency`. The engine converts this to samples-per-tick using the output sample rate. The formula used comes from [NostalgicPlayer](https://github.com/neumatho/NostalgicPlayer/blob/main/Source/Agents/Players/OctaMed/Implementation/Mixer.cs) (line 150).
+[docs/PLAYER.md](docs/PLAYER.md) explains how playback works: Paula, DMA, the CIA timer and how
+the engine in `octamedic_core/src/engine/` follows them. The hardware itself is modelled in
+`octamedic_core/src/amiga/`.
 
 ### MMD format reference
 
