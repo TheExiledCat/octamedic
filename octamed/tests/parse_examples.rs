@@ -10,7 +10,7 @@ use octamed::{
 
 fn example(name: &str) -> PathBuf {
     return Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../octamed_cli/example_meds")
+        .join("../example_meds")
         .join(name);
 }
 

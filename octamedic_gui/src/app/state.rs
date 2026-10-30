@@ -1,8 +1,9 @@
 use std::{
-    collections::HashSet,
+    collections::{HashSet, VecDeque},
     time::{Duration, Instant},
 };
 
+use ggez::graphics::InstanceArray;
 use octamedic_core::{
     data::{
         instrument::{InstrumentId, MAX_INSTRUMENTS},
@@ -16,13 +17,19 @@ use octamedic_core::{
     engine::{engine::PlayMode, handle::EngineHandle},
 };
 
-use crate::app::cursor::EditCursor;
+use crate::app::{
+    cursor::EditCursor,
+    mode::{HeaderMode, MainMode},
+};
 
 const NOTIFICATION_DURATION: Duration = Duration::from_secs(2);
 
 const MAX_INSTRUMENT: u8 = MAX_INSTRUMENTS as u8;
 
 const MAX_OCTAVE: u8 = 9;
+
+/// Older lines are dropped from the debug console past this many.
+const MAX_DEBUG_LINES: usize = 256;
 
 // note keys from C up to the C an octave above, like a piano keyboard
 const BOTTOM_OCTAVE_KEYS: [char; 13] = [
@@ -40,6 +47,10 @@ pub struct AppState {
     pub active_song: SongId,
     pub active_pattern: PatternId,
     pub cursor: EditCursor,
+    header_mode: HeaderMode,
+    main_mode: MainMode,
+    /// The editor the main view goes back to when playing: the block or the notation editor.
+    last_editor: MainMode,
     pub active_sequence_index: usize,
     pub active_instrument: InstrumentId,
     pub current_octave: u8,
@@ -48,6 +59,7 @@ pub struct AppState {
     pub exit_requested: bool,
     pub notification: Option<String>,
     pub pallete: OctamedColorPallete,
+    debug_lines: VecDeque<String>,
     notified_at: Instant,
     timer_started: Instant,
     time: Duration,
@@ -66,6 +78,9 @@ impl AppState {
             active_song: SongId(0),
             active_pattern: PatternId(0),
             cursor: EditCursor::default(),
+            header_mode: HeaderMode::default(),
+            main_mode: MainMode::default(),
+            last_editor: MainMode::default(),
             active_sequence_index: 0,
             active_instrument: InstrumentId(1),
             current_octave: 2,
@@ -74,6 +89,7 @@ impl AppState {
             exit_requested: false,
             notification: None,
             pallete,
+            debug_lines: VecDeque::new(),
             notified_at: Instant::now(),
             timer_started: Instant::now(),
             time: Duration::ZERO,
@@ -87,10 +103,10 @@ impl AppState {
     }
 
     pub fn update(&mut self) {
-        if let Some(start) = self.playback_start_time
-            && self.is_playing()
-        {
-            self.time = start.elapsed();
+        if let Some(start) = self.playback_start_time {
+            if self.is_playing() {
+                self.time = start.elapsed();
+            }
         }
         if self.notified_at.elapsed() >= NOTIFICATION_DURATION {
             self.notification = None;
@@ -136,6 +152,26 @@ impl AppState {
         return self.song_mut().get_pattern_mut(id);
     }
 
+    pub fn header_mode(&self) -> HeaderMode {
+        return self.header_mode;
+    }
+
+    pub fn main_mode(&self) -> MainMode {
+        return self.main_mode;
+    }
+
+    pub fn last_editor(&self) -> MainMode {
+        return self.last_editor;
+    }
+
+    pub fn set_modes(&mut self, header: HeaderMode, main: MainMode) {
+        self.header_mode = header;
+        self.main_mode = main;
+        if main.is_editor() {
+            self.last_editor = main;
+        }
+    }
+
     pub fn is_playing(&self) -> bool {
         return self.engine.status().play_mode() != PlayMode::Paused;
     }
@@ -162,6 +198,19 @@ impl AppState {
         self.notified_at = Instant::now();
     }
 
+    /// Adds a line to the debug console.
+    pub fn debug(&mut self, line: impl Into<String>) {
+        if self.debug_lines.len() == MAX_DEBUG_LINES {
+            self.debug_lines.pop_front();
+        }
+        self.debug_lines.push_back(line.into());
+    }
+
+    /// Oldest first.
+    pub fn debug_lines(&self) -> &VecDeque<String> {
+        return &self.debug_lines;
+    }
+
     pub fn request_exit(&mut self) {
         self.exit_requested = true;
     }
@@ -181,7 +230,10 @@ impl AppState {
     pub fn stop(&mut self) {
         self.engine.stop();
     }
-
+    pub fn set_instrument(&mut self, instrument: u8) -> InstrumentId {
+        self.active_instrument.0 = instrument.min(MAX_INSTRUMENT);
+        return self.active_instrument;
+    }
     pub fn next_instrument(&mut self) -> InstrumentId {
         self.active_instrument.0 = self
             .active_instrument
@@ -354,6 +406,29 @@ mod tests {
         assert_eq!(state.key_to_note('Z').unwrap().value, 25);
         assert_eq!(state.key_to_note('i').unwrap().value, 49);
         assert!(state.key_to_note('p').is_none());
+    }
+
+    #[test]
+    fn the_debug_console_keeps_the_newest_lines() {
+        let mut state = state();
+        for line in 0..MAX_DEBUG_LINES + 2 {
+            state.debug(line.to_string());
+        }
+        assert_eq!(state.debug_lines().len(), MAX_DEBUG_LINES);
+        assert_eq!(state.debug_lines().front().unwrap(), "2");
+        assert_eq!(
+            state.debug_lines().back().unwrap(),
+            &(MAX_DEBUG_LINES + 1).to_string()
+        );
+    }
+
+    #[test]
+    fn the_last_editor_is_remembered_through_other_views() {
+        let mut state = state();
+        assert_eq!(state.last_editor(), MainMode::BlockEditor);
+        state.set_modes(HeaderMode::Play, MainMode::NotationEditor);
+        state.set_modes(HeaderMode::Files, MainMode::Files);
+        assert_eq!(state.last_editor(), MainMode::NotationEditor);
     }
 
     #[test]

@@ -132,7 +132,7 @@ mod tests {
     }
 
     fn module() -> OctamedMMD {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("example_meds/example.mmd0");
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../example_meds/example.mmd0");
         return OctamedMMDParser::new().parse_file(&path).unwrap().remove(0);
     }
 

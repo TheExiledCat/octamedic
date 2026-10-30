@@ -1,6 +1,10 @@
 [workspace]
-members = ["octamed", "octamed_cli", "octamedic_core", "octamedic_gui"]
+members = ["octamed", "octamed_cli", "octamedic_core", "octamedic_gui", "octamedic_util"]
 resolver = "3"
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.85"
 
 # the code ends every function with an explicit return
 [workspace.lints.clippy]

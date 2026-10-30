@@ -59,10 +59,10 @@ impl FromModule for OctamedicProject {
             songs: vec![],
             pallete: OctamedColorPallete::DEFAULT,
         };
-        if let Some(expansion) = &module.expansion_data
-            && !expansion.header.rgb_table_ptr.is_null()
-        {
-            s.pallete = OctamedColorPallete::from_octamed(&expansion.color_pallete);
+        if let Some(expansion) = &module.expansion_data {
+            if !expansion.header.rgb_table_ptr.is_null() {
+                s.pallete = OctamedColorPallete::from_octamed(&expansion.color_pallete);
+            }
         }
         s.name = module
             .expansion_data
@@ -92,7 +92,10 @@ impl FromModule for OctamedicProject {
             let info = &mmd_song.samples[index];
             let name = names
                 .and_then(|names| names.get(index))
-                .map_or(String::new(), |info| info.name.clone());
+                // the file pads names to their full length with NULs
+                .map_or(String::new(), |info| {
+                    info.name.split('\0').next().unwrap_or_default().to_owned()
+                });
             let mut instrument = OctamedicInstrument::new(name);
             instrument.volume = info.sample_volume.0.min(MAX_INSTRUMENT_VOLUME);
             instrument.transpose = info.sample_transpose.0;
@@ -154,7 +157,7 @@ mod tests {
 
     fn example(name: &str) -> OctamedicProject {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../octamed_cli/example_meds")
+            .join("../example_meds")
             .join(name);
         let module = OctamedMMDParser::new().parse_file(&path).unwrap().remove(0);
         return OctamedicProject::from_module(&module);

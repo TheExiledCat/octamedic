@@ -2,12 +2,13 @@ use ggez::input::keyboard::KeyCode;
 
 use crate::{
     app::{
-        editor::BlockEditor, footer::Footer, header::Header, state::AppState, title_bar::TitleBar,
+        copyright_bar::CopyrightBar, debug_console::DebugConsole, editor::BlockEditor,
+        footer::Footer, header::Header, mode::MainMode, state::AppState, title_bar::TitleBar,
     },
     framework::{
-        event::Event,
+        event::{Event, MouseButton},
         keymap::{Action, Key, KeyActions, Keymap},
-        painter::Painter,
+        painter::{Painter, Pen},
         rect::Rect,
         widget::OctamedicWidget,
     },
@@ -17,6 +18,9 @@ use crate::{
 const TITLE_HEIGHT: i32 = 13;
 const HEADER_HEIGHT: i32 = 64;
 const EDITOR_HEIGHT: i32 = 120;
+
+/// The debug console covers the top half of the screen.
+const CONSOLE_HEIGHT: i32 = 128;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MainAction {
@@ -32,6 +36,8 @@ pub struct MainView {
     header: Header,
     editor: BlockEditor,
     footer: Footer,
+    console: DebugConsole,
+    copyright: CopyrightBar,
 }
 
 impl MainView {
@@ -42,33 +48,60 @@ impl MainView {
             header: Header::new(),
             editor: BlockEditor::new(),
             footer: Footer,
+            console: DebugConsole::default(),
+            copyright: CopyrightBar::default(),
         };
     }
 
-    fn widgets(&mut self) -> [&mut dyn OctamedicWidget; 4] {
-        return [
-            &mut self.title,
-            &mut self.header,
-            &mut self.editor,
-            &mut self.footer,
-        ];
+    fn widgets(&mut self, mode: MainMode) -> Vec<&mut dyn OctamedicWidget> {
+        let mut widgets: Vec<&mut dyn OctamedicWidget> = vec![&mut self.title, &mut self.header];
+        widgets.extend(main_screen(&mut self.editor, mode));
+        widgets.push(&mut self.footer);
+        return widgets;
     }
+}
+
+/// The main mode's screen; `None` for the ones that aren't made yet.
+fn main_screen(editor: &mut BlockEditor, mode: MainMode) -> Option<&mut dyn OctamedicWidget> {
+    return match mode {
+        MainMode::BlockEditor => Some(editor),
+        MainMode::NotationEditor
+        | MainMode::SampleEditor
+        | MainMode::SynthEditor
+        | MainMode::SongList
+        | MainMode::Midi
+        | MainMode::Files => None,
+    };
 }
 
 impl OctamedicWidget for MainView {
     fn update(&mut self, state: &mut AppState) {
-        for widget in self.widgets() {
+        for widget in self.widgets(state.main_mode()) {
             widget.update(state);
         }
     }
 
     fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
         // global keys are checked first so no child can swallow them
-        return self.dispatch(state, event)
+        let taken = self.console.handle_event(state, event)
+            || self.copyright.handle_event(state, event)
+            || self.dispatch(state, event)
             || self
-                .widgets()
+                .widgets(state.main_mode())
                 .into_iter()
                 .any(|widget| widget.handle_event(state, event));
+        let right_click = matches!(
+            event,
+            Event::MouseDown {
+                button: MouseButton::Right,
+                ..
+            }
+        );
+        if !taken && right_click {
+            self.copyright.toggle();
+            return true;
+        }
+        return taken;
     }
 
     fn render(&mut self, state: &AppState, area: Rect, painter: &mut Painter) {
@@ -76,9 +109,15 @@ impl OctamedicWidget for MainView {
         let (header, rest) = rest.split_top(HEADER_HEIGHT);
         let (editor, footer) = rest.split_top(EDITOR_HEIGHT);
         self.title.render(state, title, painter);
+        self.copyright.render(state, title, painter);
         self.header.render(state, header, painter);
-        self.editor.render(state, editor, painter);
+        match main_screen(&mut self.editor, state.main_mode()) {
+            Some(screen) => screen.render(state, editor, painter),
+            None => painter.fill(editor, Pen::BLACK),
+        }
         self.footer.render(state, footer, painter);
+        let (console, _) = area.split_top(CONSOLE_HEIGHT);
+        self.console.render(state, console, painter);
     }
 }
 
@@ -99,5 +138,30 @@ impl KeyActions for MainView {
         return match action {
             MainAction::Quit => "Quit OctaMEDIC",
         };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
+
+    use super::*;
+
+    fn right_click(view: &mut MainView, state: &mut AppState) -> bool {
+        let event = Event::MouseDown {
+            pos: [300, 150],
+            button: MouseButton::Right,
+        };
+        return view.handle_event(state, &event);
+    }
+
+    #[test]
+    fn a_right_click_nothing_takes_shows_and_hides_the_copyright() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        let mut view = MainView::new();
+        assert!(right_click(&mut view, &mut state));
+        assert!(view.copyright.is_visible());
+        assert!(right_click(&mut view, &mut state));
+        assert!(!view.copyright.is_visible());
     }
 }

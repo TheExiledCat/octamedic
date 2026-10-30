@@ -142,7 +142,7 @@ impl OctamedMMDParser {
 
     fn parse_byte<R: Read>(stream: &mut R) -> Result<Byte> {
         let ubyte = Self::parse_ubyte(stream)?;
-        let byte = Byte(ubyte.0.cast_signed());
+        let byte = Byte(ubyte.0 as i8);
         return Ok(byte);
     }
 
@@ -266,7 +266,7 @@ impl OctamedMMDParser {
             let midi_channel = UByte(buffer[4]);
             let midi_preset = UByte(buffer[5]);
             let sample_volume = UByte(buffer[6]);
-            let sample_transpose = Byte(buffer[7].cast_signed());
+            let sample_transpose = Byte(buffer[7] as i8);
             buf[i] = OctamedMMD0Sample {
                 repeat,
                 repeat_length,

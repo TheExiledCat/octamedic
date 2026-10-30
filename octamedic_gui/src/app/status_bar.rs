@@ -1,47 +1,106 @@
+use octamedic_util::{base32, core_extensions::Boxed, primitives::Flip};
+
 use crate::{
     app::state::AppState,
     framework::{
-        event::Event,
-        painter::{Painter, Pen},
+        event::{Event, MouseButton},
+        font::Font,
+        painter::{Align, Painter, Pen},
         rect::Rect,
+        shape::Direction,
         widget::OctamedicWidget,
-        widgets::button::Button,
+        widgets::{
+            button::{Button, ButtonHandler, Triangle},
+            grid::Grid,
+        },
     },
 };
 
 /// The boxes from left to right, in pixels; they fill the row.
-const WIDTHS: [i32; 12] = [84, 68, 22, 14, 22, 35, 54, 22, 237, 13, 13, 49];
+const WIDTHS: [i32; 12] = [84, 68, 22, 14, 22, 35, 56, 20, 237, 13, 13, 49];
 
 // the boxes, by position in `WIDTHS`
 const SONG_POSITION: usize = 0;
 const BLOCK: usize = 1;
 const EDIT: usize = 3;
+const SP: usize = 4;
+const CHRD: usize = 5;
 const GAUGE: usize = 6;
 const INSTRUMENT: usize = 7;
 const INSTRUMENT_NAME: usize = 8;
 const SONG: usize = 11;
 
-/// The small boxes in the gauge.
-const GAUGE_BOXES: i32 = 8;
+/// The gauge's small boxes, one per track, 7 pixels by 6 lines each. They start a line above
+/// the rest of the row.
+const GAUGE_COLUMNS: usize = 8;
+const GAUGE_ROWS: usize = 2;
 
 /// A row of boxes under the header's widgets: where the song is, the block, the instrument and
 /// the song number.
 pub struct StatusBar {
     boxes: Vec<Button>,
+    gauge: Grid<GaugeBox>,
 }
 
 impl StatusBar {
     pub fn new() -> Self {
         // not wired up yet: 12, SP and CHRD show the reference's labels
-        let labels = ["", "", "12", "E", "SP", "CHRD", "", "", "", "<", ">", ""];
-        let mut boxes: Vec<Button> = labels.into_iter().map(Button::new).collect();
-        boxes[9] = Button::new("<").on_click(|state, _| {
-            state.prev_instrument();
-        });
-        boxes[10] = Button::new(">").on_click(|state, _| {
-            state.next_instrument();
-        });
-        return Self { boxes };
+        let labels = ["", "", "12", "E", "SP", "CHRD", "", "", "", "", "", ""];
+        // labels start at the left, as in OctaMED
+        let mut boxes: Vec<Button> = labels
+            .into_iter()
+            .map(|label| Button::new(label).align(Align::Left).font(Font::Interface))
+            .collect();
+
+        boxes[9] = Button::new(Triangle::arrow(Direction::Left));
+        boxes[10] = Button::new(Triangle::arrow(Direction::Right));
+        boxes[SONG] = Button::new("").align(Align::Right).font(Font::Interface);
+        let flags: [(usize, &str, i32, Option<Box<dyn ButtonHandler>>); 3] = [
+            (
+                EDIT,
+                "E",
+                3,
+                Some((|state: &mut AppState, _| state.cursor.edit_mode.flip()).boxed()),
+            ),
+            (SP, "SP", 2, None),
+            (CHRD, "CHRD", 2, None),
+        ];
+        // the flags are in short capitals, a few pixels further in than the numbers
+        for (index, label, padding, handler) in flags {
+            let mut button = Button::new(label)
+                .align(Align::Left)
+                .font(Font::Small)
+                .padding_xy(padding, 1);
+            if let Some(handler) = handler {
+                button = button.on_click(handler);
+            }
+            boxes[index] = button;
+        }
+        boxes[INSTRUMENT] = Button::new("")
+            .align(Align::Left)
+            .font(Font::Interface)
+            .on_click(|state, click| {
+                let advance = click.button == MouseButton::Left;
+                match click.char_index {
+                    Some(0) => {
+                        state.set_instrument(state.active_instrument.0 + base32::BASE);
+                    } //todo jump to instrument base32
+                    Some(1) => {
+                        if advance {
+                            state.next_instrument();
+                        } else {
+                            state.prev_instrument();
+                        }
+                    }
+                    _ => (),
+                }
+            });
+
+        let gauge_boxes = (0..GAUGE_COLUMNS * GAUGE_ROWS).map(|_| GaugeBox).collect();
+        return Self {
+            boxes,
+            gauge: Grid::new(GAUGE_COLUMNS, GAUGE_ROWS, gauge_boxes),
+        };
     }
 }
 
@@ -56,7 +115,7 @@ impl OctamedicWidget for StatusBar {
             (
                 SONG_POSITION,
                 format!(
-                    "{:04}/{:04}",
+                    "{:04}⁄{:04}",
                     state.active_sequence_index + 1,
                     song.sequence().len()
                 ),
@@ -64,12 +123,12 @@ impl OctamedicWidget for StatusBar {
             (
                 BLOCK,
                 format!(
-                    "{:03}/{:03}",
+                    "{:03}⁄{:03}",
                     state.active_pattern.0,
                     song.patterns().len().saturating_sub(1)
                 ),
             ),
-            (INSTRUMENT, format!("{:02}", instrument.0)),
+            (INSTRUMENT, base32::format(instrument.0 as u32, 2, '0')),
             (INSTRUMENT_NAME, name),
             (
                 SONG,
@@ -83,21 +142,24 @@ impl OctamedicWidget for StatusBar {
         for (index, text) in texts {
             self.boxes[index].set_text(text);
         }
+
         self.boxes[EDIT].set_toggled(state.cursor.edit_mode);
     }
 
     fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
-        return self
-            .boxes
-            .iter_mut()
-            .any(|button| button.handle_event(state, event));
+        return self.gauge.handle_event(state, event)
+            || self
+                .boxes
+                .iter_mut()
+                .any(|button| button.handle_event(state, event));
     }
 
     fn render(&mut self, state: &AppState, area: Rect, painter: &mut Painter) {
         for (index, (button, rect)) in self.boxes.iter_mut().zip(area.columns(&WIDTHS)).enumerate()
         {
             if index == GAUGE {
-                render_gauge(rect, painter);
+                let gauge = Rect::new(rect.x, rect.y - 1, rect.w, rect.h + 1);
+                self.gauge.render(state, gauge, painter);
             } else {
                 button.render(state, rect, painter);
             }
@@ -105,11 +167,12 @@ impl OctamedicWidget for StatusBar {
     }
 }
 
-/// A row of small boxes, 7 pixels apart.
-fn render_gauge(area: Rect, painter: &mut Painter) {
-    let width = area.w / GAUGE_BOXES;
-    for small in area.columns(&[width; GAUGE_BOXES as usize]) {
-        painter.fill(small, Pen::BLACK);
-        painter.frame(small);
+/// One of the gauge's small boxes.
+struct GaugeBox;
+
+impl OctamedicWidget for GaugeBox {
+    fn render(&mut self, _state: &AppState, area: Rect, painter: &mut Painter) {
+        painter.fill(area, Pen::BLACK);
+        painter.frame_inverted(area, 1);
     }
 }

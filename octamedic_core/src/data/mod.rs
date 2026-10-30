@@ -6,4 +6,5 @@ pub mod pattern;
 pub mod project;
 pub mod song;
 pub mod tempo;
+pub mod track_count;
 pub mod volume;

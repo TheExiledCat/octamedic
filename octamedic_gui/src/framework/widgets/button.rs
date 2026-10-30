@@ -1,10 +1,15 @@
+use octamedic_util::{core_extensions::Boxed, primitives::Flip};
+
 use crate::{
     app::state::AppState,
     framework::{
         clickable::{Click, Clickable},
         event::{Event, MouseButton},
-        painter::{CHAR_WIDTH, Painter, Pen, centered_text_x, inside_frame},
+        font::Font,
+        painter::{Align, Painter, Pen, aligned_text_x, inside_frame, text_y},
         rect::{Point, Rect},
+        shape::Direction,
+        text::{Line, Span},
         widget::OctamedicWidget,
     },
 };
@@ -13,60 +18,241 @@ use crate::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ButtonClick {
     pub button: MouseButton,
-    /// The label's character under the pointer, counting from 0, if it was over the label.
+    /// The part of the content under the pointer, if any: for a label, its character, counting
+    /// from 0.
     pub char_index: Option<usize>,
 }
 
-type ClickHandler = Box<dyn FnMut(&mut AppState, ButtonClick)>;
+/// What a button runs when it's clicked: any closure taking the state and the click.
+pub trait ButtonHandler: FnMut(&mut AppState, ButtonClick) + 'static {}
 
-/// A text gadget, which changes the state when clicked.
-pub struct Button {
-    text: String,
-    clickable: Clickable,
-    on_click: Option<ClickHandler>,
-    /// Drawn inverted, like OctaMED's buttons that are switched on.
-    toggled: bool,
-    /// Pixels between the frame and the label, on every side.
-    padding: i32,
-    /// Where the label started when last rendered.
-    label_x: i32,
+impl<F: FnMut(&mut AppState, ButtonClick) + 'static> ButtonHandler for F {}
+
+/// Where a button's content goes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ContentArea {
+    /// Inside the frame.
+    pub inside: Rect,
+    /// Inside the frame and the padding.
+    pub padded: Rect,
+    pub align: Align,
+    pub font: Font,
+    pub bold: bool,
+    /// The button's fill, for content that draws a background of its own in the content pen.
+    pub fill: Pen,
 }
 
-impl Button {
-    pub fn new(text: impl Into<String>) -> Self {
+/// What's drawn inside a button's frame.
+#[allow(unused_variables)]
+pub trait ButtonContent {
+    /// Draws the content in `pen`, which is inverted with the button.
+    fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter);
+
+    /// Which part of the content is at `pos`, for `ButtonClick::char_index`.
+    fn index_at(&self, area: ContentArea, pos: Point) -> Option<usize> {
+        return None;
+    }
+}
+
+/// The part of `line` that's drawn, and where it starts. It's cut to fit inside the frame and
+/// lined up in the padding, but moved into the padding when it's too long for it, as OctaMED
+/// does with labels like `CHRD`.
+fn place_line<'a>(line: &'a Line, area: ContentArea) -> (Line<'a>, i32) {
+    let line = line.fit(area.inside.w);
+    let width = line.width();
+    let x = aligned_text_x(area.padded, width, area.align);
+    // it may only hang a pixel over the end when it doesn't fit otherwise
+    let last = area.inside.right() - width;
+    return (line, x.min(last).max(area.inside.x));
+}
+
+impl ButtonContent for Line<'static> {
+    fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter) {
+        let (line, x) = place_line(self, area);
+        painter.line(x, text_y(area.padded, line.height()), &line, pen);
+    }
+
+    fn index_at(&self, area: ContentArea, pos: Point) -> Option<usize> {
+        let (line, x) = place_line(self, area);
+        return line.index_at(pos[0] - x);
+    }
+}
+
+/// A plain label is a line of one span, in the button's font.
+fn label_line(text: &str, area: ContentArea) -> Line<'_> {
+    let mut span = Span::new(text).font(area.font);
+    span.bold = area.bold;
+    return Line::from(span);
+}
+
+impl ButtonContent for str {
+    fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter) {
+        let line = label_line(self, area);
+        let (line, x) = place_line(&line, area);
+        painter.line(x, text_y(area.padded, line.height()), &line, pen);
+    }
+
+    fn index_at(&self, area: ContentArea, pos: Point) -> Option<usize> {
+        let line = label_line(self, area);
+        let (line, x) = place_line(&line, area);
+        return line.index_at(pos[0] - x);
+    }
+}
+
+impl ButtonContent for &'static str {
+    fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter) {
+        (**self).render(area, pen, painter);
+    }
+
+    fn index_at(&self, area: ContentArea, pos: Point) -> Option<usize> {
+        return (**self).index_at(area, pos);
+    }
+}
+
+impl ButtonContent for String {
+    fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter) {
+        self.as_str().render(area, pen, painter);
+    }
+
+    fn index_at(&self, area: ContentArea, pos: Point) -> Option<usize> {
+        return self.as_str().index_at(area, pos);
+    }
+}
+
+/// A solid triangle pointing one way, `width` pixels by `height` lines.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Triangle {
+    pub direction: Direction,
+    pub width: i32,
+    pub height: i32,
+}
+
+impl Triangle {
+    pub fn new(direction: Direction, width: i32, height: i32) -> Self {
         return Self {
-            text: text.into(),
-            clickable: Clickable::default(),
-            on_click: None,
-            toggled: false,
-            padding: 1,
-            label_x: 0,
+            direction,
+            width,
+            height,
         };
     }
 
-    pub fn on_click(mut self, handler: impl FnMut(&mut AppState, ButtonClick) + 'static) -> Self {
-        self.on_click = Some(Box::new(handler));
+    /// The size of OctaMED's arrows, 6 pixels by 5 lines.
+    pub fn arrow(direction: Direction) -> Self {
+        return Self::new(direction, 6, 5);
+    }
+
+    /// In the middle of the inside of the frame, rounding right and down.
+    fn area(&self, inside: Rect) -> Rect {
+        return Rect::new(
+            inside.x + (inside.w - self.width + 1) / 2,
+            inside.y + (inside.h - self.height + 1) / 2,
+            self.width,
+            self.height,
+        );
+    }
+}
+
+impl ButtonContent for Triangle {
+    fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter) {
+        painter.triangle(self.area(area.inside), Some(pen), None, self.direction);
+    }
+}
+
+/// A gadget showing a label or anything else that's `ButtonContent`, which changes the state
+/// when clicked.
+pub struct Button {
+    content: Box<dyn ButtonContent>,
+    clickable: Clickable,
+    on_click: Option<Box<dyn ButtonHandler>>,
+    /// Drawn inverted, like OctaMED's buttons that are switched on.
+    toggled: bool,
+    /// The frame's thickness, as `Painter::frame` takes it.
+    border: i32,
+    /// Pixels between the frame and the content, on every side.
+    /// Across and down.
+    padding: [i32; 2],
+    align: Align,
+    font: Font,
+    bold: bool,
+    /// Where the button was last rendered.
+    area: Rect,
+}
+
+impl Button {
+    pub fn new(content: impl ButtonContent + 'static) -> Self {
+        return Self {
+            content: content.boxed(),
+            clickable: Clickable::default(),
+            on_click: None,
+            toggled: false,
+            border: 1,
+            padding: [1, 1],
+            align: Align::Center,
+            font: Font::Topaz,
+            bold: false,
+            area: Rect::default(),
+        };
+    }
+
+    pub fn on_click(mut self, handler: impl ButtonHandler) -> Self {
+        self.on_click = Some(handler.boxed());
+        return self;
+    }
+
+    pub fn border(mut self, border: i32) -> Self {
+        self.border = border;
+        return self;
+    }
+
+    pub fn align(mut self, align: Align) -> Self {
+        self.align = align;
+        return self;
+    }
+
+    pub fn font(mut self, font: Font) -> Self {
+        self.font = font;
+        return self;
+    }
+
+    /// Draws a label in bold.
+    pub fn bold(mut self) -> Self {
+        self.bold = true;
         return self;
     }
 
     pub fn padding(mut self, padding: i32) -> Self {
-        self.padding = padding;
+        self.padding = [padding, padding];
         return self;
     }
 
-    /// Where the label is centred: inside the frame and the padding. When that's shorter than the
-    /// text, the text starts at its top.
-    fn content(&self, area: Rect) -> Rect {
-        return inside_frame(area).inset(self.padding, self.padding);
+    pub fn padding_xy(mut self, x: i32, y: i32) -> Self {
+        self.padding = [x, y];
+        return self;
+    }
+
+    fn content_area(&self, area: Rect) -> ContentArea {
+        let inside = inside_frame(area, self.border);
+        return ContentArea {
+            inside,
+            padded: inside.inset(self.padding[0], self.padding[1]),
+            align: self.align,
+            font: self.font,
+            bold: self.bold,
+            fill: self.pens().0,
+        };
+    }
+
+    pub fn set_content(&mut self, content: impl ButtonContent + 'static) {
+        self.content = content.boxed();
     }
 
     pub fn set_text(&mut self, text: impl Into<String>) {
-        self.text = text.into();
+        self.set_content(text.into());
     }
 
     /// Switches between drawn normally and inverted.
     pub fn toggle(&mut self) {
-        self.toggled = !self.toggled;
+        self.toggled.flip();
     }
 
     pub fn set_toggled(&mut self, toggled: bool) {
@@ -77,24 +263,15 @@ impl Button {
         return self.toggled;
     }
 
-    /// The fill and text pens. Toggled and pressed each swap them, so pressing a toggled button
-    /// shows it normally, as a preview of letting go.
+    /// The fill and content pens, swapped while it's toggled. Holding it down doesn't change
+    /// how it looks; a button that should show it does so through its toggle.
     fn pens(&self) -> (Pen, Pen) {
-        let (fill, text) = (Pen::FILL, Pen::BLACK);
-        return if self.toggled != self.clickable.is_pressed() {
-            (text, fill)
+        let (fill, content) = (Pen::FILL, Pen::BLACK);
+        return if self.toggled {
+            (content, fill)
         } else {
-            (fill, text)
+            (fill, content)
         };
-    }
-
-    fn char_at(&self, pos: Point) -> Option<usize> {
-        let offset = pos[0] - self.label_x;
-        if offset < 0 {
-            return None;
-        }
-        let index = (offset / CHAR_WIDTH) as usize;
-        return (index < self.text.chars().count()).then_some(index);
     }
 }
 
@@ -102,7 +279,7 @@ impl OctamedicWidget for Button {
     fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
         let click = self.clickable.handle(event);
         if let Click::Clicked { button, pos } = click {
-            let char_index = self.char_at(pos);
+            let char_index = self.content.index_at(self.content_area(self.area), pos);
             if let Some(handler) = &mut self.on_click {
                 handler(state, ButtonClick { button, char_index });
             }
@@ -111,13 +288,13 @@ impl OctamedicWidget for Button {
     }
 
     fn render(&mut self, _state: &AppState, area: Rect, painter: &mut Painter) {
+        self.area = area;
         self.clickable.set_area(area);
-        let content = self.content(area);
-        self.label_x = centered_text_x(content, &self.text);
-        let (fill, text) = self.pens();
+        let (fill, content) = self.pens();
         painter.fill(area, fill);
-        painter.frame(area);
-        painter.text_centered(content, &self.text, text);
+        painter.frame(area, self.border);
+        self.content
+            .render(self.content_area(area), content, painter);
     }
 }
 
@@ -140,40 +317,66 @@ mod tests {
     }
 
     /// "NEXT" centred in 40 pixels starts at x 4.
-    fn next_button(handler: impl FnMut(&mut AppState, ButtonClick) + 'static) -> Button {
+    fn next_button(handler: impl ButtonHandler) -> Button {
         let mut button = Button::new("NEXT").on_click(handler);
-        let area = Rect::new(0, 0, 40, 10);
-        button.clickable.set_area(area);
-        button.label_x = centered_text_x(button.content(area), "NEXT");
+        button.area = Rect::new(0, 0, 40, 10);
+        button.clickable.set_area(button.area);
         return button;
     }
 
     #[test]
-    fn toggling_and_pressing_each_invert_the_button() {
+    fn only_toggling_inverts_the_button() {
         let normal = (Pen::FILL, Pen::BLACK);
         let inverted = (Pen::BLACK, Pen::FILL);
         let mut button = next_button(|_, _| {});
-        assert_eq!(button.pens(), normal);
-        button.toggle();
-        assert!(button.is_toggled());
-        assert_eq!(button.pens(), inverted);
-        let pos = [5, 5];
         let down = Event::MouseDown {
-            pos,
+            pos: [5, 5],
             button: MouseButton::Left,
         };
         button.handle_event(&mut state(), &down);
         assert_eq!(button.pens(), normal);
-        button.set_toggled(false);
+        button.toggle();
+        assert!(button.is_toggled());
         assert_eq!(button.pens(), inverted);
+        button.set_toggled(false);
+        assert_eq!(button.pens(), normal);
+    }
+
+    #[test]
+    fn labels_too_long_for_the_padding_move_into_it() {
+        // the status row's CHRD and < boxes
+        let place = |button: Button, rect, text: &'static str| {
+            let line = Line::from(text);
+            let (placed, x) = place_line(&line, button.content_area(rect));
+            (placed.0[0].text.to_string(), x)
+        };
+        let chord = place(Button::new(""), Rect::new(216, 65, 35, 11), "CHRD");
+        assert_eq!(chord, ("CHRD".to_string(), 218));
+        let arrow = place(Button::new(""), Rect::new(560, 65, 13, 11), "<");
+        assert_eq!(arrow, ("<".to_string(), 563));
+        let left = Button::new("").align(Align::Left);
+        let name = place(left, Rect::new(0, 0, 40, 11), "BreakBeat");
+        assert_eq!(name, ("Brea".to_string(), 3));
+    }
+
+    #[test]
+    fn arrows_sit_where_octamed_has_them() {
+        let inside = inside_frame(Rect::new(561, 65, 13, 11), 1);
+        assert_eq!(
+            Triangle::arrow(Direction::Left).area(inside),
+            Rect::new(565, 68, 6, 5)
+        );
     }
 
     #[test]
     fn the_label_sits_inside_the_frame_and_padding() {
         let area = Rect::new(3, 65, 84, 11);
-        assert_eq!(Button::new("").content(area), Rect::new(6, 67, 78, 7));
         assert_eq!(
-            Button::new("").padding(0).content(area),
+            Button::new("").content_area(area).padded,
+            Rect::new(6, 67, 78, 7)
+        );
+        assert_eq!(
+            Button::new("").padding(0).content_area(area).padded,
             Rect::new(5, 66, 80, 9)
         );
     }

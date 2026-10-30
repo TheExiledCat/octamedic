@@ -1,12 +1,17 @@
 use ggez::input::keyboard::KeyCode;
-use octamedic_core::data::pattern::{OctamedicPattern, OctamedicPatternTrack};
+use octamedic_core::data::{
+    pattern::{OctamedicPattern, OctamedicPatternTrack},
+    track_count::TrackCount,
+};
+use octamedic_util::{base32, primitives::Flip};
 
 use crate::{
     app::{cursor::EditCursor, state::AppState},
     framework::{
         event::Event,
+        font::Font,
         keymap::{Action, Key, KeyActions, Keymap},
-        painter::{CHAR_HEIGHT, CHAR_WIDTH, Painter, Pen, WIDE_CHAR_WIDTH},
+        painter::{CHAR_HEIGHT, CHAR_WIDTH, Painter, Pen},
         rect::Rect,
         widget::OctamedicWidget,
     },
@@ -109,7 +114,7 @@ impl BlockEditor {
     ) {
         let text = |painter: &mut Painter, column: i32, text: &str| {
             let x = layout.x + column * layout.char_width;
-            painter.text_sized(x, y, text, pen, layout.char_width);
+            painter.text_in_font(x, y, text, pen, layout.font);
         };
         text(painter, 0, &format!("{line:03}"));
         let cells = pattern.lines[line].tracks.iter().skip(self.first_track);
@@ -118,25 +123,126 @@ impl BlockEditor {
         }
     }
 
-    /// A box around the cursor's field, on the middle row.
-    fn render_cursor(&self, cursor: &EditCursor, layout: &Layout, y: i32, painter: &mut Painter) {
-        let Some(index) = cursor.track.checked_sub(self.first_track) else {
+    /// Over the top two rows, whatever lines are there: each track's number on the first, ending
+    /// where its instrument starts, and the block's track count on the second, ending where the
+    /// tracks start.
+    fn render_labels(
+        &self,
+        pattern: &OctamedicPattern,
+        layout: &Layout,
+        y: i32,
+        painter: &mut Painter,
+    ) {
+        let mut label = |text: String, end_column: i32, y: i32| {
+            let end = layout.x + end_column * layout.char_width;
+            let x = end - Font::Interface.width(&text);
+            painter.text_in_font(x, y, &text, Pen::PINK, Font::Interface);
+        };
+        for index in 0..layout.tracks {
+            let number = self.first_track + index;
+            label(number.to_string(), layout.track_column(index) + 4, y);
+        }
+        let count = TrackCount::holding(pattern.track_count());
+        label(
+            count.tracks().to_string(),
+            LINE_NUMBER_CHARS,
+            y + CHAR_HEIGHT,
+        );
+    }
+
+    /// Row `row` of the screen, the line `row - CENTER_ROW` from the cursor's, if there is one.
+    #[allow(clippy::too_many_arguments)]
+    fn render_row(
+        &self,
+        pattern: &OctamedicPattern,
+        cursor_line: usize,
+        row: i32,
+        layout: &Layout,
+        area: Rect,
+        pen: Pen,
+        painter: &mut Painter,
+    ) {
+        let line = cursor_line as isize + (row - CENTER_ROW) as isize;
+        let Ok(line) = usize::try_from(line) else {
             return;
         };
+        if line < pattern.line_count() {
+            let y = area.y + row * CHAR_HEIGHT;
+            self.render_line(pattern, line, layout, y, pen, painter);
+        }
+    }
+
+    /// The box around the cursor's field, clear of its text: lines a line above and below the
+    /// active band and sides down the band, a pixel wider than the field so the right side is
+    /// just past it.
+    fn cursor_box(&self, cursor: &EditCursor, layout: &Layout, band: Rect) -> Option<CursorBox> {
+        let index = cursor.track.checked_sub(self.first_track)?;
         // the note is 3 characters, then each digit is one
         let (offset, width) = match cursor.column {
             0 => (0, 3),
             digit => (digit as i32 + 2, 1),
         };
         let x = layout.x + (layout.track_column(index) + offset) * layout.char_width;
-        let rect = Rect::new(x, y, width * layout.char_width, CHAR_HEIGHT);
-        painter.outline(rect, Pen::RED);
+        let width = width * layout.char_width;
+        return Some(CursorBox {
+            top: Rect::new(x, band.y - 1, width + 1, 1),
+            bottom: Rect::new(x, band.bottom(), width + 1, 1),
+            sides: [
+                Rect::new(x, band.y, 1, band.h),
+                Rect::new(x + width, band.y, 1, band.h),
+            ],
+        });
     }
+
+    /// OctaMED draws the cursor by setting the red bitplane over what's there, so its colour
+    /// depends on what it covers: red over black, pink over the band, rose over text and blush
+    /// over the active line's text. The text under each part is drawn again in its colour.
+    fn render_cursor(
+        &self,
+        pattern: &OctamedicPattern,
+        cursor_line: usize,
+        parts: CursorBox,
+        layout: &Layout,
+        area: Rect,
+        painter: &mut Painter,
+    ) {
+        let lines = [
+            (parts.top, CENTER_ROW - 1, Pen::ROSE),
+            (parts.bottom, CENTER_ROW + 1, Pen::ROSE),
+        ];
+        for (rect, row, text) in lines {
+            painter.fill(rect, Pen::RED);
+            painter.clipped(rect, |painter| {
+                self.render_row(pattern, cursor_line, row, layout, area, text, painter);
+            });
+        }
+        for side in parts.sides {
+            painter.fill(side, Pen::PINK);
+            painter.clipped(side, |painter| {
+                let pen = Pen::BLUSH;
+                self.render_row(pattern, cursor_line, CENTER_ROW, layout, area, pen, painter);
+            });
+        }
+    }
+}
+
+/// Where the cursor's box goes.
+#[derive(Clone, Copy)]
+struct CursorBox {
+    top: Rect,
+    bottom: Rect,
+    sides: [Rect; 2],
+}
+
+/// The active line's background: from a line above its text to the bottom of the row.
+fn active_band(area: Rect, center_y: i32) -> Rect {
+    return Rect::new(area.x, center_y - 1, area.w, CHAR_HEIGHT + 1);
 }
 
 /// Where the line numbers and tracks go.
 struct Layout {
     x: i32,
+    font: Font,
     char_width: i32,
     /// How many tracks are shown.
     tracks: usize,
@@ -147,15 +253,17 @@ struct Layout {
 impl Layout {
     /// Up to 4 tracks are shown in double-width characters, as in OctaMED.
     fn new(area: Rect, track_count: usize) -> Self {
-        let char_width = if track_count <= 4 {
-            WIDE_CHAR_WIDTH
+        let font = if track_count <= 4 {
+            Font::Editor
         } else {
-            CHAR_WIDTH
+            Font::Topaz
         };
+        let char_width = font.advance('0');
         let columns = area.w / char_width - LINE_NUMBER_CHARS;
         let fits = (columns / TRACK_CHARS).max(1) as usize;
         return Self {
             x: area.x,
+            font,
             char_width,
             tracks: track_count.min(fits),
             fits,
@@ -196,7 +304,7 @@ impl KeyActions for BlockEditor {
             TrackRight => cursor.move_tracks(1, tracks),
             ScreenLeft => cursor.move_tracks_clamped(-screen, tracks),
             ScreenRight => cursor.move_tracks_clamped(screen, tracks),
-            ToggleEdit => cursor.edit_mode = !cursor.edit_mode,
+            ToggleEdit => cursor.edit_mode.flip(),
             FirstBlock => state.select_block(0),
             LastBlock => state.select_block(usize::MAX),
             PreviousBlock => state.select_block(block.saturating_sub(1)),
@@ -250,31 +358,28 @@ impl OctamedicWidget for BlockEditor {
         self.visible_tracks = layout.fits;
         self.scroll_to(cursor.track, pattern.track_count(), layout.tracks);
         let center_y = area.y + CENTER_ROW * CHAR_HEIGHT;
-        painter.fill(
-            Rect::new(area.x, center_y, area.w, CHAR_HEIGHT),
-            Pen::SHADOW,
-        );
+        let band = active_band(area, center_y);
+        painter.fill(band, Pen::SHADOW);
         for row in 0..ROWS {
-            let line = cursor.line as isize + (row - CENTER_ROW) as isize;
-            if let Ok(line) = usize::try_from(line)
-                && line < pattern.line_count()
-            {
-                let y = area.y + row * CHAR_HEIGHT;
-                let pen = if row == CENTER_ROW {
-                    Pen::FILL
-                } else {
-                    Pen::LIGHT
-                };
-                self.render_line(pattern, line, &layout, y, pen, painter);
-            }
+            let pen = if row == CENTER_ROW {
+                Pen::FILL
+            } else {
+                Pen::LIGHT
+            };
+            self.render_row(pattern, cursor.line, row, &layout, area, pen, painter);
         }
         // a line just before each track but the first, one font pixel wide
         let width = layout.char_width / CHAR_WIDTH;
         for track in 1..layout.tracks {
             let x = layout.x + layout.track_column(track) * layout.char_width - 1;
             painter.fill(Rect::new(x, area.y, width, area.h), Pen::PINK);
+            // OctaMED draws the band by flipping a bitplane, which turns the pink red
+            painter.fill(Rect::new(x, band.y, width, band.h), Pen::RED);
         }
-        self.render_cursor(&cursor, &layout, center_y, painter);
+        self.render_labels(pattern, &layout, area.y, painter);
+        if let Some(parts) = self.cursor_box(&cursor, &layout, band) {
+            self.render_cursor(pattern, cursor.line, parts, &layout, area, painter);
+        }
     }
 }
 
@@ -287,19 +392,9 @@ fn note_text(note: u8) -> String {
     return format!("{}{}", NOTE_NAMES[index % 12], octave.to_ascii_uppercase());
 }
 
-/// Two base-32 digits, 1-9 then A-V, with a space for a leading zero.
+/// Two base-32 digits, with a space for a leading zero.
 fn instrument_text(instrument: u8) -> String {
-    let digit = |value: u8| {
-        std::char::from_digit(value as u32 % 32, 32)
-            .unwrap_or('?')
-            .to_ascii_uppercase()
-    };
-    let high = if instrument >= 32 {
-        digit(instrument / 32)
-    } else {
-        ' '
-    };
-    return format!("{high}{}", digit(instrument));
+    return base32::format(instrument as u32, 2, ' ');
 }
 
 fn track_text(cell: &OctamedicPatternTrack) -> String {

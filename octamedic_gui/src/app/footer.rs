@@ -16,10 +16,10 @@ impl OctamedicWidget for Footer {
     fn render(&mut self, state: &AppState, area: Rect, painter: &mut Painter) {
         painter.fill(area, Pen::FILL);
         let (info, scopes) = area.split_top(INFO_HEIGHT);
-        painter.frame(info);
+        painter.frame(info, 1);
         if let Some(notification) = &state.notification {
             painter.text(info.x + 4, info.y + 1, notification, Pen::BLACK);
         }
-        painter.frame(scopes);
+        painter.frame(scopes, 1);
     }
 }

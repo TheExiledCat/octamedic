@@ -12,14 +12,13 @@ use crate::{
     app::{main_view::MainView, state::AppState},
     framework::{
         event::{self, Event},
+        font::TOPAZ_TTF,
         painter::{Painter, TEXT_FONT},
         rect::Point,
         screen::{SCREEN, SCREEN_HEIGHT, SCREEN_WIDTH, ScaleMode, to_screen, viewport},
         widget::OctamedicWidget,
     },
 };
-
-const TOPAZ_FONT: &[u8] = include_bytes!("../../assets/fonts/amiga-topaz.ttf");
 
 const CURSOR: &[u8] = include_bytes!("../../assets/cursor.png");
 
@@ -46,7 +45,7 @@ pub struct App {
 impl App {
     pub fn new(ctx: &mut Context, project: OctamedicProject) -> GameResult<Self> {
         ctx.gfx
-            .add_font(TEXT_FONT, FontData::from_slice(TOPAZ_FONT)?);
+            .add_font(TEXT_FONT, FontData::from_slice(TOPAZ_TTF)?);
         mouse::set_cursor_hidden(ctx, true);
         let screen = Image::new_canvas_image(
             ctx,

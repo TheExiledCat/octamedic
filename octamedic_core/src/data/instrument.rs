@@ -33,12 +33,7 @@ impl OctamedicSample {
         info: &OctamedMMD0Sample,
     ) -> Self {
         let mono: Vec<i8> = if header.is_16_bit() {
-            bytes
-                .as_chunks::<2>()
-                .0
-                .iter()
-                .map(|pair| pair[0])
-                .collect()
+            bytes.chunks_exact(2).map(|pair| pair[0]).collect()
         } else {
             bytes.to_vec()
         };

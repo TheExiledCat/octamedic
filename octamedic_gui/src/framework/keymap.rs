@@ -157,10 +157,10 @@ impl Key {
     /// The key as written in a keybinds file, e.g. `z`, `Z` (Shift+Z), `^S`, `A-O` or `S-Tab`.
     pub fn to_text(self) -> String {
         let letter = letter(self.code);
-        if self.mods == KeyMods::SHIFT
-            && let Some(letter) = letter
-        {
-            return letter.to_ascii_uppercase().to_string();
+        if self.mods == KeyMods::SHIFT {
+            if let Some(letter) = letter {
+                return letter.to_ascii_uppercase().to_string();
+            }
         }
         let mut text = String::new();
         if self.mods.contains(KeyMods::CTRL) {
@@ -200,11 +200,10 @@ impl Key {
             rest = after;
         }
         let mut chars = rest.chars();
-        if let (Some(c), None) = (chars.next(), chars.next())
-            && c.is_ascii_uppercase()
-            && mods.is_empty()
-        {
-            mods = KeyMods::SHIFT;
+        if let (Some(c), None) = (chars.next(), chars.next()) {
+            if c.is_ascii_uppercase() && mods.is_empty() {
+                mods = KeyMods::SHIFT;
+            }
         }
         return Some(Self::new(parse_code(rest)?, mods));
     }

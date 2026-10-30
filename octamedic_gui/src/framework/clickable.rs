@@ -7,9 +7,9 @@ use crate::framework::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Click {
     Ignored,
-    /// Taken, but not a click yet: a press, or a release away from where it was pressed.
+    /// Taken without clicking: the release of a press that clicked.
     Handled,
-    /// Released at `pos`, over the area.
+    /// Pressed at `pos`, over the area.
     Clicked {
         button: MouseButton,
         pos: Point,
@@ -22,8 +22,8 @@ impl Click {
     }
 }
 
-/// An area that clicks like an Amiga gadget: pressed with the pointer over it, and clicked when
-/// released over it again. Moving off and back on while held is fine.
+/// An area that clicks the moment it's pressed, as OctaMED's gadgets do. The release of that
+/// press is taken too, wherever it is, so nothing under the pointer sees half a click.
 #[derive(Debug, Default)]
 pub struct Clickable {
     area: Rect,
@@ -38,6 +38,8 @@ impl Clickable {
     }
 
     /// Held down with the pointer over it.
+    // nothing draws itself pressed at the moment
+    #[allow(dead_code)]
     pub fn is_pressed(&self) -> bool {
         return self.hovered && self.pressed.is_some();
     }
@@ -55,7 +57,7 @@ impl Clickable {
                     return Click::Ignored;
                 }
                 self.pressed = Some(button);
-                return Click::Handled;
+                return Click::Clicked { button, pos };
             }
             Event::MouseUp { pos, button } => {
                 if self.pressed != Some(button) {
@@ -63,11 +65,7 @@ impl Clickable {
                 }
                 self.pressed = None;
                 self.hovered = self.area.contains(pos);
-                return if self.hovered {
-                    Click::Clicked { button, pos }
-                } else {
-                    Click::Handled
-                };
+                return Click::Handled;
             }
             _ => return Click::Ignored,
         }
@@ -99,22 +97,22 @@ mod tests {
     }
 
     #[test]
-    fn releasing_where_it_was_pressed_clicks() {
+    fn pressing_clicks_at_once() {
         let mut clickable = clickable();
-        assert_eq!(clickable.handle(&down(15, 15)), Click::Handled);
-        assert!(clickable.is_pressed());
         assert_eq!(
-            clickable.handle(&up(16, 16)),
+            clickable.handle(&down(15, 15)),
             Click::Clicked {
                 button: MouseButton::Left,
-                pos: [16, 16],
+                pos: [15, 15],
             }
         );
+        assert!(clickable.is_pressed());
+        assert_eq!(clickable.handle(&up(16, 16)), Click::Handled);
         assert!(!clickable.is_pressed());
     }
 
     #[test]
-    fn releasing_elsewhere_takes_the_release_without_clicking() {
+    fn the_release_is_taken_wherever_it_is() {
         let mut clickable = clickable();
         clickable.handle(&down(15, 15));
         assert_eq!(clickable.handle(&up(100, 100)), Click::Handled);

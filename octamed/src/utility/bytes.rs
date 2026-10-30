@@ -40,7 +40,7 @@ impl Display for UByte {
 
 impl From<UByte> for Byte {
     fn from(val: UByte) -> Self {
-        return Byte(val.0.cast_signed());
+        return Byte(val.0 as i8);
     }
 }
 

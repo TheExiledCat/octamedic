@@ -63,11 +63,13 @@ When using the installer, automatic updates are also added. Whenever you startup
     - core library for octamedic, including the playback engine
 - octamedic_gui
     - full octamed clone made using ggez
+- octamedic_util
+    - small helpers shared by the other crates
 ## Roadmap
 - [X] Loading real mmd file's metadata, note and instrument data
 - [ ] Loading protracker/soundtracker supported modules
 - [ ] Loading extra metadata from mmd files
-- [ ] Initial engine iteration which can playback real mmd files with just note data (no commands yet)
+- [X] Initial engine iteration which can playback real mmd files with just note data (no commands yet)
 - [ ] Initial editor iteration that can edit notes and patterns of existing mmd files but cant edit instruments
 - [ ] Write back modules to:
     - [ ] MMD0
