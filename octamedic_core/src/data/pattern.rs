@@ -1,10 +1,14 @@
 pub use octamed::mmd::module::MAX_TRACKS;
+
+pub const DEFAULT_LINES: usize = 64;
 use octamed::{
     mmd::module::{OctamedMMD0Block, OctamedMMD0BlockLine, OctamedMMD1Block},
     utility::bytes::{UByte, ValueMap},
 };
 
-use crate::data::{command::CommandId, instrument::InstrumentId, note::OctamedicNote};
+use crate::data::{
+    command::CommandId, instrument::InstrumentId, note::OctamedicNote, track_count::TrackCount,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PatternId(pub u8);
@@ -23,7 +27,7 @@ pub struct OctamedicPattern {
 impl OctamedicPattern {
     pub fn new() -> Self {
         return Self {
-            lines: vec![OctamedicPatternLine::new(4); 64],
+            lines: vec![OctamedicPatternLine::new(TrackCount::default().tracks()); DEFAULT_LINES],
         };
     }
 

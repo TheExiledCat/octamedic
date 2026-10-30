@@ -27,6 +27,7 @@ pub trait Command {
     fn run(&self, mmd: &mut OctamedMMD) -> CommandResult;
 }
 
+const MAX_SUGGESTIONS: usize = 5;
 #[derive(Debug)]
 pub enum CommandError {
     Generic(String),
@@ -188,7 +189,7 @@ impl Autocomplete for MMDReplCompleter {
             .command_list
             .iter()
             .filter(|c| c.starts_with(input))
-            .take(5)
+            .take(MAX_SUGGESTIONS)
             .map(|s| s.to_owned());
         return Ok(sug.collect::<Vec<String>>());
     }

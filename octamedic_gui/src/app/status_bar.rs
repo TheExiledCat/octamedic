@@ -4,7 +4,7 @@ use crate::{
     app::state::AppState,
     framework::{
         event::{Event, MouseButton},
-        font::Font,
+        font::{Font, POSITION_SLASH},
         painter::{Align, Painter, Pen},
         rect::Rect,
         shape::Direction,
@@ -28,6 +28,8 @@ const CHRD: usize = 5;
 const GAUGE: usize = 6;
 const INSTRUMENT: usize = 7;
 const INSTRUMENT_NAME: usize = 8;
+const PREVIOUS_SONG: usize = 9;
+const NEXT_SONG: usize = 10;
 const SONG: usize = 11;
 
 /// The gauge's small boxes, one per track, 7 pixels by 6 lines each. They start a line above
@@ -52,8 +54,8 @@ impl StatusBar {
             .map(|label| Button::new(label).align(Align::Left).font(Font::Interface))
             .collect();
 
-        boxes[9] = Button::new(Triangle::arrow(Direction::Left));
-        boxes[10] = Button::new(Triangle::arrow(Direction::Right));
+        boxes[PREVIOUS_SONG] = Button::new(Triangle::arrow(Direction::Left));
+        boxes[NEXT_SONG] = Button::new(Triangle::arrow(Direction::Right));
         boxes[SONG] = Button::new("").align(Align::Right).font(Font::Interface);
         let flags: [(usize, &str, i32, Option<Box<dyn ButtonHandler>>); 3] = [
             (
@@ -81,9 +83,15 @@ impl StatusBar {
             .font(Font::Interface)
             .on_click(|state, click| {
                 let advance = click.button == MouseButton::Left;
+                let delta = if advance { 1i8 } else { -1i8 };
                 match click.char_index {
                     Some(0) => {
-                        state.set_instrument(state.active_instrument.0 + base32::BASE);
+                        state.set_instrument(
+                            state
+                                .active_instrument
+                                .0
+                                .saturating_add_signed(base32::BASE as i8 * delta),
+                        );
                     } //todo jump to instrument base32
                     Some(1) => {
                         if advance {
@@ -115,7 +123,7 @@ impl OctamedicWidget for StatusBar {
             (
                 SONG_POSITION,
                 format!(
-                    "{:04}⁄{:04}",
+                    "{:04}{POSITION_SLASH}{:04}",
                     state.active_sequence_index + 1,
                     song.sequence().len()
                 ),
@@ -123,7 +131,7 @@ impl OctamedicWidget for StatusBar {
             (
                 BLOCK,
                 format!(
-                    "{:03}⁄{:03}",
+                    "{:03}{POSITION_SLASH}{:03}",
                     state.active_pattern.0,
                     song.patterns().len().saturating_sub(1)
                 ),

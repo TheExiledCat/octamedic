@@ -3,7 +3,7 @@ use crate::{
     framework::{
         event::Event,
         font::Font,
-        painter::{CHAR_HEIGHT, CHAR_WIDTH, Painter, Pen, text_width},
+        painter::{Painter, Pen},
         rect::Rect,
         text::{Line, Span},
         widget::OctamedicWidget,
@@ -11,15 +11,77 @@ use crate::{
     },
 };
 
-const TITLE: &str = "+- OctaMEDIC Professional";
+const TITLE: &str = "OctaMEDIC Professional";
 
-/// After the title, without its shadow.
 const VERSION: &str = "(v4.00)";
 
 const AUTHOR: &str = "By Amano Rosuko";
 
-/// The author's font, across and down; the reference draws it smaller than the rest.
-const AUTHOR_SCALE: [f32; 2] = [1.0, 1.0];
+// where things go, from the reference: x across the bar, y down from its top
+const TIMER_LABEL: [i32; 2] = [3, 3];
+const TIMER: Rect = Rect::new(50, 0, 48, 12);
+const STAR_X: i32 = 100;
+const TITLE_POSITION: [i32; 2] = [125, 1];
+const VERSION_GAP: i32 = 8;
+const AUTHOR_Y: i32 = 6;
+const AUTHOR_RIGHT_MARGIN: i32 = 8;
+const AUTHOR_STAR_OFFSET: i32 = 30;
+const TAIL_Y: i32 = 4;
+
+/// The cross before the title. Its tail runs on to the title.
+#[rustfmt::skip]
+const STAR: [&str; 12] = [
+    "...........",
+    "......ss...",
+    "......ff...",
+    "......#f...",
+    "..sssf##fss",
+    "ssf#f####f#",
+    "..sssf##fss",
+    "......f#...",
+    "......ff...",
+    "......ss...",
+    "...........",
+    "...........",
+];
+
+/// The cross before the author, which sits on the tail running from the version to the edge.
+#[rustfmt::skip]
+const AUTHOR_STAR: [&str; 12] = [
+    "....................s.....",
+    "....................ss....",
+    "....................fs....",
+    "....................#f....",
+    "...................f#fs...",
+    "...................f##f...",
+    "...................sf#s...",
+    "...................s#fs...",
+    "..............ssssff##ffss",
+    "s.ssssfffff#####f########f",
+    ".............sssssff##ffss",
+    "..................ss#fss..",
+];
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Taper {
+    Right,
+    Both,
+}
+
+/// A star's tail from `x`, `width` pixels long: a fill line between shadow lines. At a tapered
+/// end the shadow lines stop 2 pixels short and the fill line ends in shadow.
+fn render_ornament_tail(painter: &mut Painter, x: i32, y: i32, width: i32, taper: Taper) {
+    const TAPER: i32 = 2;
+    let left = if taper == Taper::Both { TAPER } else { 0 };
+    let inner = Rect::new(x + left, y, width - left - TAPER, 1);
+    if inner.w <= 0 {
+        return;
+    }
+    painter.fill(inner, Pen::SHADOW);
+    painter.fill(Rect::new(inner.x, y + 2, inner.w, 1), Pen::SHADOW);
+    painter.fill(Rect::new(x, y + 1, width, 1), Pen::SHADOW);
+    painter.fill(Rect::new(inner.x, y + 1, inner.w, 1), Pen::FILL);
+}
 
 pub struct TitleBar {
     timer: Button,
@@ -48,22 +110,56 @@ impl OctamedicWidget for TitleBar {
 
     fn render(&mut self, state: &AppState, area: Rect, painter: &mut Painter) {
         painter.fill(area, Pen::BLACK);
-        let text_y = area.y + (area.h - CHAR_HEIGHT) / 2;
-        // a line lower than Topaz, as in the reference
-        painter.text_in_font(area.x + 3, text_y + 1, "TIMER", Pen::LIGHT, Font::Panel);
-        // where the reference has it, across the top 12 lines
-        let timer_x = area.x + 50;
-        self.timer
-            .render(state, Rect::new(timer_x, area.y, 48, area.h - 1), painter);
-        let title_x = timer_x + 8 * CHAR_WIDTH;
-        let title = Line(vec![
-            Span::new(TITLE).shadowed(),
-            Span::new(" "),
-            Span::new(VERSION),
-        ]);
-        painter.line(title_x, text_y, &title, Pen::LIGHT);
-        let author_width = (text_width(AUTHOR) as f32 * AUTHOR_SCALE[0]) as i32;
-        let author_x = area.right() - author_width - 4;
-        painter.text_scaled(author_x, text_y, AUTHOR, Pen::LIGHT, AUTHOR_SCALE);
+        let [x, y] = TIMER_LABEL;
+        painter.text_in_font(area.x + x, area.y + y, "TIMER", Pen::LIGHT, Font::Panel);
+        let timer = Rect::new(area.x + TIMER.x, area.y + TIMER.y, TIMER.w, TIMER.h);
+        self.timer.render(state, timer, painter);
+        let [x, y] = TITLE_POSITION;
+        let (title_x, title_y) = (area.x + x, area.y + y);
+        let title = Line::from(Span::new(TITLE).font(Font::Title).shadowed());
+        let title_end = title_x + title.width();
+        let version_x = title_end + VERSION_GAP;
+        let version_end = version_x + Font::Title.width(VERSION);
+        // the tails go behind the text: from the star to the title, in the gaps between words
+        // and before the version, and from the version to the right edge
+        let tail_y = area.y + TAIL_Y;
+        let star_end = area.x + STAR_X + STAR[0].len() as i32;
+        render_ornament_tail(
+            painter,
+            star_end,
+            tail_y,
+            title_x - 1 - star_end,
+            Taper::Right,
+        );
+        let mut char_x = title_x;
+        for c in TITLE.chars() {
+            let advance = Font::Title.advance(c);
+            if c == ' ' {
+                render_ornament_tail(painter, char_x, tail_y, advance - 1, Taper::Both);
+            }
+            char_x += advance;
+        }
+        // starting back over the last letter's trailing gap
+        let gap_x = title_end - 2;
+        render_ornament_tail(painter, gap_x, tail_y, version_x - 1 - gap_x, Taper::Both);
+        render_ornament_tail(
+            painter,
+            version_end,
+            tail_y,
+            area.right() - version_end,
+            Taper::Both,
+        );
+        painter.picture(&STAR, area.x + STAR_X, area.y);
+        painter.line(title_x, title_y, &title, Pen::LIGHT);
+        painter.text_in_font(version_x, title_y, VERSION, Pen::LIGHT, Font::Title);
+        let author_x = area.right() - AUTHOR_RIGHT_MARGIN - Font::Author.width(AUTHOR);
+        painter.picture(&AUTHOR_STAR, author_x - AUTHOR_STAR_OFFSET, area.y);
+        painter.text_in_font(
+            author_x,
+            area.y + AUTHOR_Y,
+            AUTHOR,
+            Pen::LIGHT,
+            Font::Author,
+        );
     }
 }

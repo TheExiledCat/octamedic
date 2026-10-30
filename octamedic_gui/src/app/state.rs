@@ -4,6 +4,7 @@ use std::{
 };
 
 use ggez::graphics::InstanceArray;
+use octamed::utility::note::SEMITONES_PER_OCTAVE;
 use octamedic_core::{
     data::{
         instrument::{InstrumentId, MAX_INSTRUMENTS},
@@ -27,6 +28,8 @@ const NOTIFICATION_DURATION: Duration = Duration::from_secs(2);
 const MAX_INSTRUMENT: u8 = MAX_INSTRUMENTS as u8;
 
 const MAX_OCTAVE: u8 = 9;
+
+const SEMITONES: u8 = SEMITONES_PER_OCTAVE;
 
 /// Older lines are dropped from the debug console past this many.
 const MAX_DEBUG_LINES: usize = 256;
@@ -303,11 +306,11 @@ impl AppState {
                 TOP_OCTAVE_KEYS
                     .iter()
                     .position(|&k| k == key)
-                    .map(|n| n + 12)
+                    .map(|n| n + SEMITONES as usize)
             })? as u8;
         // note 1 is C-1
         return Some(OctamedicNote {
-            value: 1 + semitone + 12 * (self.current_octave - 1),
+            value: 1 + semitone + SEMITONES * (self.current_octave - 1),
         });
     }
 

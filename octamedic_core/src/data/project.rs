@@ -6,7 +6,9 @@ use octamed::mmd::{
 };
 
 use crate::data::{
-    instrument::{MAX_INSTRUMENT_VOLUME, OctamedicInstrument, OctamedicSample},
+    instrument::{
+        MAX_FINETUNE, MAX_INSTRUMENT_VOLUME, MIN_FINETUNE, OctamedicInstrument, OctamedicSample,
+    },
     palette::OctamedColorPallete,
     pattern::{OctamedicPattern, PatternId},
     song::{OctamedicSong, OctamedicSongFlags, SongId},
@@ -100,7 +102,7 @@ impl FromModule for OctamedicProject {
             instrument.volume = info.sample_volume.0.min(MAX_INSTRUMENT_VOLUME);
             instrument.transpose = info.sample_transpose.0;
             if let Some(extension) = extensions.and_then(|e| e.get(index)) {
-                instrument.finetune = extension.fine_tune.0.clamp(-8, 7);
+                instrument.finetune = extension.fine_tune.0.clamp(MIN_FINETUNE, MAX_FINETUNE);
                 instrument.hold = extension.hold.0;
                 instrument.decay = extension.decay.0;
             }

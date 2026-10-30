@@ -4,6 +4,15 @@ use crate::amiga::{clock::AmigaClock, m68k::divu};
 
 pub const MAX_BPM: u8 = 240;
 
+pub const MAX_LINES_PER_BEAT: u8 = 32;
+pub const MAX_TICKS_PER_LINE: u8 = 32;
+
+const DEFAULT_TEMPO: u16 = 120;
+const DEFAULT_LINES_PER_BEAT: u8 = 4;
+const DEFAULT_TICKS_PER_LINE: u8 = 6;
+
+const SECONDS_PER_MINUTE: f32 = 60.0;
+
 /// Divided by the primary tempo for the timer count, on PAL and NTSC alike.
 const TEMPO_TIMER_CONSTANT: u32 = 470_000;
 
@@ -15,7 +24,8 @@ const COMPATIBILITY_COUNTS: [u16; 10] = [
 
 /// BPM mode divides this by BPM × lines per beat: the E-clock × 2.5, rounded down.
 fn bpm_timer_constant(clock: AmigaClock) -> u32 {
-    return clock.e_clock * 5 / 2;
+    const TIMES_TWO_AND_A_HALF: (u32, u32) = (5, 2);
+    return clock.e_clock * TIMES_TWO_AND_A_HALF.0 / TIMES_TWO_AND_A_HALF.1;
 }
 
 /// BPM mode runs a tick on every 4th timer interrupt.
@@ -32,9 +42,9 @@ pub struct OctamedicTempo {
 impl OctamedicTempo {
     pub fn new() -> Self {
         return Self {
-            primary_tempo: 120,
-            lines_per_beat: 4,
-            ticks_per_line: 6,
+            primary_tempo: DEFAULT_TEMPO,
+            lines_per_beat: DEFAULT_LINES_PER_BEAT,
+            ticks_per_line: DEFAULT_TICKS_PER_LINE,
             is_bpm_mode: true,
         };
     }
@@ -59,7 +69,8 @@ impl OctamedicTempo {
             return self.primary_tempo;
         }
         let lines_per_beat = self.lines_per_beat.max(1) as f32;
-        let bpm = self.get_tick_rate().as_hertz() * 10.0 / lines_per_beat;
+        let lines_per_second = self.get_tick_rate().as_hertz() / self.ticks_per_line.max(1) as f32;
+        let bpm = lines_per_second * SECONDS_PER_MINUTE / lines_per_beat;
         return bpm.round().clamp(1.0, u16::MAX as f32) as u16;
     }
 
@@ -101,11 +112,11 @@ impl OctamedicTempo {
     }
 
     pub fn set_lines_per_beat(&mut self, value: u8) {
-        self.lines_per_beat = value.clamp(1, 32);
+        self.lines_per_beat = value.clamp(1, MAX_LINES_PER_BEAT);
     }
 
     pub fn set_ticks_per_line(&mut self, value: u8) {
-        self.ticks_per_line = value.clamp(1, 32);
+        self.ticks_per_line = value.clamp(1, MAX_TICKS_PER_LINE);
     }
 }
 

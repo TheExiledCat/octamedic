@@ -1,6 +1,29 @@
-use octamed::mmd::module::OctamedMMD0ColorPallete;
+use octamed::mmd::module::{OctamedMMD0Color, OctamedMMD0ColorPallete, PALETTE_COLORS};
 
-pub const PALETTE_SIZE: usize = 8;
+pub const PALETTE_SIZE: usize = PALETTE_COLORS;
+
+/// A channel's brightest level; each has 16.
+pub const CHANNEL_MAX: u8 = 15;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Channel {
+    Red,
+    Green,
+    Blue,
+}
+
+impl Channel {
+    pub const ALL: [Channel; 3] = [Channel::Red, Channel::Green, Channel::Blue];
+
+    /// Where the channel's 4 bits are in a colour.
+    fn shift(self) -> u16 {
+        return match self {
+            Channel::Red => 8,
+            Channel::Green => 4,
+            Channel::Blue => 0,
+        };
+    }
+}
 
 /// The screen's colours, as the Amiga's 12-bit `0RGB` values.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -16,7 +39,9 @@ impl OctamedColorPallete {
 
     pub fn from_octamed(pallete: &OctamedMMD0ColorPallete) -> Self {
         return Self {
-            colors: pallete.colors.map(|color| color.value.0 & 0x0FFF),
+            colors: pallete
+                .colors
+                .map(|color| color.value.0 & OctamedMMD0Color::MASK),
         };
     }
 
@@ -25,14 +50,22 @@ impl OctamedColorPallete {
     }
 
     pub fn set(&mut self, pen: usize, color: u16) {
-        self.colors[pen % PALETTE_SIZE] = color & 0x0FFF;
+        self.colors[pen % PALETTE_SIZE] = color & OctamedMMD0Color::MASK;
+    }
+
+    pub fn channel(&self, pen: usize, channel: Channel) -> u8 {
+        return ((self.get(pen) >> channel.shift()) & CHANNEL_MAX as u16) as u8;
+    }
+
+    pub fn set_channel(&mut self, pen: usize, channel: Channel, level: u8) {
+        let mask = (CHANNEL_MAX as u16) << channel.shift();
+        let level = (level.min(CHANNEL_MAX) as u16) << channel.shift();
+        self.set(pen, (self.get(pen) & !mask) | level);
     }
 
     /// 8 bits per channel, each 4-bit level spread evenly over 0-255.
     pub fn rgb(&self, pen: usize) -> [u8; 3] {
-        let color = self.get(pen);
-        let level = |shift: u16| ((color >> shift) & 0xF) as u8 * 17;
-        return [level(8), level(4), level(0)];
+        return OctamedMMD0Color::rgb(self.get(pen));
     }
 }
 
@@ -45,6 +78,17 @@ impl Default for OctamedColorPallete {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn channels_are_read_and_set_alone() {
+        let mut pallete = OctamedColorPallete::DEFAULT;
+        // pen 2 is 0x667
+        assert_eq!(pallete.channel(2, Channel::Blue), 7);
+        pallete.set_channel(2, Channel::Green, 0xA);
+        assert_eq!(pallete.get(2), 0x6A7);
+        pallete.set_channel(2, Channel::Red, 99);
+        assert_eq!(pallete.get(2), 0xFA7);
+    }
 
     #[test]
     fn levels_spread_over_the_full_range() {

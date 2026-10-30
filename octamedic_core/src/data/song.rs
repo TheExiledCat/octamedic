@@ -6,7 +6,7 @@ use crate::data::{
     instrument::{InstrumentId, MAX_INSTRUMENTS, OctamedicInstrument},
     pattern::{OctamedicPattern, PatternId},
     tempo::OctamedicTempo,
-    volume::OctamedicVolume,
+    volume::{MAX_VOLUME, OctamedicVolume},
 };
 
 #[derive(Clone, Copy)]
@@ -47,8 +47,8 @@ impl OctamedicSong {
             tempo: OctamedicTempo::new(),
             flags: OctamedicSongFlags::default(),
             global_transpose: 0,
-            track_volumes: [OctamedicVolume::new(64); SONG_TRACKS],
-            master_volume: OctamedicVolume::new(64),
+            track_volumes: [OctamedicVolume::new(MAX_VOLUME); SONG_TRACKS],
+            master_volume: OctamedicVolume::new(MAX_VOLUME),
             patterns: vec![Arc::new(OctamedicPattern::new())],
         };
     }

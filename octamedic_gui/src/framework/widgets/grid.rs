@@ -47,7 +47,6 @@ impl<W> Grid<W> {
         return self.cells.get_mut(row * self.columns + column);
     }
 
-    /// The area of cell `index` in a grid drawn into `area`.
     pub fn cell_area(&self, area: Rect, index: usize) -> Rect {
         let (x, w) = span(area.x, area.w, index % self.columns, self.columns);
         let (y, h) = span(area.y, area.h, index / self.columns, self.rows);

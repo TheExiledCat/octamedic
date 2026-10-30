@@ -1,3 +1,5 @@
+use crate::data::instrument::{MAX_FINETUNE, MIN_FINETUNE};
+
 /// OctaMED v4's periods for C-1 to B-3, one table per finetune from -8 to 7. They're the same as
 /// ProTracker's.
 const PERIODS: [[u16; 36]; 16] = [
@@ -119,7 +121,8 @@ pub fn note_period(note: u8, transpose: i8, finetune: i8) -> u16 {
     if index > LAST_INDEX {
         index -= NOTES_PER_OCTAVE;
     }
-    let table = &PERIODS[(finetune.clamp(-8, 7) + 8) as usize];
+    // the tables run from the lowest finetune up
+    let table = &PERIODS[(finetune.clamp(MIN_FINETUNE, MAX_FINETUNE) - MIN_FINETUNE) as usize];
     let index = index as usize;
     if index < table.len() {
         return table[index];

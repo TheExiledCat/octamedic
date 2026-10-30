@@ -38,7 +38,6 @@ pub fn get_keybinds_file_path() -> io::Result<PathBuf> {
     return config_file(KEYBINDS_FILE_NAME);
 }
 
-/// Writes `default()` to `path` when there's no file there yet.
 pub fn create_if_missing(path: &Path, default: impl FnOnce() -> String) -> io::Result<()> {
     if !path.exists() {
         fs::write(path, default())?;
@@ -46,7 +45,6 @@ pub fn create_if_missing(path: &Path, default: impl FnOnce() -> String) -> io::R
     return Ok(());
 }
 
-/// Opens `folder` in the OS file manager.
 pub fn open_in_file_manager(folder: &Path) -> io::Result<()> {
     let mut command = file_manager_command(folder)?;
     let mut child = command

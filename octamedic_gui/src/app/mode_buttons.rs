@@ -20,9 +20,12 @@ use crate::{
 const COLUMNS: usize = 3;
 const ROWS: usize = 5;
 
-/// What a button switches to.
-#[derive(Clone, Copy)]
-enum Target {
+const PICTURE_BLOCKS: i32 = 4;
+
+/// What a mode button switches to: a header panel, a main screen, both, or PLAY's own. The
+/// panels and screens themselves are in `app/header/` and `app/main/`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ModeBinding {
     Header(HeaderMode),
     Main(MainMode),
     Both(HeaderMode, MainMode),
@@ -31,22 +34,25 @@ enum Target {
 }
 
 /// Left to right, then top to bottom, as in OctaMED; the pictures have no label.
-const BUTTONS: [(&str, Target); COLUMNS * ROWS] = [
-    ("FILES", Target::Both(HeaderMode::Files, MainMode::Files)),
-    ("MISC", Target::Header(HeaderMode::Misc)),
-    ("", Target::Main(MainMode::BlockEditor)),
-    ("PLAY", Target::Play),
-    ("VOL", Target::Header(HeaderMode::Volume)),
-    ("", Target::Main(MainMode::NotationEditor)),
-    ("INSTR", Target::Header(HeaderMode::Instrument)),
-    ("MIDI", Target::Main(MainMode::Midi)),
-    ("SYNTH", Target::Main(MainMode::SynthEditor)),
-    ("BLOCK", Target::Header(HeaderMode::Block)),
-    ("TRACK", Target::Header(HeaderMode::Track)),
-    ("SMPED", Target::Main(MainMode::SampleEditor)),
-    ("EDIT", Target::Header(HeaderMode::Edit)),
-    ("RANGE", Target::Header(HeaderMode::Range)),
-    ("SLIST", Target::Main(MainMode::SongList)),
+const BUTTONS: [(&str, ModeBinding); COLUMNS * ROWS] = [
+    (
+        "FILES",
+        ModeBinding::Both(HeaderMode::Files, MainMode::Files),
+    ),
+    ("MISC", ModeBinding::Header(HeaderMode::Misc)),
+    ("", ModeBinding::Main(MainMode::BlockEditor)),
+    ("PLAY", ModeBinding::Play),
+    ("VOL", ModeBinding::Header(HeaderMode::Volume)),
+    ("", ModeBinding::Main(MainMode::NotationEditor)),
+    ("INSTR", ModeBinding::Header(HeaderMode::Instrument)),
+    ("MIDI", ModeBinding::Main(MainMode::Midi)),
+    ("SYNTH", ModeBinding::Main(MainMode::SynthEditor)),
+    ("BLOCK", ModeBinding::Header(HeaderMode::Block)),
+    ("TRANS", ModeBinding::Header(HeaderMode::Transpose)),
+    ("SMPED", ModeBinding::Main(MainMode::SampleEditor)),
+    ("EDIT", ModeBinding::Header(HeaderMode::Edit)),
+    ("RANGE", ModeBinding::Header(HeaderMode::Range)),
+    ("SLIST", ModeBinding::Main(MainMode::SongList)),
 ];
 
 /// The buttons at the header's top right, which pick the header's panel and what fills the main
@@ -59,10 +65,12 @@ impl ModeButtons {
     pub fn new() -> Self {
         let buttons = BUTTONS
             .iter()
-            .map(|&(label, target)| {
-                let button = match target {
-                    Target::Main(MainMode::BlockEditor) => Button::new(Blocks::new(4)),
-                    Target::Main(MainMode::NotationEditor) => Button::new([
+            .map(|&(label, binding)| {
+                let button = match binding {
+                    ModeBinding::Main(MainMode::BlockEditor) => {
+                        Button::new(Blocks::new(PICTURE_BLOCKS))
+                    }
+                    ModeBinding::Main(MainMode::NotationEditor) => Button::new([
                         MusicSymbol::Note,
                         MusicSymbol::BassClef,
                         MusicSymbol::Sharp,
@@ -71,11 +79,11 @@ impl ModeButtons {
                     _ => Button::new(label).align(Align::Left).font(Font::Panel),
                 };
                 button.on_click(move |state, _| {
-                    let (header, main) = match target {
-                        Target::Header(header) => (header, state.main_mode()),
-                        Target::Main(main) => (state.header_mode(), main),
-                        Target::Both(header, main) => (header, main),
-                        Target::Play => (HeaderMode::Play, state.last_editor()),
+                    let (header, main) = match binding {
+                        ModeBinding::Header(header) => (header, state.main_mode()),
+                        ModeBinding::Main(main) => (state.header_mode(), main),
+                        ModeBinding::Both(header, main) => (header, main),
+                        ModeBinding::Play => (HeaderMode::Play, state.last_editor()),
                     };
                     state.set_modes(header, main);
                 })
@@ -89,11 +97,13 @@ impl ModeButtons {
 
 impl OctamedicWidget for ModeButtons {
     fn update(&mut self, state: &mut AppState) {
-        for (button, (_, target)) in self.grid.cells_mut().iter_mut().zip(BUTTONS) {
-            let showing = match target {
-                Target::Header(mode) | Target::Both(mode, _) => state.header_mode() == mode,
-                Target::Main(mode) => state.main_mode() == mode,
-                Target::Play => state.header_mode() == HeaderMode::Play,
+        for (button, (_, binding)) in self.grid.cells_mut().iter_mut().zip(BUTTONS) {
+            let showing = match binding {
+                ModeBinding::Header(mode) | ModeBinding::Both(mode, _) => {
+                    state.header_mode() == mode
+                }
+                ModeBinding::Main(mode) => state.main_mode() == mode,
+                ModeBinding::Play => state.header_mode() == HeaderMode::Play,
             };
             button.set_toggled(showing);
         }

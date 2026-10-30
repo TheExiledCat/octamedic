@@ -4,16 +4,13 @@ use ggez::graphics::{Canvas, Color, DrawParam, Image, PxScale, Quad, Text, TextF
 use octamedic_core::data::palette::OctamedColorPallete;
 
 use crate::framework::{
-    font::{self, Font},
+    font::{self, Font, TOPAZ_TTF},
     rect::Rect,
     shape::{self, Direction, Sides, Span, Spans},
     text::Line,
 };
 
 pub const TEXT_FONT: &str = "Topaz";
-
-/// The Topaz in the screens' fonts: Kickstart 2's, as OctaMED shows it.
-pub const TOPAZ_TTF: &[u8] = include_bytes!("../../assets/fonts/AmigaTopazUnicodeRus.ttf");
 
 /// How Topaz's file says it's sized, so text can be drawn on whole pixels.
 static TOPAZ_METRICS: LazyLock<FontMetrics> =
@@ -35,23 +32,34 @@ impl FontMetrics {
         descent: 0.0,
     };
 
+    // where things are in a TrueType file, in bytes
+    const TABLE_COUNT: usize = 4;
+    const TABLE_RECORDS: usize = 12;
+    const TABLE_RECORD_SIZE: usize = 16;
+    const TABLE_TAG_SIZE: usize = 4;
+    const TABLE_OFFSET: usize = 8;
+    const HEAD_UNITS_PER_EM: usize = 18;
+    const HHEA_ASCENT: usize = 4;
+    const HHEA_DESCENT: usize = 6;
+
     /// From the `head` and `hhea` tables; `None` if they aren't there.
     fn read(font: &[u8]) -> Option<Self> {
-        let u16_at = |at: usize| Some(u16::from_be_bytes(font.get(at..at + 2)?.try_into().ok()?));
-        let u32_at = |at: usize| Some(u32::from_be_bytes(font.get(at..at + 4)?.try_into().ok()?));
-        let tables = u16_at(4)? as usize;
-        let table = |tag: &[u8; 4]| {
+        let bytes = |at: usize, count: usize| font.get(at..at + count);
+        let u16_at = |at: usize| Some(u16::from_be_bytes(bytes(at, 2)?.try_into().ok()?));
+        let u32_at = |at: usize| Some(u32::from_be_bytes(bytes(at, 4)?.try_into().ok()?));
+        let tables = u16_at(Self::TABLE_COUNT)? as usize;
+        let table = |tag: &[u8; Self::TABLE_TAG_SIZE]| {
             (0..tables)
-                .map(|index| 12 + 16 * index)
-                .find(|&record| font.get(record..record + 4) == Some(tag))
-                .and_then(|record| u32_at(record + 8))
+                .map(|index| Self::TABLE_RECORDS + Self::TABLE_RECORD_SIZE * index)
+                .find(|&record| bytes(record, Self::TABLE_TAG_SIZE) == Some(tag))
+                .and_then(|record| u32_at(record + Self::TABLE_OFFSET))
                 .map(|offset| offset as usize)
         };
-        let units_per_em = u16_at(table(b"head")? + 18)? as f32;
+        let units_per_em = u16_at(table(b"head")? + Self::HEAD_UNITS_PER_EM)? as f32;
         let hhea = table(b"hhea")?;
         return Some(Self {
-            ascent: u16_at(hhea + 4)? as i16 as f32 / units_per_em,
-            descent: u16_at(hhea + 6)? as i16 as f32 / units_per_em,
+            ascent: u16_at(hhea + Self::HHEA_ASCENT)? as i16 as f32 / units_per_em,
+            descent: u16_at(hhea + Self::HHEA_DESCENT)? as i16 as f32 / units_per_em,
         });
     }
 
@@ -214,6 +222,34 @@ impl<'a> Painter<'a> {
         self.line(x, text_y(rect, line.height()), &line, pen);
     }
 
+    /// A picture drawn as rows of characters from its top left: `#` in the light pen, `f` in the
+    /// fill and `s` in the shadow, and anything else left as it is.
+    pub fn picture(&mut self, rows: &[&str], x: i32, y: i32) {
+        for (line, row) in rows.iter().enumerate() {
+            for (column, pixel) in row.chars().enumerate() {
+                let pen = match pixel {
+                    '#' => Pen::LIGHT,
+                    'f' => Pen::FILL,
+                    's' => Pen::SHADOW,
+                    _ => continue,
+                };
+                self.fill(Rect::new(x + column as i32, y + line as i32, 1, 1), pen);
+            }
+        }
+    }
+
+    /// `rect` in a checkerboard of `dots` on `gaps`. The pattern is laid on the screen, not the
+    /// rect, so neighbouring rects carry it on.
+    pub fn dotted_rect(&mut self, rect: Rect, dots: Pen, gaps: Pen) {
+        self.fill(rect, gaps);
+        for y in rect.y..rect.bottom() {
+            let first = rect.x + (rect.x + y).rem_euclid(2);
+            for x in (first..rect.right()).step_by(2) {
+                self.fill(Rect::new(x, y, 1, 1), dots);
+            }
+        }
+    }
+
     /// A one pixel frame just inside `rect`.
     pub fn outline(&mut self, rect: Rect, pen: Pen) {
         let Rect { x, y, w, h } = rect;
@@ -227,18 +263,18 @@ impl<'a> Painter<'a> {
     /// left and bottom. `thickness` lines tall at the top and bottom, and twice as many pixels
     /// wide at the sides, so they look as thick on the tall pixels.
     /// The edges meet on a slant: each line of the top and bottom stops 2 pixels further into the
-    /// sides than the one outside it.
-    pub fn frame(&mut self, rect: Rect, thickness: i32) {
-        self.bevel(rect, thickness, Pen::LIGHT, Pen::SHADOW);
+    /// sides than the one outside it. Returns what's inside the frame.
+    pub fn frame(&mut self, rect: Rect, thickness: i32) -> Rect {
+        return self.bevel(rect, thickness, Pen::LIGHT, Pen::SHADOW);
     }
 
     /// `frame` with the light and shadow swapped, as around the mute boxes.
-    pub fn frame_inverted(&mut self, rect: Rect, thickness: i32) {
-        self.bevel(rect, thickness, Pen::SHADOW, Pen::LIGHT);
+    pub fn frame_inverted(&mut self, rect: Rect, thickness: i32) -> Rect {
+        return self.bevel(rect, thickness, Pen::SHADOW, Pen::LIGHT);
     }
 
     /// `top` along the top and right, `bottom` along the left and bottom.
-    fn bevel(&mut self, rect: Rect, thickness: i32, top: Pen, bottom: Pen) {
+    fn bevel(&mut self, rect: Rect, thickness: i32, top: Pen, bottom: Pen) -> Rect {
         let Rect { x, y, w, h } = rect;
         let side = 2 * thickness;
         self.fill(Rect::new(x, y, side, h), bottom);
@@ -248,6 +284,7 @@ impl<'a> Painter<'a> {
             self.fill(Rect::new(x + inset, y + line, w - inset, 1), top);
             self.fill(Rect::new(x, y + h - 1 - line, w - inset, 1), bottom);
         }
+        return inside_frame(rect, thickness);
     }
 
     /// A rect filled with `fill`, with a border along `sides` drawn as thick as `frame`'s.

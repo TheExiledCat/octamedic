@@ -9,7 +9,7 @@ pub enum HeaderMode {
     Edit,
     Misc,
     Volume,
-    Track,
+    Transpose,
     Range,
 }
 

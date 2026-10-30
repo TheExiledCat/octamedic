@@ -16,6 +16,8 @@ const COPYRIGHT: &str = "OctaMEDIC Professional © 2026 Amano Rosuko.";
 
 const HEIGHT: i32 = 11;
 
+const TEXT_OFFSET: [i32; 2] = [5, 1];
+
 /// The gadget at the right end, 1 pixel in from its bevel. In OctaMED it sends the screen behind
 /// Workbench; here it quits.
 const GADGET_WIDTH: i32 = 23;
@@ -52,20 +54,6 @@ impl CopyrightBar {
     }
 }
 
-/// Fills a picture's `s` pixels in the shadow pen and its `#` pixels in the light pen.
-fn draw_picture(rows: &[&str], x: i32, y: i32, painter: &mut Painter) {
-    for (line, row) in rows.iter().enumerate() {
-        for (column, pixel) in row.chars().enumerate() {
-            let pen = match pixel {
-                's' => Pen::SHADOW,
-                '#' => Pen::LIGHT,
-                _ => continue,
-            };
-            painter.fill(Rect::new(x + column as i32, y + line as i32, 1, 1), pen);
-        }
-    }
-}
-
 impl OctamedicWidget for CopyrightBar {
     fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
         if !self.visible {
@@ -90,7 +78,8 @@ impl OctamedicWidget for CopyrightBar {
         }
         let bar = Rect::new(area.x, area.y, area.w, HEIGHT);
         painter.fill(bar, Pen::LIGHT);
-        painter.text_in_font(bar.x + 5, bar.y + 1, COPYRIGHT, Pen::BLACK, Font::Interface);
+        let [x, y] = TEXT_OFFSET;
+        painter.text_in_font(bar.x + x, bar.y + y, COPYRIGHT, Pen::BLACK, Font::Interface);
         let gadget = Rect::new(bar.right() - GADGET_WIDTH, bar.y, GADGET_WIDTH, HEIGHT);
         self.gadget.set_area(gadget);
         // a one pixel bevel: light top and left, shadow bottom and right
@@ -102,6 +91,6 @@ impl OctamedicWidget for CopyrightBar {
         painter.fill(Rect::new(gadget.x, gadget.y, gadget.w, 1), Pen::LIGHT);
         let inside = Rect::new(gadget.x + 1, gadget.y + 1, gadget.w - 2, gadget.h - 2);
         painter.fill(inside, Pen::BLACK);
-        draw_picture(&GADGET_PICTURE, inside.x, inside.y, painter);
+        painter.picture(&GADGET_PICTURE, inside.x, inside.y);
     }
 }

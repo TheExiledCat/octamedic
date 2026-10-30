@@ -32,13 +32,17 @@ pub enum PlayMode {
 
 impl PlayMode {
     pub fn from_u8(value: u8) -> Self {
-        return match value {
-            1 => PlayMode::Song,
-            2 => PlayMode::SongLoop,
-            3 => PlayMode::PatternLoop,
-            4 => PlayMode::Pattern,
-            _ => PlayMode::Paused,
-        };
+        const ALL: [PlayMode; 5] = [
+            PlayMode::Paused,
+            PlayMode::Song,
+            PlayMode::SongLoop,
+            PlayMode::PatternLoop,
+            PlayMode::Pattern,
+        ];
+        return ALL
+            .into_iter()
+            .find(|mode| *mode as u8 == value)
+            .unwrap_or(PlayMode::Paused);
     }
 }
 

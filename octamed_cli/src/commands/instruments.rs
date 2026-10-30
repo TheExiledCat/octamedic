@@ -31,7 +31,11 @@ impl Command for InstrumentsCommand {
                 }
             };
             println!("Name: {}", name);
-            let bit_count = if header.is_16_bit() { 16 } else { 8 };
+            let bit_count = if header.is_16_bit() {
+                u16::BITS
+            } else {
+                u8::BITS
+            };
             let channels = if header.is_stereo() { "Stereo" } else { "Mono" };
             println!(
                 "Type: {} ({} bit, {})",

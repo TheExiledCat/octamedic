@@ -8,7 +8,10 @@ use ggez::{
 use octamed::mmd::{conversion::FromModule, parser::OctamedMMDParser};
 use octamedic_core::data::project::OctamedicProject;
 
-use crate::app::{app::App, files};
+use crate::{
+    app::{app::App, files},
+    framework::screen::{PIXEL_ASPECT, SCREEN_HEIGHT, SCREEN_WIDTH},
+};
 
 mod app;
 mod framework;
@@ -28,6 +31,9 @@ fn load_project() -> OctamedicProject {
     return OctamedicProject::new();
 }
 
+/// How many window pixels a screen pixel starts as, across; its tall pixels are twice that down.
+const WINDOW_SCALE: i32 = 2;
+
 fn main() -> GameResult<()> {
     if let Err(error) = files::initialize() {
         eprintln!("Couldn't create OctaMEDIC's folders: {error}");
@@ -39,9 +45,8 @@ fn main() -> GameResult<()> {
             maximized: false,
             fullscreen_type: ggez::conf::FullscreenType::Windowed,
             borderless: false,
-            // the screen at 2×, with its tall pixels
-            width: 1280.0,
-            height: 1024.0,
+            width: (SCREEN_WIDTH * WINDOW_SCALE) as f32,
+            height: SCREEN_HEIGHT as f32 * PIXEL_ASPECT * WINDOW_SCALE as f32,
             resizable: true,
             ..Default::default()
         })

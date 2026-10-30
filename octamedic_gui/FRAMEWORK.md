@@ -175,16 +175,21 @@ event)` from `handle_event`. The action ids are `scope.action`, e.g. `editor.up`
 | `MainView` | `app/main_view.rs` | the whole screen; global keys like Ctrl+Q |
 | `TitleBar` | `app/title_bar.rs` | the timer, the title and the author |
 | `CopyrightBar` | `app/copyright_bar.rs` | the screen title over the title bar, shown and hidden by a right click nothing else takes; its gadget quits |
-| `Header` | `app/header.rs` | the header panel: the mode's widgets, the mode buttons, the status row |
+| `Header` | `app/header/mod.rs` | the header panel: the header mode's panel, the mode buttons, the status row |
+| `Misc` | `app/header/misc.rs` | the MISC panel |
 | `ModeButtons` | `app/mode_buttons.rs` | the buttons at the header's top right |
 | `StatusBar` | `app/status_bar.rs` | song position, block, instrument, song |
-| `BlockEditor` | `app/editor.rs` | the block editor, with the track numbers and the block's `TrackCount` over its top rows |
+| `BlockEditor` | `app/main/block_editor.rs` | the block editor, with the track numbers and the block's `TrackCount` over its top rows |
 | `Footer` | `app/footer.rs` | the info line and the scopes |
 | `DebugConsole` | `app/debug_console.rs` | debug lines, shown with the `~` key |
 
 The mode buttons set two modes in the state: `HeaderMode`, which panel the header shows, and
-`MainMode`, what fills the screen under it. A header panel draws its widgets inside the header's
-sunken panel; a main mode's screen goes where the block editor is.
+`MainMode`, what fills the screen under it. Each button's `ModeBinding` in `app/mode_buttons.rs`
+says which it switches. The header's panels live in `app/header/`, one file each, and
+`HeaderPanels::panel` binds each `HeaderMode` to its panel; a panel draws inside the header's
+sunken panel and gets the header's updates and events while it shows. The main screens live in
+`app/main/`, and `MainScreens::screen` binds each `MainMode` the same way. To add one, make its
+widget, add a field for it and return it from `panel` or `screen`.
 
 Change project data through `AppState` methods like `enter_note` and `edit_track` rather than
 directly. They track which blocks changed and send those to the engine in `AppState::update`, so

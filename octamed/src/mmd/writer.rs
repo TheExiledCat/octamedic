@@ -5,8 +5,9 @@ use crate::{
     mmd::{
         conversion::{BinarySize, BinaryWriter},
         module::{
-            OctamedMMD, OctamedMMD0Block, OctamedMMD0BlockHeader, OctamedMMD1Block,
-            OctamedMMD1BlockHeader, OctamedMMDBlockTable, OctamedMMDTrackLine,
+            OctamedMMD, OctamedMMD0Block, OctamedMMD0BlockHeader, OctamedMMD0Header,
+            OctamedMMD0Song, OctamedMMD1Block, OctamedMMD1BlockHeader, OctamedMMDBlockTable,
+            OctamedMMDTrackLine,
         },
     },
     utility::bytes::{Offset, UByte, ULong, UWord, ValueMap}, // UByte used in MMD0 track encoding
@@ -154,7 +155,7 @@ impl OctamedMMDWriter {
                         Slot::BlockData(i),
                         (track_count.0 as u32)
                             * ((line_count.0 as u32) + 1)
-                            * ((size_of::<UByte>() as u32) * 3),
+                            * OctamedMMDTrackLine::MMD0_SIZE as u32,
                     );
                 }
             }
@@ -167,12 +168,12 @@ impl OctamedMMDWriter {
                         Slot::BlockData(i),
                         (track_count.0 as u32)
                             * ((line_count.0 as u32) + 1)
-                            * ((size_of::<UByte>() as u32) * 4),
+                            * OctamedMMDTrackLine::MMD1_SIZE as u32,
                     );
                     if let Some(info_block) = &blocks[i].info {
                         self.layout
                             .alloc(Slot::BlockInfo(i), info_block.header.get_size(mmd));
-                        let bits_per_ulong = size_of::<ULong>() * 8;
+                        let bits_per_ulong = u32::BITS as usize;
                         let count = ((line_count.0 as usize) + 1).div_ceil(bits_per_ulong);
                         self.layout.alloc(
                             Slot::BlockHighlights(i),
@@ -274,7 +275,7 @@ impl OctamedMMDWriter {
         self.writer.write_bytes(&header.active_play_line)?;
         self.writer.write_bytes(&header.counter)?;
         self.writer.write_bytes(&header.extra_songs)?;
-        self.assert_size(52);
+        self.assert_size(OctamedMMD0Header::SIZE);
         return Ok(());
     }
 
@@ -299,7 +300,7 @@ impl OctamedMMDWriter {
         self.writer.write_bytes(&song.track_volumes)?;
         self.writer.write_bytes(&song.master_volume)?;
         self.writer.write_bytes(&song.sample_count)?;
-        self.assert_size(788);
+        self.assert_size(OctamedMMD0Song::SIZE);
         return Ok(());
     }
 
@@ -342,7 +343,13 @@ impl OctamedMMDWriter {
                                 .note_number
                                 .map(|n| n & OctamedMMDTrackLine::BLOCK_LINE_NOTE_NUMBER_MASK_MMD0)
                                 .0
-                                | track.instrument_number.map(|i| (i >> 4) << 6).0,
+                                | track
+                                    .instrument_number
+                                    .map(|i| {
+                                        (i >> OctamedMMDTrackLine::MMD0_INSTRUMENT_LOW_BITS)
+                                            << OctamedMMDTrackLine::MMD0_NOTE_BITS
+                                    })
+                                    .0,
                         )
                     };
                     let byte2 = {
@@ -354,7 +361,10 @@ impl OctamedMMDWriter {
                                     b & OctamedMMDTrackLine::BLOCK_LINE_COMMAND_NUMBER_MASK_MMD0
                                 })
                                 .0
-                                | track.instrument_number.map(|i| i << 4).0,
+                                | track
+                                    .instrument_number
+                                    .map(|i| i << OctamedMMDTrackLine::MMD0_INSTRUMENT_LOW_BITS)
+                                    .0,
                         )
                     };
                     let byte3 = track.command_value;
@@ -403,7 +413,7 @@ impl OctamedMMDWriter {
             //blockinfo
             let info = &block.info;
             if let Some(info_blk) = info {
-                let bits_per_ulong = size_of::<ULong>() * 8;
+                let bits_per_ulong = u32::BITS as usize;
                 let line_count = header.line_count;
                 // line_count is zero-indexed; actual count is line_count.0 + 1
                 let count = ((line_count.0 as usize) + 1).div_ceil(bits_per_ulong);

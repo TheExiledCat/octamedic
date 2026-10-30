@@ -92,7 +92,7 @@ pub fn bit_mask(byte: impl IntoByte, mask: u8) -> UByte {
 }
 
 pub fn bit_slice(byte: impl IntoByte, start: u8, end: u8) -> UByte {
-    assert!(start < end && end <= 8);
+    assert!(start < end && end as u32 <= u8::BITS);
     let mask = (1u8 << (end - start)) - 1;
     let value = (byte.as_byte().0 >> start) & mask;
     UByte(value)

@@ -3,16 +3,16 @@
 
 pub const BASE: u8 = 32;
 
-const DIGITS: &[u8; 32] = b"0123456789ABCDEFGHIJKLMNOPQRSTUV";
+const DIGITS: &[u8; BASE as usize] = b"0123456789ABCDEFGHIJKLMNOPQRSTUV";
 
 /// The digit for `value`'s lowest 5 bits.
 pub fn digit(value: u32) -> char {
-    return DIGITS[(value % 32) as usize] as char;
+    return DIGITS[(value % BASE as u32) as usize] as char;
 }
 
 /// What a digit is worth, in either case; `None` for anything that isn't one.
 pub fn digit_value(c: char) -> Option<u32> {
-    return c.to_digit(32);
+    return c.to_digit(BASE as u32);
 }
 
 /// `value` in at least `width` digits, with `fill` in front where it has fewer.
@@ -21,7 +21,7 @@ pub fn format(value: u32, width: usize, fill: char) -> String {
     let mut rest = value;
     loop {
         digits.push(digit(rest));
-        rest /= 32;
+        rest /= BASE as u32;
         if rest == 0 {
             break;
         }
@@ -38,7 +38,7 @@ pub fn parse(text: &str) -> Option<u32> {
         return None;
     }
     return text.chars().try_fold(0u32, |value, c| {
-        value.checked_mul(32)?.checked_add(digit_value(c)?)
+        value.checked_mul(BASE as u32)?.checked_add(digit_value(c)?)
     });
 }
 

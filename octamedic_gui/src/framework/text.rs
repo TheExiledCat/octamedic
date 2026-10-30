@@ -50,7 +50,6 @@ impl<'a> Span<'a> {
         return self.font.width(&self.text);
     }
 
-    /// The same span with other text.
     fn with_text<'b>(&self, text: impl Into<Cow<'b, str>>) -> Span<'b> {
         return Span {
             text: text.into(),
@@ -83,7 +82,6 @@ impl<'a> Line<'a> {
         return self.0.iter().map(Span::width).sum();
     }
 
-    /// The tallest of its fonts.
     pub fn height(&self) -> i32 {
         return self
             .0

@@ -1,4 +1,5 @@
 use ggez::input::keyboard::KeyCode;
+use octamed::utility::note::SEMITONES_PER_OCTAVE;
 use octamedic_core::data::{
     pattern::{OctamedicPattern, OctamedicPatternTrack},
     track_count::TrackCount,
@@ -25,10 +26,24 @@ const CENTER_ROW: i32 = ROWS / 2;
 /// The line number and the space after it.
 const LINE_NUMBER_CHARS: i32 = 4;
 
+/// The note's characters at the start of a track, as in `C#1`.
+const NOTE_CHARS: i32 = 3;
+
+/// Where a track's number ends, over its instrument's first digit.
+const TRACK_NUMBER_END: i32 = NOTE_CHARS + 1;
+
+/// Blocks with up to this many tracks are shown in wide characters.
+const WIDE_TRACKS: usize = 4;
+
+const QUARTERS: usize = 4;
+
+/// Octaves past 9 are written as letters, as base 36 digits.
+const OCTAVE_RADIX: u32 = 36;
+
 /// Note, instrument, command and its value, as in `C#1 10C20`.
 const TRACK_CHARS: i32 = 9;
 
-const NOTE_NAMES: [&str; 12] = [
+const NOTE_NAMES: [&str; SEMITONES_PER_OCTAVE as usize] = [
     "C-", "C#", "D-", "D#", "E-", "F-", "F#", "G-", "G#", "A-", "A#", "B-",
 ];
 
@@ -140,7 +155,11 @@ impl BlockEditor {
         };
         for index in 0..layout.tracks {
             let number = self.first_track + index;
-            label(number.to_string(), layout.track_column(index) + 4, y);
+            label(
+                number.to_string(),
+                layout.track_column(index) + TRACK_NUMBER_END,
+                y,
+            );
         }
         let count = TrackCount::holding(pattern.track_count());
         label(
@@ -177,10 +196,10 @@ impl BlockEditor {
     /// just past it.
     fn cursor_box(&self, cursor: &EditCursor, layout: &Layout, band: Rect) -> Option<CursorBox> {
         let index = cursor.track.checked_sub(self.first_track)?;
-        // the note is 3 characters, then each digit is one
+        // the note, then each digit is a character
         let (offset, width) = match cursor.column {
-            0 => (0, 3),
-            digit => (digit as i32 + 2, 1),
+            0 => (0, NOTE_CHARS),
+            digit => (NOTE_CHARS + digit as i32 - 1, 1),
         };
         let x = layout.x + (layout.track_column(index) + offset) * layout.char_width;
         let width = width * layout.char_width;
@@ -253,7 +272,7 @@ struct Layout {
 impl Layout {
     /// Up to 4 tracks are shown in double-width characters, as in OctaMED.
     fn new(area: Rect, track_count: usize) -> Self {
-        let font = if track_count <= 4 {
+        let font = if track_count <= WIDE_TRACKS {
             Font::Editor
         } else {
             Font::Topaz
@@ -296,9 +315,9 @@ impl KeyActions for BlockEditor {
             Left => cursor.move_columns(-1, tracks),
             Right => cursor.move_columns(1, tracks),
             FirstLine => cursor.set_line(0, lines),
-            SecondQuarter => cursor.set_line(lines / 4, lines),
+            SecondQuarter => cursor.set_line(lines / QUARTERS, lines),
             Middle => cursor.set_line(lines / 2, lines),
-            LastQuarter => cursor.set_line(lines * 3 / 4, lines),
+            LastQuarter => cursor.set_line(lines * (QUARTERS - 1) / QUARTERS, lines),
             LastLine => cursor.set_line(lines.saturating_sub(1), lines),
             TrackLeft => cursor.move_tracks(-1, tracks),
             TrackRight => cursor.move_tracks(1, tracks),
@@ -388,8 +407,13 @@ fn note_text(note: u8) -> String {
         return "---".to_string();
     }
     let index = note as usize - 1;
-    let octave = std::char::from_digit((index / 12 + 1) as u32, 36).unwrap_or('?');
-    return format!("{}{}", NOTE_NAMES[index % 12], octave.to_ascii_uppercase());
+    let semitones = SEMITONES_PER_OCTAVE as usize;
+    let octave = std::char::from_digit((index / semitones + 1) as u32, OCTAVE_RADIX).unwrap_or('?');
+    return format!(
+        "{}{}",
+        NOTE_NAMES[index % semitones],
+        octave.to_ascii_uppercase()
+    );
 }
 
 /// Two base-32 digits, with a space for a leading zero.

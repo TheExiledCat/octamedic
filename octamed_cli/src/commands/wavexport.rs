@@ -10,6 +10,7 @@ use progress_bar::{
 
 use crate::commands::repl::{Command, CommandError, CommandResult};
 
+const PROGRESS_BAR_WIDTH: usize = 100;
 #[derive(Args, Debug, Clone)]
 #[command(about = "Export a sample to wav file. Does not take into account sample transpose.")]
 pub struct WavExportCommand {
@@ -37,7 +38,11 @@ impl Command for WavExportCommand {
         let sample = mmd.sample_table.samples[self.sample_number]
             .as_ref()
             .unwrap();
-        let bits_per_sample = if header.is_16_bit() { 16 } else { 8 };
+        let bits_per_sample = if header.is_16_bit() {
+            u16::BITS
+        } else {
+            u8::BITS
+        } as u16;
         let channels = if header.is_stereo() { 2 } else { 1 };
         let sample_rate = Frequency::period(AmigaPalPeriod::new(self.periods))
             .as_hertz()
@@ -51,7 +56,7 @@ impl Command for WavExportCommand {
         let mut writer = WavWriter::create(&self.output, spec).unwrap();
         init_progress_bar(sample.len());
         set_progress_bar_action("Writing", Color::Blue, Style::Normal);
-        set_progress_bar_width(100);
+        set_progress_bar_width(PROGRESS_BAR_WIDTH);
         for sample in sample.iter() {
             writer.write_sample(sample.0).unwrap();
             inc_progress_bar();

@@ -24,7 +24,7 @@ impl Click {
 
 /// An area that clicks the moment it's pressed, as OctaMED's gadgets do. The release of that
 /// press is taken too, wherever it is, so nothing under the pointer sees half a click.
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Clickable {
     area: Rect,
     hovered: bool,

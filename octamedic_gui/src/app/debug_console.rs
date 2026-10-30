@@ -17,6 +17,8 @@ const TOGGLE: KeyCode = KeyCode::Grave;
 
 const OPACITY: f32 = 0.8;
 
+const MARGIN: [i32; 2] = [4, 2];
+
 /// Lines from `AppState::debug`, over the top of the screen, newest at the bottom. Shown and
 /// hidden with the `~` key.
 #[derive(Default)]
@@ -48,7 +50,7 @@ impl OctamedicWidget for DebugConsole {
             return;
         }
         painter.fill_translucent(area, Pen::BLACK, OPACITY);
-        let text = area.inset(4, 2);
+        let text = area.inset(MARGIN[0], MARGIN[1]);
         let rows = (text.h / CHAR_HEIGHT).max(0) as usize;
         let lines = state.debug_lines();
         let mut y = text.y;

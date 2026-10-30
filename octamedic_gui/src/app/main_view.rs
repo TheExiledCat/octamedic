@@ -2,8 +2,8 @@ use ggez::input::keyboard::KeyCode;
 
 use crate::{
     app::{
-        copyright_bar::CopyrightBar, debug_console::DebugConsole, editor::BlockEditor,
-        footer::Footer, header::Header, mode::MainMode, state::AppState, title_bar::TitleBar,
+        copyright_bar::CopyrightBar, debug_console::DebugConsole, footer::Footer, header::Header,
+        main::MainScreens, mode::MainMode, state::AppState, title_bar::TitleBar,
     },
     framework::{
         event::{Event, MouseButton},
@@ -34,7 +34,7 @@ pub struct MainView {
     keys: Keymap<MainAction>,
     title: TitleBar,
     header: Header,
-    editor: BlockEditor,
+    screens: MainScreens,
     footer: Footer,
     console: DebugConsole,
     copyright: CopyrightBar,
@@ -46,7 +46,7 @@ impl MainView {
             keys: Keymap::new("main").bind(Key::ctrl(KeyCode::Q), MainAction::Quit, "Quit"),
             title: TitleBar::new(),
             header: Header::new(),
-            editor: BlockEditor::new(),
+            screens: MainScreens::new(),
             footer: Footer,
             console: DebugConsole::default(),
             copyright: CopyrightBar::default(),
@@ -55,23 +55,10 @@ impl MainView {
 
     fn widgets(&mut self, mode: MainMode) -> Vec<&mut dyn OctamedicWidget> {
         let mut widgets: Vec<&mut dyn OctamedicWidget> = vec![&mut self.title, &mut self.header];
-        widgets.extend(main_screen(&mut self.editor, mode));
+        widgets.extend(self.screens.screen(mode));
         widgets.push(&mut self.footer);
         return widgets;
     }
-}
-
-/// The main mode's screen; `None` for the ones that aren't made yet.
-fn main_screen(editor: &mut BlockEditor, mode: MainMode) -> Option<&mut dyn OctamedicWidget> {
-    return match mode {
-        MainMode::BlockEditor => Some(editor),
-        MainMode::NotationEditor
-        | MainMode::SampleEditor
-        | MainMode::SynthEditor
-        | MainMode::SongList
-        | MainMode::Midi
-        | MainMode::Files => None,
-    };
 }
 
 impl OctamedicWidget for MainView {
@@ -111,7 +98,7 @@ impl OctamedicWidget for MainView {
         self.title.render(state, title, painter);
         self.copyright.render(state, title, painter);
         self.header.render(state, header, painter);
-        match main_screen(&mut self.editor, state.main_mode()) {
+        match self.screens.screen(state.main_mode()) {
             Some(screen) => screen.render(state, editor, painter),
             None => painter.fill(editor, Pen::BLACK),
         }

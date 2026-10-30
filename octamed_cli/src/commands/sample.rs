@@ -7,6 +7,11 @@ use octamed::utility::{frequency::Frequency, period::AmigaPalPeriod};
 
 use crate::commands::repl::{Command, CommandError, CommandResult};
 
+const MAX_PERCENT: u8 = 100;
+
+/// An 8-bit sample's full scale, to bring it into -1 to 1.
+const SAMPLE_SCALE: f32 = -(i8::MIN as f32);
+
 #[derive(Args, Debug, Clone)]
 #[command(about = "Play a sample. Does not take into account sample transpose.")]
 pub struct SampleCommand {
@@ -35,7 +40,7 @@ pub struct SampleCommand {
 }
 
 fn zero_to_100(text: &str) -> Result<u8, String> {
-    number_range(text, 0, 100)
+    number_range(text, 0, MAX_PERCENT)
 }
 
 impl Command for SampleCommand {
@@ -52,7 +57,11 @@ impl Command for SampleCommand {
             .iter()
             .map(|b| b.0)
             .collect();
-        let _bits_per_sample = if header.is_16_bit() { 16 } else { 8 };
+        let _bits_per_sample = if header.is_16_bit() {
+            u16::BITS
+        } else {
+            u8::BITS
+        };
         let _channels = if header.is_stereo() { 2 } else { 1 };
         let sample_rate = Frequency::period(AmigaPalPeriod::new(self.periods))
             .as_hertz()
@@ -77,7 +86,7 @@ impl Command for SampleCommand {
                     for frame in data.chunks_mut(output_channels as usize) {
                         let value = *samples.get(index).unwrap_or(&0.0);
                         for channel in frame {
-                            *channel = value * (volume / 100.0);
+                            *channel = value * (volume / MAX_PERCENT as f32);
                         }
                         index += 1;
                     }
@@ -107,7 +116,7 @@ fn resample_linear(samples: &[i8], input_sample_rate: u32, output_sample_rate: u
         let sample_8bit_first = samples[index] as f32;
         let sample_8bit_next = samples[next_index] as f32;
         let sample = sample_8bit_first + (sample_8bit_next - sample_8bit_first) * t;
-        let sample_f32 = sample / 128.0;
+        let sample_f32 = sample / SAMPLE_SCALE;
         output.push(sample_f32);
     }
     return output;
@@ -123,7 +132,7 @@ fn resample_nearest(samples: &[i8], input_sample_rate: u32, output_sample_rate: 
             .floor()
             .clamp(0.0, samples.len().saturating_sub(1) as f32) as usize;
         let sample_8bit = samples[index];
-        let sample_f32 = (sample_8bit as f32) / 128.0;
+        let sample_f32 = (sample_8bit as f32) / SAMPLE_SCALE;
         output.push(sample_f32);
     }
     return output;

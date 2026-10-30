@@ -26,20 +26,44 @@ pub enum Font {
     Panel,
     /// Short capitals, 5 lines tall, for the status row's flags like `CHRD`.
     Small,
+    /// The title bar's title, 9 lines tall, from OctaMED's title artwork.
+    Title,
+    /// The title bar's author, small capitals 5 lines tall, from OctaMED's title artwork.
+    Author,
     /// The block editor's 16 pixel wide characters, for blocks of up to 4 tracks: OctaMED's own
     /// where `editor.txt` has them, like the separate dashes of an empty note, and Topaz twice as
     /// wide for the rest.
     Editor,
 }
 
+/// OctaMED's bolder slash between a position and a length, like `0001⁄0022`, which
+/// `Font::Interface` draws. It's the fraction slash, so it doesn't need typing.
+pub const POSITION_SLASH: char = '\u{2044}';
+
 /// The widest glyph a font file can hold.
-const MAX_GLYPH_WIDTH: usize = 16;
+const MAX_GLYPH_WIDTH: usize = u32::BITS as usize;
+
+/// A glyph line's leftmost pixel; the pixels go right from the highest bit.
+const LEFT_PIXEL: u32 = 1 << (u32::BITS - 1);
+
+const LEFT_TWO_PIXELS: u32 = 0b11 << (u32::BITS - 2);
+
+// the glyph files' fonts: lines tall, blank pixels each side of a glyph, and a space's width
+const PANEL_HEIGHT: usize = 6;
+const PANEL_BEARING: i32 = 1;
+const PANEL_SPACE: i32 = 4;
+const SMALL_HEIGHT: usize = 5;
+const SMALL_SPACE: i32 = 4;
+const TITLE_HEIGHT: usize = 9;
+const TITLE_SPACE: i32 = 13;
+const AUTHOR_HEIGHT: usize = 5;
+const AUTHOR_SPACE: i32 = 7;
 
 /// A glyph: how wide it is, and its lines top to bottom, the highest bit leftmost.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Glyph {
     pub width: i32,
-    pub lines: Vec<u16>,
+    pub lines: Vec<u32>,
 }
 
 /// A font drawn pixel by pixel, from a glyph file (see `parse_glyphs`) or Topaz's TTF.
@@ -102,13 +126,13 @@ fn rasterize(ttf: &[u8]) -> Option<HashMap<char, Glyph>> {
         let lines = (0..CHAR_HEIGHT)
             .map(|y| {
                 let middle_y = em - (y as f32 + 0.5) * row;
-                (0..width.min(MAX_GLYPH_WIDTH)).fold(0u16, |line, x| {
+                (0..width.min(MAX_GLYPH_WIDTH)).fold(0u32, |line, x| {
                     let middle = Point {
                         x: (x as f32 + 0.5) * column,
                         y: middle_y,
                     };
                     if inside(&edges, middle) {
-                        line | (0x8000 >> x)
+                        line | (LEFT_PIXEL >> x)
                     } else {
                         line
                     }
@@ -155,7 +179,6 @@ fn cut(edges: &mut Vec<(Point, Point)>, point_at: impl Fn(f32) -> Point) {
     }
 }
 
-/// The sum of the points times their weights.
 fn weighted(points: &[(Point, f32)]) -> Point {
     return points
         .iter()
@@ -185,9 +208,9 @@ static PANEL: LazyLock<BitmapFont> = LazyLock::new(|| BitmapFont {
     ..BitmapFont::load(
         "panel.txt",
         include_str!("../../assets/fonts/panel.txt"),
-        6,
-        1,
-        4,
+        PANEL_HEIGHT,
+        PANEL_BEARING,
+        PANEL_SPACE,
     )
 });
 
@@ -196,9 +219,25 @@ static SMALL: LazyLock<BitmapFont> = LazyLock::new(|| BitmapFont {
     ..BitmapFont::load(
         "small.txt",
         include_str!("../../assets/fonts/small.txt"),
-        5,
+        SMALL_HEIGHT,
         0,
-        4,
+        SMALL_SPACE,
+    )
+});
+
+static TITLE: LazyLock<BitmapFont> = LazyLock::new(|| {
+    let text = include_str!("../../assets/fonts/title.txt");
+    BitmapFont::load("title.txt", text, TITLE_HEIGHT, 0, TITLE_SPACE)
+});
+
+static AUTHOR: LazyLock<BitmapFont> = LazyLock::new(|| BitmapFont {
+    capitals_only: true,
+    ..BitmapFont::load(
+        "author.txt",
+        include_str!("../../assets/fonts/author.txt"),
+        AUTHOR_HEIGHT,
+        0,
+        AUTHOR_SPACE,
     )
 });
 
@@ -211,15 +250,14 @@ static EDITOR: LazyLock<BitmapFont> = LazyLock::new(|| {
     font
 });
 
-/// `glyph` with every pixel twice as wide.
 fn widened(glyph: &Glyph) -> Glyph {
     let lines = glyph
         .lines
         .iter()
         .map(|&line| {
-            (0..8).fold(0u16, |wide, x| {
-                if line & (0x8000 >> x) != 0 {
-                    wide | (0xc000 >> (2 * x))
+            (0..u8::BITS).fold(0u32, |wide, x| {
+                if line & (LEFT_PIXEL >> x) != 0 {
+                    wide | (LEFT_TWO_PIXELS >> (2 * x))
                 } else {
                     wide
                 }
@@ -234,7 +272,7 @@ fn widened(glyph: &Glyph) -> Glyph {
 
 static INTERFACE: LazyLock<BitmapFont> = LazyLock::new(|| {
     let text = include_str!("../../assets/fonts/interface.txt");
-    BitmapFont::load("interface.txt", text, 8, 0, CHAR_WIDTH)
+    BitmapFont::load("interface.txt", text, CHAR_HEIGHT as usize, 0, CHAR_WIDTH)
 });
 
 /// Reads glyphs written as their character on a line of its own, then `height` lines of `#`
@@ -272,7 +310,7 @@ fn parse_glyphs(text: &str, height: usize) -> Result<Vec<(char, Glyph)>, String>
             glyph.width = width as i32;
             for (x, pixel) in row.chars().enumerate() {
                 match pixel {
-                    '#' => *line |= 0x8000 >> x,
+                    '#' => *line |= LEFT_PIXEL >> x,
                     '.' => {}
                     _ => {
                         return Err(format!(
@@ -301,6 +339,8 @@ impl Font {
             Font::Panel => &PANEL,
             Font::Small => &SMALL,
             Font::Editor => &EDITOR,
+            Font::Title => &TITLE,
+            Font::Author => &AUTHOR,
         };
     }
 
@@ -308,8 +348,10 @@ impl Font {
     pub fn height(self) -> i32 {
         return match self {
             Font::Topaz | Font::Interface | Font::Editor => CHAR_HEIGHT,
-            Font::Panel => 6,
-            Font::Small => 5,
+            Font::Panel => PANEL_HEIGHT as i32,
+            Font::Small => SMALL_HEIGHT as i32,
+            Font::Title => TITLE_HEIGHT as i32,
+            Font::Author => AUTHOR_HEIGHT as i32,
         };
     }
 
@@ -328,7 +370,6 @@ impl Font {
         return self == Font::Interface;
     }
 
-    /// How far a character moves the text along.
     pub fn advance(self, c: char) -> i32 {
         let font = self.bitmap();
         let width = self.glyph(c).map_or(font.space, |glyph| glyph.width);
@@ -346,18 +387,18 @@ impl Font {
 }
 
 /// The runs of set pixels in a glyph's line, as where each starts and how long it is.
-pub fn runs(line: u16) -> impl Iterator<Item = (i32, i32)> {
+pub fn runs(line: u32) -> impl Iterator<Item = (i32, i32)> {
     let mut x = 0;
     let width = MAX_GLYPH_WIDTH as i32;
     return std::iter::from_fn(move || {
-        while x < width && line & (0x8000 >> x) == 0 {
+        while x < width && line & (LEFT_PIXEL >> x) == 0 {
             x += 1;
         }
         if x == width {
             return None;
         }
         let start = x;
-        while x < width && line & (0x8000 >> x) != 0 {
+        while x < width && line & (LEFT_PIXEL >> x) != 0 {
             x += 1;
         }
         return Some((start, x - start));
@@ -372,7 +413,7 @@ mod tests {
     fn glyph_rows_become_bits_from_the_left() {
         let a = Font::Panel.glyph('a').unwrap();
         assert_eq!(a.width, 8);
-        assert_eq!(a.lines[0], 0b0111_1110 << 8);
+        assert_eq!(a.lines[0], 0b0111_1110 << 24);
         assert_eq!(Font::Panel.glyph('I').unwrap().width, 4);
         assert!(Font::Panel.glyph('~').is_none());
         assert_eq!(Font::Interface.glyph('/').unwrap().width, 10);
@@ -385,8 +426,12 @@ mod tests {
         assert!(panel.len() >= 26);
         let text = include_str!("../../assets/fonts/interface.txt");
         assert_eq!(parse_glyphs(text, 8).unwrap().len(), 2);
+        let title = include_str!("../../assets/fonts/title.txt");
+        assert!(parse_glyphs(title, TITLE_HEIGHT).is_ok());
+        let author = include_str!("../../assets/fonts/author.txt");
+        assert!(parse_glyphs(author, AUTHOR_HEIGHT).is_ok());
         let small = include_str!("../../assets/fonts/small.txt");
-        assert_eq!(parse_glyphs(small, 5).unwrap().len(), 7);
+        assert_eq!(parse_glyphs(small, 5).unwrap().len(), 10);
     }
 
     #[test]
@@ -396,11 +441,11 @@ mod tests {
         assert!(parse_glyphs(&format!("A\n{rows}#..\n"), 6).is_err());
         assert!(parse_glyphs(&format!("A\n{rows}#x\n"), 6).is_err());
         assert!(parse_glyphs(&format!("A\n{rows}"), 6).is_err());
-        let too_wide = format!("A\n{}\n", "#".repeat(17));
+        let too_wide = format!("A\n{}\n", "#".repeat(MAX_GLYPH_WIDTH + 1));
         assert!(parse_glyphs(&too_wide, 1).is_err());
         let two = parse_glyphs(&format!("A\n{rows}#.\n\nB\n{rows}.#\n"), 6).unwrap();
         assert_eq!(two[1].0, 'B');
-        assert_eq!(two[1].1.lines[5], 0x4000);
+        assert_eq!(two[1].1.lines[5], 0x4000_0000);
     }
 
     #[test]
@@ -412,7 +457,13 @@ mod tests {
             .iter()
             .map(|line| {
                 (0..8)
-                    .map(|x| if line & (0x8000 >> x) != 0 { '#' } else { '.' })
+                    .map(|x| {
+                        if line & (LEFT_PIXEL >> x) != 0 {
+                            '#'
+                        } else {
+                            '.'
+                        }
+                    })
                     .collect()
             })
             .collect();
@@ -433,14 +484,17 @@ mod tests {
         assert_eq!(a.lines, widened(Font::Topaz.glyph('A').unwrap()).lines);
         // an empty note's dashes stay apart
         let dash = Font::Editor.glyph('-').unwrap();
-        assert_eq!(dash.lines[3], 0b0001_1111_1111_1000);
+        assert_eq!(dash.lines[3], 0b0001_1111_1111_1000 << 16);
     }
 
     #[test]
     fn lines_split_into_runs() {
-        assert_eq!(runs(0b1100_0110 << 8).collect::<Vec<_>>(), [(0, 2), (5, 2)]);
+        assert_eq!(
+            runs(0b1100_0110 << 24).collect::<Vec<_>>(),
+            [(0, 2), (5, 2)]
+        );
         assert_eq!(runs(0).count(), 0);
-        assert_eq!(runs(0xffff).collect::<Vec<_>>(), [(0, 16)]);
+        assert_eq!(runs(u32::MAX).collect::<Vec<_>>(), [(0, 32)]);
     }
 
     #[test]
@@ -453,7 +507,7 @@ mod tests {
         assert_eq!(Font::Interface.width("0001"), 32);
         assert_eq!(Font::Interface.width("/"), 10);
         // the bolder slash between a position and a length
-        assert_eq!(Font::Interface.width("⁄"), 12);
+        assert_eq!(Font::Interface.width(&POSITION_SLASH.to_string()), 12);
         // not in the font, so drawn in Topaz
         assert_eq!(Font::Interface.width("~ "), 16);
     }

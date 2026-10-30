@@ -58,6 +58,22 @@ impl Rect {
             .collect();
     }
 
+    /// Turned a quarter around its top left: as wide as it was tall, and as tall as it was wide.
+    pub fn rotate(self) -> Self {
+        return Self::new(self.x, self.y, self.h, self.w);
+    }
+
+    /// With its x and y swapped; the size stays. With `rotate`, it mirrors the rect across the
+    /// diagonal.
+    pub fn swap_xy(self) -> Self {
+        return Self::new(self.y, self.x, self.w, self.h);
+    }
+
+    /// This rect, given from `area`'s top left, placed in `area`.
+    pub fn within(self, area: Self) -> Self {
+        return Self::new(area.x + self.x, area.y + self.y, self.w, self.h);
+    }
+
     /// Smaller by `x` on the left and right and `y` at the top and bottom.
     pub fn inset(self, x: i32, y: i32) -> Self {
         return Self::new(self.x + x, self.y + y, self.w - 2 * x, self.h - 2 * y);
@@ -95,6 +111,29 @@ mod tests {
             (Rect::new(0, 10, 70, 50), Rect::new(70, 10, 30, 50))
         );
         assert_eq!(rect.split_top(80).1.h, 0);
+    }
+
+    #[test]
+    fn rotating_swaps_the_width_and_height() {
+        let rect = Rect::new(10, 20, 160, 8);
+        assert_eq!(rect.rotate(), Rect::new(10, 20, 8, 160));
+        assert_eq!(rect.rotate().rotate(), rect);
+    }
+
+    #[test]
+    fn swapping_x_and_y_keeps_the_size() {
+        let rect = Rect::new(10, 20, 160, 8);
+        assert_eq!(rect.swap_xy(), Rect::new(20, 10, 160, 8));
+        assert_eq!(rect.swap_xy().rotate(), Rect::new(20, 10, 8, 160));
+    }
+
+    #[test]
+    fn a_rect_within_an_area_moves_by_its_top_left() {
+        let area = Rect::new(10, 18, 448, 45);
+        assert_eq!(
+            Rect::new(182, 0, 146, 45).within(area),
+            Rect::new(192, 18, 146, 45)
+        );
     }
 
     #[test]

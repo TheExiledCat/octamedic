@@ -1,5 +1,7 @@
 use std::fmt::Display;
 
+use octamedic_util::base32;
+
 use crate::utility::{
     bytes::{Byte, Offset, UByte, ULong, UWord, Word, bit_flag},
     note,
@@ -15,11 +17,37 @@ pub const SONG_TRACKS: usize = 16;
 /// Most tracks an MMD1 block can have.
 pub const MAX_TRACKS: usize = 64;
 
+pub const MMD0_ID: u32 = u32::from_be_bytes(*b"MMD0");
+pub const MMD1_ID: u32 = u32::from_be_bytes(*b"MMD1");
+pub const MMD2_ID: u32 = u32::from_be_bytes(*b"MMD2");
+pub const MMD3_ID: u32 = u32::from_be_bytes(*b"MMD3");
+
+pub const SEQUENCE_LENGTH: usize = 256;
+
+pub const PALETTE_COLORS: usize = 8;
+
+pub const AMIGA_CHANNELS: usize = 4;
+
+/// How long an instrument's name usually is, without its closing NUL.
+pub const INSTRUMENT_NAME_LENGTH: usize = 40;
+
+// unused space in the structures, kept so they're written back the same
+pub const HEADER_RESERVED: usize = 3;
+pub const BLOCK_INFO_RESERVED: usize = 5;
+pub const EXPANSION_RESERVED: usize = 3;
+
+pub const NOTATION_SELECTED_TRACK_WORDS: usize = 5;
+
 pub enum OctamedMMDType {
     MMD0,
     MMD1,
     MMD2,
     MMD3,
+}
+
+impl OctamedMMD0Header {
+    /// Bytes in the file.
+    pub const SIZE: usize = 52;
 }
 
 pub struct OctamedMMD0Header {
@@ -30,7 +58,7 @@ pub struct OctamedMMD0Header {
     pub player_sequence: UWord,
     pub block_array_ptr: Offset,
     pub flags: OctamedMMD0HeaderFlags,
-    pub reserved: [UByte; 3],
+    pub reserved: [UByte; HEADER_RESERVED],
     pub sample_array_ptr: Offset,
     pub reserved2: ULong,
     pub expansion_data_ptr: Offset,
@@ -97,10 +125,10 @@ impl OctamedMMD {
     /// `None` for a module built in memory with an unknown id; parsed modules always have one.
     pub fn get_type(&self) -> Option<OctamedMMDType> {
         return match self.header.id.0 {
-            0x4d4d4430 => Some(OctamedMMDType::MMD0),
-            0x4d4d4431 => Some(OctamedMMDType::MMD1),
-            0x4d4d4432 => Some(OctamedMMDType::MMD2),
-            0x4d4d4433 => Some(OctamedMMDType::MMD3),
+            MMD0_ID => Some(OctamedMMDType::MMD0),
+            MMD1_ID => Some(OctamedMMDType::MMD1),
+            MMD2_ID => Some(OctamedMMDType::MMD2),
+            MMD3_ID => Some(OctamedMMDType::MMD3),
             _ => None,
         };
     }
@@ -110,7 +138,7 @@ pub struct OctamedMMD0Song {
     pub samples: [OctamedMMD0Sample; MAX_INSTRUMENTS],
     pub block_count: UWord,
     pub song_length: UWord,
-    pub player_sequence_list: [UByte; 256],
+    pub player_sequence_list: [UByte; SEQUENCE_LENGTH],
     pub primary_tempo: UWord,
     pub global_transpose: Byte,
     pub flags: OctamedMMD0SongFlags,
@@ -121,6 +149,9 @@ pub struct OctamedMMD0Song {
 }
 
 impl OctamedMMD0Song {
+    /// Bytes in the file.
+    pub const SIZE: usize = 788;
+
     pub fn get_tempo(&self) -> OctamedTempo {
         return OctamedTempo::from_song(self);
     }
@@ -167,6 +198,9 @@ pub struct OctamedMMD0Sample {
 }
 
 impl OctamedMMD0Sample {
+    /// Bytes in the file: repeat and repeat length, MIDI channel and preset, volume, transpose.
+    pub const SIZE: usize = 8;
+
     pub fn new() -> Self {
         return Self {
             repeat: UWord(0),
@@ -217,6 +251,12 @@ pub struct OctamedMMDTrackLine {
 }
 
 impl OctamedMMDTrackLine {
+    /// Bytes a track takes on a line: note, instrument and command packed in 3 in MMD0, and a
+    /// byte each in MMD1.
+    pub const MMD0_SIZE: usize = 3;
+
+    pub const MMD1_SIZE: usize = 4;
+
     pub const BLOCK_LINE_COMMAND_NUMBER_MASK_MMD0: u8 = 0x0f;
 
     pub const BLOCK_LINE_NOTE_NUMBER_MASK_MMD0: u8 = 0x3f;
@@ -225,12 +265,19 @@ impl OctamedMMDTrackLine {
 
     pub const BLOCK_LINE_NOTE_NUMBER_MASK_MMD1: u8 = 0x7f;
 
+    /// In MMD0, the note takes byte 1's low 6 bits, and the instrument's high bits the rest.
+    pub const MMD0_NOTE_BITS: u32 = 6;
+
+    /// In MMD0, the instrument's low bits take byte 2's high 4.
+    pub const MMD0_INSTRUMENT_LOW_BITS: u32 = 4;
+
     pub fn from_bytes_mmd0(byte1: UByte, byte2: UByte, byte3: UByte) -> Self {
         let command_value = byte3;
         let command_number = UByte(byte2.0 & Self::BLOCK_LINE_COMMAND_NUMBER_MASK_MMD0);
         let note_number = UByte(byte1.0 & Self::BLOCK_LINE_NOTE_NUMBER_MASK_MMD0);
-        let xy = (byte1.0 >> 6) << 4; // leftmost 2 bits of byte 1 need to be prepended to byte 2 to get the value for the instrument number
-        let iiii = byte2.0 >> 4;
+        // leftmost 2 bits of byte 1 need to be prepended to byte 2 to get the value for the instrument number
+        let xy = (byte1.0 >> Self::MMD0_NOTE_BITS) << Self::MMD0_INSTRUMENT_LOW_BITS;
+        let iiii = byte2.0 >> Self::MMD0_INSTRUMENT_LOW_BITS;
         let instrument_number = UByte(xy | iiii);
         return Self {
             note_number,
@@ -272,47 +319,12 @@ trait AsInstrumentString {
 }
 
 impl AsInstrumentString for UByte {
+    /// Two base-32 digits with a space for a leading zero, as OctaMED shows instruments.
     fn as_inst_string(&self) -> String {
-        let val = self.0;
-        let ascii_start = 65;
-        let mut text = String::with_capacity(2);
-        match val {
-            0..=31 => {
-                text.push(' ');
-                if val < 10 {
-                    text.push(
-                        *val.to_string()
-                            .chars()
-                            .collect::<Vec<char>>()
-                            .first()
-                            .unwrap(),
-                    );
-                } else {
-                    let index = val - 10;
-                    let c = char::from_u32((ascii_start as u32) + (index as u32)).unwrap();
-                    text.push(c);
-                }
-            }
-            32..=63 => {
-                text.push('1');
-                let val = val - 31;
-                if val < 10 {
-                    text.push(
-                        *val.to_string()
-                            .chars()
-                            .collect::<Vec<char>>()
-                            .first()
-                            .unwrap(),
-                    );
-                } else {
-                    let index = val - 10;
-                    let c = char::from_u32((ascii_start as u32) + (index as u32)).unwrap();
-                    text.push(c);
-                }
-            }
-            _ => text.push_str("??"),
+        if self.0 as usize > MAX_INSTRUMENTS {
+            return "??".to_owned();
         }
-        return text;
+        return base32::format(self.0 as u32, 2, ' ');
     }
 }
 
@@ -339,7 +351,7 @@ pub struct OctamedMMD1BlockInfoHeader {
     pub block_name_string_ptr: Offset,
     pub block_name_length: ULong,
     pub page_table_ptr: Offset,
-    pub reserved: [ULong; 5],
+    pub reserved: [ULong; BLOCK_INFO_RESERVED],
 }
 
 //todo
@@ -445,6 +457,11 @@ pub struct OctamedMMD0Expansion {
     pub mmd_midi_commands: OctamedMMD0MidiCommands,
 }
 
+impl OctamedMMD0ExpansionHeader {
+    /// Bytes in the file.
+    pub const SIZE: usize = 84;
+}
+
 pub struct OctamedMMD0ExpansionHeader {
     pub next_module_ptr: Offset,
     pub expanded_instruments_array_ptr: Offset,
@@ -457,7 +474,7 @@ pub struct OctamedMMD0ExpansionHeader {
     pub instrument_info_struct_size: UWord,
     pub jump_mask: ULong,      // obsolete
     pub rgb_table_ptr: Offset, // 8 uword array pointer
-    pub channel_split: [UByte; 4],
+    pub channel_split: [UByte; AMIGA_CHANNELS],
     pub notation_info_ptr: Offset,
     pub song_name_char_array_ptr: Offset,
     pub song_name_length: ULong,
@@ -465,7 +482,7 @@ pub struct OctamedMMD0ExpansionHeader {
     pub mmd_info_ptr: Offset,
     pub mmd_rexx_ptr: Offset,
     pub mmd_midi_commands_ptr: Offset,
-    pub reserved: [ULong; 3],
+    pub reserved: [ULong; EXPANSION_RESERVED],
     pub tag_end: ULong,
 }
 
@@ -500,12 +517,12 @@ pub struct OctamedMMD0InstrumentInfo {
 }
 
 pub struct OctamedMMD0ColorPallete {
-    pub colors: [OctamedMMD0Color; 8],
+    pub colors: [OctamedMMD0Color; PALETTE_COLORS],
 }
 
 impl OctamedMMD0ColorPallete {
-    pub fn from_bytes(bytes: [UWord; 8]) -> Self {
-        let mut colors = [OctamedMMD0Color { value: UWord(0) }; 8];
+    pub fn from_bytes(bytes: [UWord; PALETTE_COLORS]) -> Self {
+        let mut colors = [OctamedMMD0Color { value: UWord(0) }; PALETTE_COLORS];
         for i in 0..bytes.len() {
             colors[i] = OctamedMMD0Color { value: bytes[i] };
         }
@@ -519,22 +536,35 @@ pub struct OctamedMMD0Color {
 }
 
 impl OctamedMMD0Color {
-    const R_MASK: u16 = 0x0f00;
+    /// The bits a colour uses: 4 each for red, green and blue.
+    pub const MASK: u16 = 0x0fff;
 
-    const G_MASK: u16 = 0x00f0;
+    const R_SHIFT: u32 = 8;
 
-    const B_MASK: u16 = 0x000f;
+    const G_SHIFT: u32 = 4;
+
+    const B_SHIFT: u32 = 0;
+
+    const CHANNEL_MAX: u16 = 0xf;
 
     /// The rgb values in in half byte accuracy, where 0 = 0 and 15 = 255 / lowest - maximum brightness
     pub fn as_rgb_4(&self) -> (UByte, UByte, UByte) {
-        let r = (self.value.0 & Self::R_MASK) >> 8;
-        let g = (self.value.0 & Self::G_MASK) >> 4;
-        let b = self.value.0 & Self::B_MASK;
-        return (
-            UByte(((r * 255) / 15) as u8),
-            UByte(((g * 255) / 15) as u8),
-            UByte(((b * 255) / 15) as u8),
-        );
+        let [r, g, b] = Self::rgb(self.value.0);
+        return (UByte(r), UByte(g), UByte(b));
+    }
+
+    /// An Amiga colour word as 8-bit red, green and blue, with each 4-bit channel stretched
+    /// to the full range.
+    pub fn rgb(color: u16) -> [u8; 3] {
+        let channel = |shift: u32| {
+            let level = (color >> shift) & Self::CHANNEL_MAX;
+            (level * u8::MAX as u16 / Self::CHANNEL_MAX) as u8
+        };
+        return [
+            channel(Self::R_SHIFT),
+            channel(Self::G_SHIFT),
+            channel(Self::B_SHIFT),
+        ];
     }
 }
 
@@ -542,7 +572,7 @@ impl OctamedMMD0Color {
 pub struct OctamedMMD0NotationInfo {
     pub sharp_count: UByte,
     pub flags: UByte,
-    pub selected_tracks: [UWord; 5],
+    pub selected_tracks: [UWord; NOTATION_SELECTED_TRACK_WORDS],
     pub shown_tracks: [UByte; SONG_TRACKS],
     pub ghosted_tracks: [UByte; SONG_TRACKS],
     pub note_transposes: [Byte; MAX_INSTRUMENTS],
@@ -554,7 +584,7 @@ impl OctamedMMD0NotationInfo {
         return Self {
             sharp_count: UByte(0),
             flags: UByte(0),
-            selected_tracks: [UWord(0); 5],
+            selected_tracks: [UWord(0); NOTATION_SELECTED_TRACK_WORDS],
             shown_tracks: [UByte(0); SONG_TRACKS],
             ghosted_tracks: [UByte(0); SONG_TRACKS],
             note_transposes: [Byte(0); MAX_INSTRUMENTS],

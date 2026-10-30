@@ -1,4 +1,6 @@
-use octamedic_util::{core_extensions::Boxed, primitives::Flip};
+use std::rc::Rc;
+
+use octamedic_util::primitives::Flip;
 
 use crate::{
     app::state::AppState,
@@ -24,9 +26,9 @@ pub struct ButtonClick {
 }
 
 /// What a button runs when it's clicked: any closure taking the state and the click.
-pub trait ButtonHandler: FnMut(&mut AppState, ButtonClick) + 'static {}
+pub trait ButtonHandler: Fn(&mut AppState, ButtonClick) + 'static {}
 
-impl<F: FnMut(&mut AppState, ButtonClick) + 'static> ButtonHandler for F {}
+impl<F: Fn(&mut AppState, ButtonClick) + 'static> ButtonHandler for F {}
 
 /// Where a button's content goes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -136,9 +138,11 @@ impl Triangle {
         };
     }
 
-    /// The size of OctaMED's arrows, 6 pixels by 5 lines.
+    const ARROW_WIDTH: i32 = 6;
+    const ARROW_HEIGHT: i32 = 5;
+
     pub fn arrow(direction: Direction) -> Self {
-        return Self::new(direction, 6, 5);
+        return Self::new(direction, Self::ARROW_WIDTH, Self::ARROW_HEIGHT);
     }
 
     /// In the middle of the inside of the frame, rounding right and down.
@@ -159,11 +163,12 @@ impl ButtonContent for Triangle {
 }
 
 /// A gadget showing a label or anything else that's `ButtonContent`, which changes the state
-/// when clicked.
+/// when clicked. A clone shares the original's content and handler.
+#[derive(Clone)]
 pub struct Button {
-    content: Box<dyn ButtonContent>,
+    content: Rc<dyn ButtonContent>,
     clickable: Clickable,
-    on_click: Option<Box<dyn ButtonHandler>>,
+    on_click: Option<Rc<dyn ButtonHandler>>,
     /// Drawn inverted, like OctaMED's buttons that are switched on.
     toggled: bool,
     /// The frame's thickness, as `Painter::frame` takes it.
@@ -176,12 +181,14 @@ pub struct Button {
     bold: bool,
     /// Where the button was last rendered.
     area: Rect,
+    /// The last click, until `clicked` takes it.
+    click: Option<ButtonClick>,
 }
 
 impl Button {
     pub fn new(content: impl ButtonContent + 'static) -> Self {
         return Self {
-            content: content.boxed(),
+            content: Rc::new(content),
             clickable: Clickable::default(),
             on_click: None,
             toggled: false,
@@ -191,11 +198,18 @@ impl Button {
             font: Font::Topaz,
             bold: false,
             area: Rect::default(),
+            click: None,
         };
     }
 
+    /// The click since this was last called, if there was one. The widget that owns the button
+    /// can check this after passing it events, instead of giving it a handler.
+    pub fn clicked(&mut self) -> Option<ButtonClick> {
+        return self.click.take();
+    }
+
     pub fn on_click(mut self, handler: impl ButtonHandler) -> Self {
-        self.on_click = Some(handler.boxed());
+        self.on_click = Some(Rc::new(handler));
         return self;
     }
 
@@ -214,7 +228,6 @@ impl Button {
         return self;
     }
 
-    /// Draws a label in bold.
     pub fn bold(mut self) -> Self {
         self.bold = true;
         return self;
@@ -243,7 +256,7 @@ impl Button {
     }
 
     pub fn set_content(&mut self, content: impl ButtonContent + 'static) {
-        self.content = content.boxed();
+        self.content = Rc::new(content);
     }
 
     pub fn set_text(&mut self, text: impl Into<String>) {
@@ -280,8 +293,10 @@ impl OctamedicWidget for Button {
         let click = self.clickable.handle(event);
         if let Click::Clicked { button, pos } = click {
             let char_index = self.content.index_at(self.content_area(self.area), pos);
-            if let Some(handler) = &mut self.on_click {
-                handler(state, ButtonClick { button, char_index });
+            let click = ButtonClick { button, char_index };
+            self.click = Some(click);
+            if let Some(handler) = &self.on_click {
+                handler(state, click);
             }
         }
         return click.handled();
@@ -357,6 +372,26 @@ mod tests {
         let left = Button::new("").align(Align::Left);
         let name = place(left, Rect::new(0, 0, 40, 11), "BreakBeat");
         assert_eq!(name, ("Brea".to_string(), 3));
+    }
+
+    #[test]
+    fn a_click_is_kept_until_it_is_taken() {
+        let mut button = next_button(|_, _| {});
+        assert_eq!(button.clicked(), None);
+        click(&mut button, &mut state(), [5, 5]);
+        let clicked = button.clicked().unwrap();
+        assert_eq!(clicked.button, MouseButton::Left);
+        assert_eq!(clicked.char_index, Some(0));
+        assert_eq!(button.clicked(), None);
+    }
+
+    #[test]
+    fn a_clone_runs_the_same_handler() {
+        let mut state = state();
+        let template = next_button(|state, _| state.next_pattern());
+        let mut copy = template.clone();
+        click(&mut copy, &mut state, [5, 5]);
+        assert_eq!(state.active_pattern.0, 1);
     }
 
     #[test]

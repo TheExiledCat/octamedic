@@ -13,6 +13,19 @@ use crate::data::{instrument::MAX_INSTRUMENT_VOLUME, pattern::PatternId, song::O
 // frames rendered per step; also the most silence a recording can end with
 const CHUNK_FRAMES: usize = 256;
 
+const DEFAULT_SAMPLE_RATE: u32 = 44_100;
+
+/// The longest a recording runs by default, so a song that loops forever still ends.
+const DEFAULT_MAX_DURATION: Duration = Duration::from_secs(30 * 60);
+
+// a wav file: the RIFF header, then the format chunk and the data chunk
+const WAV_HEADER_SIZE: usize = 44;
+/// What the RIFF size leaves out: the "RIFF" tag and the size itself.
+const RIFF_HEADER_SIZE: usize = 8;
+const FORMAT_CHUNK_SIZE: u32 = 16;
+const PCM_FORMAT: u16 = 1;
+const BITS_PER_SAMPLE: u16 = 16;
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum RecordError {
     NoSuchSequenceIndex(usize),
@@ -43,9 +56,9 @@ pub struct Recorder {
 impl Default for Recorder {
     fn default() -> Self {
         return Self {
-            sample_rate: 44100,
+            sample_rate: DEFAULT_SAMPLE_RATE,
             output_volume: MAX_INSTRUMENT_VOLUME,
-            max_duration: Duration::from_secs(30 * 60),
+            max_duration: DEFAULT_MAX_DURATION,
         };
     }
 }
@@ -140,20 +153,19 @@ impl Recording {
     pub fn to_wav_bytes(&self) -> Vec<u8> {
         let data = self.to_pcm16_bytes();
         let channels: u16 = 1;
-        let bits_per_sample: u16 = 16;
-        let block_align = channels * bits_per_sample / 8;
-        let mut wav = Vec::with_capacity(44 + data.len());
+        let block_align = channels * BITS_PER_SAMPLE / u8::BITS as u16;
+        let mut wav = Vec::with_capacity(WAV_HEADER_SIZE + data.len());
         wav.extend_from_slice(b"RIFF");
-        wav.extend_from_slice(&(36 + data.len() as u32).to_le_bytes());
+        let riff_size = WAV_HEADER_SIZE - RIFF_HEADER_SIZE + data.len();
+        wav.extend_from_slice(&(riff_size as u32).to_le_bytes());
         wav.extend_from_slice(b"WAVEfmt ");
-        wav.extend_from_slice(&16u32.to_le_bytes());
-        // 1 = uncompressed PCM
-        wav.extend_from_slice(&1u16.to_le_bytes());
+        wav.extend_from_slice(&FORMAT_CHUNK_SIZE.to_le_bytes());
+        wav.extend_from_slice(&PCM_FORMAT.to_le_bytes());
         wav.extend_from_slice(&channels.to_le_bytes());
         wav.extend_from_slice(&self.sample_rate.to_le_bytes());
         wav.extend_from_slice(&(self.sample_rate * block_align as u32).to_le_bytes());
         wav.extend_from_slice(&block_align.to_le_bytes());
-        wav.extend_from_slice(&bits_per_sample.to_le_bytes());
+        wav.extend_from_slice(&BITS_PER_SAMPLE.to_le_bytes());
         wav.extend_from_slice(b"data");
         wav.extend_from_slice(&(data.len() as u32).to_le_bytes());
         wav.extend_from_slice(&data);
