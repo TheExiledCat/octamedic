@@ -16,7 +16,7 @@ use crate::{
     },
 };
 
-/// The boxes from left to right, in pixels; they fill the row but for its last pixel.
+// left to right; they leave the row's last pixel empty
 const WIDTHS: [i32; 12] = [84, 68, 22, 14, 22, 35, 56, 20, 237, 13, 13, 49];
 
 // the boxes, by position in `WIDTHS`
@@ -32,13 +32,10 @@ const PREVIOUS_SONG: usize = 9;
 const NEXT_SONG: usize = 10;
 const SONG: usize = 11;
 
-/// The gauge's small boxes, one per track, 7 pixels by 6 lines each. They start a line above
-/// the rest of the row.
+// one small box per track; the gauge starts a line above the rest of the row
 const GAUGE_COLUMNS: usize = 8;
 const GAUGE_ROWS: usize = 2;
 
-/// A row of boxes under the header's widgets: where the song is, the block, the instrument and
-/// the song number.
 pub struct StatusBar {
     boxes: Vec<Button>,
     gauge: Grid<GaugeBox>,
@@ -62,7 +59,7 @@ impl StatusBar {
                 if after >= song_length { before } else { after }
             };
             // the position's last two digits step it by 10 and by 1
-            state.set_sequence(match click.char_index.as_ref().map(|i| *i).unwrap_or(0) {
+            state.set_sequence(match click.char_index.unwrap_or(0) {
                 2 => reset_out_of_bounds(
                     position,
                     position.saturating_add_signed(delta as isize * 10),
@@ -72,7 +69,6 @@ impl StatusBar {
             });
         });
         boxes[BLOCK].set_on_click(|state, click| {
-            // what clicking each digit of the block number adds or takes away
             const DIGIT_STEPS: [usize; 3] = [100, 10, 1];
             let Some(step) = click.char_index.and_then(|index| DIGIT_STEPS.get(index)) else {
                 return;
@@ -101,7 +97,7 @@ impl StatusBar {
             (SP, "SP", 2, None),
             (CHRD, "CHRD", 2, None),
         ];
-        // the flags are in short capitals, a few pixels further in than the numbers
+        // the flags are in small capitals, set further in than the numbers
         for (index, label, padding, handler) in flags {
             let mut button = Button::new(label)
                 .align(Align::Left)
@@ -209,7 +205,6 @@ impl OctamedicWidget for StatusBar {
     }
 }
 
-/// One of the gauge's small boxes.
 struct GaugeBox;
 
 impl OctamedicWidget for GaugeBox {

@@ -10,7 +10,6 @@ use octamedic_core::{
 
 use crate::commands::repl::{Command, CommandError, CommandResult};
 
-/// How long the engine gets to start playing before its status is read.
 const START_WAIT: Duration = Duration::from_millis(100);
 
 const POLL_INTERVAL: Duration = Duration::from_millis(5);
@@ -55,6 +54,6 @@ impl Command for PlayCommand {
     }
 }
 
-pub(crate) fn zero_to_64(text: &str) -> Result<u8, String> {
+pub fn zero_to_64(text: &str) -> Result<u8, String> {
     return number_range(text, 0, MAX_VOLUME);
 }

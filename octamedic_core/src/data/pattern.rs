@@ -1,6 +1,4 @@
 pub use octamed::mmd::module::MAX_TRACKS;
-
-pub const DEFAULT_LINES: usize = 64;
 use octamed::{
     mmd::module::{OctamedMMD0Block, OctamedMMD0BlockLine, OctamedMMD1Block},
     utility::bytes::{UByte, ValueMap},
@@ -9,6 +7,8 @@ use octamed::{
 use crate::data::{
     command::CommandId, instrument::InstrumentId, note::OctamedicNote, track_count::TrackCount,
 };
+
+pub const DEFAULT_LINES: usize = 64;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PatternId(pub u8);
@@ -35,6 +35,23 @@ impl OctamedicPattern {
         };
     }
 
+    pub fn line_count(&self) -> usize {
+        return self.lines.len();
+    }
+
+    /// Every line has the same number of tracks.
+    pub fn track_count(&self) -> usize {
+        return self.lines.first().map_or(0, |line| line.tracks.len());
+    }
+
+    pub fn track(&self, line: usize, track: usize) -> Option<&OctamedicPatternTrack> {
+        return self.lines.get(line)?.tracks.get(track);
+    }
+
+    pub fn track_mut(&mut self, line: usize, track: usize) -> Option<&mut OctamedicPatternTrack> {
+        return self.lines.get_mut(line)?.tracks.get_mut(track);
+    }
+
     fn from_octamed(lines: &[OctamedMMD0BlockLine]) -> Self {
         let lines = lines
             .iter()
@@ -52,23 +69,6 @@ impl OctamedicPattern {
             })
             .collect();
         return Self { lines };
-    }
-
-    pub fn line_count(&self) -> usize {
-        return self.lines.len();
-    }
-
-    /// Every line has the same number of tracks.
-    pub fn track_count(&self) -> usize {
-        return self.lines.first().map_or(0, |line| line.tracks.len());
-    }
-
-    pub fn track(&self, line: usize, track: usize) -> Option<&OctamedicPatternTrack> {
-        return self.lines.get(line)?.tracks.get(track);
-    }
-
-    pub fn track_mut(&mut self, line: usize, track: usize) -> Option<&mut OctamedicPatternTrack> {
-        return self.lines.get_mut(line)?.tracks.get_mut(track);
     }
 }
 
@@ -96,7 +96,7 @@ pub struct OctamedicPatternLine {
 }
 
 impl OctamedicPatternLine {
-    pub(crate) fn new(track_count: usize) -> Self {
+    fn new(track_count: usize) -> Self {
         return OctamedicPatternLine {
             tracks: vec![OctamedicPatternTrack::new(); track_count],
         };

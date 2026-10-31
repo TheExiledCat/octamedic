@@ -1,14 +1,28 @@
-use std::sync::{Arc, LazyLock};
+use std::{
+    array,
+    sync::{
+        Arc, LazyLock,
+        atomic::{AtomicI8, AtomicUsize, Ordering},
+    },
+};
 
 use crate::{amiga::clock::AmigaClock, data::instrument::OctamedicSample};
 
-/// So four tracks at full volume fill the output.
-const VOICE_GAIN: f32 = 0.25;
+/// So four tracks at full volume fill a mono output.
+const MONO_GAIN: f32 = 0.25;
+
+/// Two tracks a side, so they fill it.
+const STEREO_GAIN: f32 = 0.5;
 
 /// An 8-bit sample at volume 64.
 const VOICE_FULL_SCALE: f32 = 128.0 * 64.0;
 
 const MAX_VOLUME: u8 = 64;
+
+pub const SCOPE_CHANNELS: usize = 4;
+
+/// Output frames each scope keeps.
+pub const SCOPE_LENGTH: usize = 512;
 
 /// What a channel plays to stay silent with DMA on, like after a one-shot sample.
 pub static SILENCE: LazyLock<Arc<OctamedicSample>> = LazyLock::new(|| {
@@ -36,6 +50,36 @@ pub enum PaulaWrite {
     /// Starts the range last written.
     DmaOn,
     DmaOff,
+}
+
+/// The last `SCOPE_LENGTH` frames of Paula's four hardware channels, scaled by their volume. The
+/// audio thread writes it while the UI reads, so a read during a render can show part of the
+/// newest buffer at the front.
+pub struct Scopes {
+    samples: [[AtomicI8; SCOPE_LENGTH]; SCOPE_CHANNELS],
+    next: AtomicUsize,
+}
+
+impl Scopes {
+    /// Oldest first.
+    pub fn read(&self, channel: usize) -> [i8; SCOPE_LENGTH] {
+        let next = self.next.load(Ordering::Relaxed);
+        let samples = &self.samples[channel];
+        return array::from_fn(|i| samples[(next + i) % SCOPE_LENGTH].load(Ordering::Relaxed));
+    }
+
+    fn write(&self, channel: usize, at: usize, value: i8) {
+        self.samples[channel][at % SCOPE_LENGTH].store(value, Ordering::Relaxed);
+    }
+}
+
+impl Default for Scopes {
+    fn default() -> Self {
+        return Self {
+            samples: array::from_fn(|_| array::from_fn(|_| AtomicI8::new(0))),
+            next: AtomicUsize::new(0),
+        };
+    }
 }
 
 /// Turns Paula writes into audio.
@@ -137,19 +181,27 @@ impl Channel {
     }
 }
 
-/// Paula's own channels, for songs of up to 4 channels.
+/// One channel per track. The real Paula has four, which OctaMED mixes extra tracks onto in
+/// software; that isn't emulated, so every track gets its own here.
 pub struct PaulaRenderer {
     sample_rate: u32,
     clock: AmigaClock,
     channels: Vec<Channel>,
+    scopes: Arc<Scopes>,
 }
 
 impl PaulaRenderer {
-    pub fn new(sample_rate: u32, clock: AmigaClock, channel_count: usize) -> Self {
+    pub fn new(
+        sample_rate: u32,
+        clock: AmigaClock,
+        channel_count: usize,
+        scopes: Arc<Scopes>,
+    ) -> Self {
         return Self {
             sample_rate,
             clock,
             channels: (0..channel_count).map(|_| Channel::default()).collect(),
+            scopes,
         };
     }
 }
@@ -162,20 +214,44 @@ impl Renderer for PaulaRenderer {
     }
 
     fn render(&mut self, out: &mut [f32], channels: usize) {
-        for channel in &mut self.channels {
+        let frames = out.len() / channels;
+        let start = self.scopes.next.load(Ordering::Relaxed);
+        for (index, channel) in self.channels.iter_mut().enumerate() {
+            let scope = (index < SCOPE_CHANNELS).then_some(index);
             if channel.playing.is_none() || channel.period == 0 {
+                if let Some(scope) = scope {
+                    (0..frames).for_each(|i| self.scopes.write(scope, start + i, 0));
+                }
                 continue;
             }
             let rate = self.clock.paula_clock as f64 / channel.period as f64;
             let step = rate / self.sample_rate as f64;
-            for frame in out.chunks_exact_mut(channels) {
-                let Some(value) = channel.next(step) else {
-                    break;
-                };
-                let value = value / VOICE_FULL_SCALE * VOICE_GAIN;
-                frame.iter_mut().for_each(|sample| *sample += value);
+            for (i, frame) in out.chunks_exact_mut(channels).enumerate() {
+                // only `None` when not playing, which can't change mid-render
+                let value = channel.next(step).unwrap_or(0.0);
+                if let Some(scope) = scope {
+                    // back to an 8-bit sample, scaled by the volume
+                    let level = (value / MAX_VOLUME as f32).round() as i8;
+                    self.scopes.write(scope, start + i, level);
+                }
+                mix(frame, index, value / VOICE_FULL_SCALE);
             }
         }
+        let next = (start + frames) % SCOPE_LENGTH;
+        self.scopes.next.store(next, Ordering::Relaxed);
+    }
+}
+
+// Paula plays channels 0 and 3 on the left and 1 and 2 on the right; tracks past 4 repeat that.
+// Outputs past the first two get nothing.
+fn mix(frame: &mut [f32], channel: usize, value: f32) {
+    match frame {
+        [mono] => *mono += value * MONO_GAIN,
+        [left, right, ..] => match channel % 4 {
+            0 | 3 => *left += value * STEREO_GAIN,
+            _ => *right += value * STEREO_GAIN,
+        },
+        [] => {}
     }
 }
 
@@ -183,7 +259,7 @@ impl Renderer for PaulaRenderer {
 mod tests {
     use super::*;
 
-    const FULL: f32 = 127.0 * 64.0 / VOICE_FULL_SCALE * VOICE_GAIN;
+    const FULL: f32 = 127.0 * 64.0 / VOICE_FULL_SCALE * MONO_GAIN;
 
     /// A period of 5 plays one byte per frame.
     const SAMPLE_RATE: u32 = AmigaClock::PAL.paula_clock / 5;
@@ -226,7 +302,67 @@ mod tests {
     }
 
     fn renderer() -> PaulaRenderer {
-        return PaulaRenderer::new(SAMPLE_RATE, AmigaClock::PAL, 4);
+        return PaulaRenderer::new(SAMPLE_RATE, AmigaClock::PAL, 4, Arc::default());
+    }
+
+    #[test]
+    fn channels_0_and_3_play_left_and_1_and_2_right() {
+        let mut renderer = renderer();
+        let data = sample(vec![127; 4]);
+        for channel in 0..4 {
+            renderer.write(channel, range(&data, 0, 4));
+            renderer.write(channel, PaulaWrite::Period(5));
+            renderer.write(channel, PaulaWrite::Volume(64));
+            renderer.write(channel, PaulaWrite::DmaOn);
+            let mut out = vec![0.0; 2];
+            renderer.render(&mut out, 2);
+            let side = if matches!(channel, 0 | 3) { 0 } else { 1 };
+            assert!(
+                out[side] > 0.0 && out[1 - side] == 0.0,
+                "{channel}: {out:?}"
+            );
+            renderer.write(channel, PaulaWrite::DmaOff);
+        }
+    }
+
+    #[test]
+    fn a_full_side_fills_its_output() {
+        let mut renderer = renderer();
+        let data = sample(vec![127; 4]);
+        for channel in [0, 3] {
+            renderer.write(channel, range(&data, 0, 4));
+            renderer.write(channel, PaulaWrite::Period(5));
+            renderer.write(channel, PaulaWrite::Volume(64));
+            renderer.write(channel, PaulaWrite::DmaOn);
+        }
+        let mut out = vec![0.0; 2];
+        renderer.render(&mut out, 2);
+        assert_near(&out, &[127.0 / 128.0, 0.0]);
+    }
+
+    #[test]
+    fn scopes_keep_each_channels_last_frames_oldest_first() {
+        let scopes = Arc::new(Scopes::default());
+        let mut renderer = PaulaRenderer::new(SAMPLE_RATE, AmigaClock::PAL, 4, scopes.clone());
+        let data = sample(vec![10, 20, 30, 40]);
+        play(&mut renderer, range(&data, 0, 4), 5, range(&data, 0, 4));
+        render(&mut renderer, SCOPE_LENGTH + 2);
+        let scope = scopes.read(0);
+        assert_eq!(scope[..4], [30, 40, 10, 20]);
+        assert_eq!(scope[SCOPE_LENGTH - 2..], [10, 20]);
+        assert!(scopes.read(1).iter().all(|&sample| sample == 0));
+    }
+
+    #[test]
+    fn a_stopped_channel_scopes_silence() {
+        let scopes = Arc::new(Scopes::default());
+        let mut renderer = PaulaRenderer::new(SAMPLE_RATE, AmigaClock::PAL, 4, scopes.clone());
+        let data = sample(vec![100; 4]);
+        play(&mut renderer, range(&data, 0, 4), 5, range(&data, 0, 4));
+        render(&mut renderer, 8);
+        renderer.write(0, PaulaWrite::DmaOff);
+        render(&mut renderer, SCOPE_LENGTH);
+        assert!(scopes.read(0).iter().all(|&sample| sample == 0));
     }
 
     #[test]
@@ -324,16 +460,6 @@ mod tests {
         assert_near(&render(&mut renderer, 1), &[FULL / 2.0]);
         renderer.write(0, PaulaWrite::Volume(200));
         assert_near(&render(&mut renderer, 1), &[FULL]);
-    }
-
-    #[test]
-    fn every_output_channel_gets_the_voice() {
-        let mut renderer = renderer();
-        let data = sample(vec![127]);
-        play(&mut renderer, range(&data, 0, 1), 5, range(&data, 0, 1));
-        let mut out = [0.0; 2];
-        renderer.render(&mut out, 2);
-        assert_near(&out, &[FULL, FULL]);
     }
 
     #[test]

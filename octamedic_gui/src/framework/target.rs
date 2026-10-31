@@ -7,7 +7,6 @@ pub struct Color {
     pub r: u8,
     pub g: u8,
     pub b: u8,
-    /// 0 is fully transparent, `OPAQUE` is fully solid.
     pub a: u8,
 }
 
@@ -24,28 +23,23 @@ impl Color {
     }
 }
 
-/// Something a `Painter` can draw on, such as a ggez canvas or a framebuffer. Coordinates are in
-/// screen pixels.
+/// Coordinates are in screen pixels.
 pub trait RenderTarget {
-    /// Fills `rect` with `color`. A color with an alpha below `Color::OPAQUE` is blended with
-    /// what's already there. Pixels outside the clip rect are left alone.
+    /// Translucent colors blend with what's there.
     fn fill(&mut self, rect: Rect, color: Color);
 
-    /// The area drawing is currently limited to.
     fn get_clip(&self) -> Rect;
 
-    /// Limits drawing to the part of `rect` on the target. Returns false if none of it is, in
-    /// which case the clip is not changed.
+    /// Clips to the part of `rect` on the target. Returns false, leaving the clip alone, if
+    /// none of it is.
     fn set_clip(&mut self, rect: Rect) -> bool;
 }
 
-/// A ggez canvas whose fills are drawn together, in one instanced draw for each clip rect. The
-/// canvas doesn't batch its own draws, and a frame's text alone is thousands of fills, one for
-/// each run of a glyph's pixels. What's left is drawn when this is dropped.
+/// Batches fills into one instanced draw per clip rect, since ggez doesn't batch and a frame's
+/// text alone is thousands of fills. Flushes on drop.
 pub struct BatchedCanvas<'a> {
     gfx: &'a GraphicsContext,
     canvas: &'a mut Canvas,
-    /// The canvas's image, which a clip rect is cut to.
     bounds: Rect,
     fills: InstanceArray,
 }
@@ -61,7 +55,6 @@ impl<'a> BatchedCanvas<'a> {
         };
     }
 
-    /// Draws the fills so far, in the clip rect they were made in.
     fn flush(&mut self) {
         if self.fills.instances().is_empty() {
             return;
@@ -91,8 +84,7 @@ impl RenderTarget for BatchedCanvas<'_> {
     }
 
     fn set_clip(&mut self, rect: Rect) -> bool {
-        // ggez turns a rect that starts left of or above the canvas into one far past its end,
-        // and refuses it
+        // ggez moves a negative start to 0 without shrinking the rect, and rejects empty ones
         let rect = rect.intersection(self.bounds);
         if rect.w == 0 || rect.h == 0 {
             return false;

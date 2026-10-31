@@ -1,7 +1,5 @@
-/// A position in screen pixels.
 pub type Point = [i32; 2];
 
-/// An area in screen pixels.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Rect {
     pub x: i32,
@@ -23,13 +21,12 @@ impl Rect {
         return self.y + self.h;
     }
 
-    /// Without the right and bottom edges, so neighbours don't overlap.
+    /// Excludes the right and bottom edges.
     pub fn contains(self, point: Point) -> bool {
         let [x, y] = point;
         return x >= self.x && x < self.right() && y >= self.y && y < self.bottom();
     }
 
-    /// The top `height` lines, and the rest below them.
     pub fn split_top(self, height: i32) -> (Self, Self) {
         let height = height.clamp(0, self.h);
         let top = Self::new(self.x, self.y, self.w, height);
@@ -37,7 +34,6 @@ impl Rect {
         return (top, rest);
     }
 
-    /// The left `width` pixels, and the rest to their right.
     pub fn split_left(self, width: i32) -> (Self, Self) {
         let width = width.clamp(0, self.w);
         let left = Self::new(self.x, self.y, width, self.h);
@@ -45,7 +41,6 @@ impl Rect {
         return (left, rest);
     }
 
-    /// Side by side from the left, one per width, as tall as this.
     pub fn columns(self, widths: &[i32]) -> Vec<Self> {
         let mut x = self.x;
         return widths
@@ -58,7 +53,6 @@ impl Rect {
             .collect();
     }
 
-    /// Stacked from the top, one per height, as wide as this.
     pub fn rows(self, heights: &[i32]) -> Vec<Self> {
         let mut y = self.y;
         return heights
@@ -71,38 +65,34 @@ impl Rect {
             .collect();
     }
 
-    /// `count` columns side by side, filling this rect; leftover pixels widen the first ones.
+    /// Leftover pixels widen the first columns.
     pub fn split_columns(self, count: i32) -> Vec<Self> {
         return self.columns(&even_sizes(self.w, count));
     }
 
-    /// `count` rows stacked, filling this rect; leftover lines go to the first ones.
+    /// Leftover lines go to the first rows.
     pub fn split_rows(self, count: i32) -> Vec<Self> {
         return self.rows(&even_sizes(self.h, count));
     }
 
-    /// Turned a quarter around its top left: as wide as it was tall, and as tall as it was wide.
+    /// Swaps width and height.
     pub fn rotate(self) -> Self {
         return Self::new(self.x, self.y, self.h, self.w);
     }
 
-    /// With its x and y swapped; the size stays. With `rotate`, it mirrors the rect across the
-    /// diagonal.
     pub fn swap_xy(self) -> Self {
         return Self::new(self.y, self.x, self.w, self.h);
     }
 
-    /// This rect, given from `area`'s top left, placed in `area`.
+    /// Treats this rect as relative to `area`'s top left.
     pub fn within(self, area: Self) -> Self {
         return Self::new(area.x + self.x, area.y + self.y, self.w, self.h);
     }
 
-    /// Smaller by `x` on the left and right and `y` at the top and bottom.
     pub fn inset(self, x: i32, y: i32) -> Self {
         return Self::new(self.x + x, self.y + y, self.w - 2 * x, self.h - 2 * y);
     }
 
-    /// The part of this inside `other`, with no width or height when they don't overlap.
     pub fn intersection(self, other: Self) -> Self {
         let (x, y) = (self.x.max(other.x), self.y.max(other.y));
         let right = self.right().min(other.right());
@@ -117,7 +107,6 @@ impl From<Rect> for ggez::graphics::Rect {
     }
 }
 
-/// `total` split into `count` sizes as even as can be, the larger ones first.
 fn even_sizes(total: i32, count: i32) -> Vec<i32> {
     if count <= 0 {
         return Vec::new();

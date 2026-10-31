@@ -8,12 +8,12 @@ use crate::framework::{
     text::Line,
 };
 
-/// Topaz is 8×8 in screen pixels.
+/// Topaz's character size.
 pub const CHAR_WIDTH: i32 = 8;
 
 pub const CHAR_HEIGHT: i32 = 8;
 
-/// A palette index. What it looks like depends on the song's palette.
+/// An index into the song's palette.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Pen(pub usize);
 
@@ -28,7 +28,6 @@ impl Pen {
     pub const BLUSH: Self = Self(7);
 }
 
-/// Draws onto a target in screen pixels, with the palette's pens.
 pub struct Painter<'a> {
     target: &'a mut dyn RenderTarget,
     palette: &'a OctamedColorPalette,
@@ -44,8 +43,7 @@ impl<'a> Painter<'a> {
         return Color::rgb(r, g, b);
     }
 
-    /// Runs `draw` with nothing drawn outside `rect`. Nothing's drawn when `rect` is empty or
-    /// off the screen.
+    /// Skips `draw` entirely when `rect` is empty or off the screen.
     pub fn clipped(&mut self, rect: Rect, draw: impl FnOnce(&mut Self)) {
         let previous = self.target.get_clip();
         if self.target.set_clip(rect) {
@@ -59,7 +57,11 @@ impl<'a> Painter<'a> {
         self.target.fill(rect, color);
     }
 
-    /// `opacity` from 0, which draws nothing, to 1, which is `fill`.
+    // for colours outside the palette, which OctaMED gets from the copper
+    pub fn fill_color(&mut self, rect: Rect, color: Color) {
+        self.target.fill(rect, color);
+    }
+
     pub fn fill_translucent(&mut self, rect: Rect, pen: Pen, opacity: f32) {
         let mut color = self.color(pen);
         color.a = (opacity.clamp(0.0, 1.0) * Color::OPAQUE as f32).round() as u8;
@@ -70,14 +72,13 @@ impl<'a> Painter<'a> {
         self.text_in_font(x, y, text, pen, Font::Topaz);
     }
 
-    /// Bold the way the Amiga does it: the text again a pixel to the right, so every stroke is
-    /// a pixel wider. It fits the same space, as glyphs leave their last column blank.
+    /// Amiga bold: the text again one pixel right. It fits the same space, since glyphs leave
+    /// their last column blank.
     pub fn text_bold(&mut self, x: i32, y: i32, text: &str, pen: Pen, font: Font) {
         self.text_in_font(x, y, text, pen, font);
         self.text_in_font(x + 1, y, text, pen, font);
     }
 
-    /// The spans side by side from `x`, each in its own pen or else `pen`.
     pub fn line(&mut self, x: i32, y: i32, line: &Line, pen: Pen) {
         let mut span_x = x;
         for span in &line.0 {
@@ -99,43 +100,17 @@ impl<'a> Painter<'a> {
         self.glyphs(x, y, text, pen, font, [1.0, 1.0]);
     }
 
-    /// Each pixel of the glyphs as `scale` pixels across and down, rounded to whole pixels so
-    /// they stay sharp at any scale.
-    fn glyphs(&mut self, x: i32, y: i32, text: &str, pen: Pen, font: Font, scale: [f32; 2]) {
-        let scaled = |pixels: i32, axis: usize| (pixels as f32 * scale[axis]).round() as i32;
-        let mut advance = 0;
-        for c in text.chars() {
-            if let Some(glyph) = font.glyph(c) {
-                let ink = advance + font.bearing();
-                for (line, &bits) in glyph.lines.iter().enumerate() {
-                    let top = scaled(line as i32, 1);
-                    let height = scaled(line as i32 + 1, 1) - top;
-                    for (start, width) in font::runs(bits) {
-                        let left = scaled(ink + start, 0);
-                        let run_width = scaled(ink + start + width, 0) - left;
-                        self.fill(Rect::new(x + left, y + top, run_width, height), pen);
-                    }
-                }
-            }
-            advance += font.advance(c);
-        }
-    }
-
-    /// Topaz in characters `scale` times `CHAR_WIDTH` wide and `CHAR_HEIGHT` tall, across and
-    /// down.
     pub fn text_scaled(&mut self, x: i32, y: i32, text: &str, pen: Pen, scale: [f32; 2]) {
         self.glyphs(x, y, text, pen, Font::Topaz, scale);
     }
 
-    /// `line` across `rect`, cut to the characters that fit, and down it as `text_y` puts it.
     pub fn line_in(&mut self, rect: Rect, line: &Line, pen: Pen, align: Align) {
         let line = line.fit(rect.w);
         let x = line_x(rect, &line, align);
         self.line(x, text_y(rect, line.height()), &line, pen);
     }
 
-    /// A picture drawn as rows of characters from its top left: `#` in the light pen, `f` in the
-    /// fill and `s` in the shadow, and anything else left as it is.
+    /// `#` is the light pen, `f` fill, `s` shadow; anything else is transparent.
     pub fn picture(&mut self, rows: &[&str], x: i32, y: i32) {
         for (line, row) in rows.iter().enumerate() {
             for (column, pixel) in row.chars().enumerate() {
@@ -150,8 +125,7 @@ impl<'a> Painter<'a> {
         }
     }
 
-    /// `rect` in a checkerboard of `dots` on `gaps`. The pattern is laid on the screen, not the
-    /// rect, so neighbouring rects carry it on.
+    /// A checkerboard aligned to the screen, not the rect, so neighbouring rects line up.
     pub fn dotted_rect(&mut self, rect: Rect, dots: Pen, gaps: Pen) {
         self.fill(rect, gaps);
         for y in rect.y..rect.bottom() {
@@ -162,7 +136,6 @@ impl<'a> Painter<'a> {
         }
     }
 
-    /// A one pixel frame just inside `rect`.
     pub fn outline(&mut self, rect: Rect, pen: Pen) {
         let Rect { x, y, w, h } = rect;
         self.fill(Rect::new(x, y, w, 1), pen);
@@ -171,35 +144,18 @@ impl<'a> Painter<'a> {
         self.fill(Rect::new(x + w - 1, y, 1, h), pen);
     }
 
-    /// OctaMED's frame around panels and gadgets: light along the top and right, shadow along the
-    /// left and bottom. `thickness` lines tall at the top and bottom, and twice as many pixels
-    /// wide at the sides, so they look as thick on the tall pixels.
-    /// The edges meet on a slant: each line of the top and bottom stops 2 pixels further into the
-    /// sides than the one outside it. Returns what's inside the frame.
+    /// OctaMED's bevel: light top and right, shadow left and bottom. The sides are twice as
+    /// wide as `thickness` for the tall pixels, and the corners meet on a slant as in OctaMED.
+    /// Returns the inside.
     pub fn frame(&mut self, rect: Rect, thickness: i32) -> Rect {
         return self.bevel(rect, thickness, Pen::LIGHT, Pen::SHADOW);
     }
 
-    /// `frame` with the light and shadow swapped, as around the status row's gauge boxes.
+    /// Used around the status row's gauge boxes.
     pub fn frame_inverted(&mut self, rect: Rect, thickness: i32) -> Rect {
         return self.bevel(rect, thickness, Pen::SHADOW, Pen::LIGHT);
     }
 
-    /// `top` along the top and right, `bottom` along the left and bottom.
-    fn bevel(&mut self, rect: Rect, thickness: i32, top: Pen, bottom: Pen) -> Rect {
-        let Rect { x, y, w, h } = rect;
-        let side = 2 * thickness;
-        self.fill(Rect::new(x, y, side, h), bottom);
-        self.fill(Rect::new(x + w - side, y, side, h), top);
-        for line in 0..thickness {
-            let inset = 2 * line + 1;
-            self.fill(Rect::new(x + inset, y + line, w - inset, 1), top);
-            self.fill(Rect::new(x, y + h - 1 - line, w - inset, 1), bottom);
-        }
-        return inside_frame(rect, thickness);
-    }
-
-    /// A rect filled with `fill`, with a border along `sides` drawn as thick as `frame`'s.
     pub fn rect(&mut self, rect: Rect, fill: Option<Pen>, border: Option<Border>, sides: Sides) {
         if let Some(fill) = fill {
             self.fill(rect, fill);
@@ -223,7 +179,6 @@ impl<'a> Painter<'a> {
         }
     }
 
-    /// A triangle filling `rect`, pointing at the middle of the side `direction` names.
     pub fn triangle(
         &mut self,
         rect: Rect,
@@ -239,9 +194,42 @@ impl<'a> Painter<'a> {
         );
     }
 
-    /// `shape::ellipse` filling `rect`.
     pub fn circle(&mut self, rect: Rect, fill: Option<Pen>, border: Option<Border>) {
         self.shape(rect, &shape::ellipse(rect.w, rect.h), fill, border);
+    }
+
+    /// Rounds to whole pixels so glyphs stay sharp at any scale.
+    fn glyphs(&mut self, x: i32, y: i32, text: &str, pen: Pen, font: Font, scale: [f32; 2]) {
+        let scaled = |pixels: i32, axis: usize| (pixels as f32 * scale[axis]).round() as i32;
+        let mut advance = 0;
+        for c in text.chars() {
+            if let Some(glyph) = font.glyph(c) {
+                let ink = advance + font.bearing();
+                for (line, &bits) in glyph.lines.iter().enumerate() {
+                    let top = scaled(line as i32, 1);
+                    let height = scaled(line as i32 + 1, 1) - top;
+                    for (start, width) in font::runs(bits) {
+                        let left = scaled(ink + start, 0);
+                        let run_width = scaled(ink + start + width, 0) - left;
+                        self.fill(Rect::new(x + left, y + top, run_width, height), pen);
+                    }
+                }
+            }
+            advance += font.advance(c);
+        }
+    }
+
+    fn bevel(&mut self, rect: Rect, thickness: i32, top: Pen, bottom: Pen) -> Rect {
+        let Rect { x, y, w, h } = rect;
+        let side = 2 * thickness;
+        self.fill(Rect::new(x, y, side, h), bottom);
+        self.fill(Rect::new(x + w - side, y, side, h), top);
+        for line in 0..thickness {
+            let inset = 2 * line + 1;
+            self.fill(Rect::new(x + inset, y + line, w - inset, 1), top);
+            self.fill(Rect::new(x, y + h - 1 - line, w - inset, 1), bottom);
+        }
+        return inside_frame(rect, thickness);
     }
 
     fn shape(&mut self, rect: Rect, spans: &Spans, fill: Option<Pen>, border: Option<Border>) {
@@ -281,20 +269,17 @@ pub fn text_width(text: &str) -> i32 {
     return text.chars().count() as i32 * CHAR_WIDTH;
 }
 
-/// What's left inside `Painter::frame`'s edges.
 pub fn inside_frame(rect: Rect, thickness: i32) -> Rect {
     return rect.inset(2 * thickness, thickness);
 }
 
-/// The edge of a shape: `thickness` lines tall, and twice as many pixels wide, so it looks as
-/// thick on the tall pixels.
+/// Twice as wide as `thickness` at the sides, for the tall pixels.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Border {
     pub pen: Pen,
     pub thickness: i32,
 }
 
-/// Where text goes across a rect.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Align {
     Left,
@@ -303,14 +288,12 @@ pub enum Align {
     Right,
 }
 
-/// Where text `height` lines tall goes down `rect`: in the middle, or at the top when it's
-/// taller than `rect`, as fonts leave their bottom line blank.
+/// Pinned to the top when taller than `rect`, as fonts leave their bottom line blank.
 pub fn text_y(rect: Rect, height: i32) -> i32 {
     return rect.y + ((rect.h - height) / 2).max(0);
 }
 
-/// Where `line` starts across `rect`. Centred, it's the letters that are in the middle, not the
-/// blank pixels fonts leave around them, which some leave more of on one side.
+/// Centring goes by the ink, not the blank pixels fonts leave around it, which can be uneven.
 pub fn line_x(rect: Rect, line: &Line, align: Align) -> i32 {
     if align != Align::Center {
         return aligned_text_x(rect, line.width(), align);
@@ -319,7 +302,6 @@ pub fn line_x(rect: Rect, line: &Line, align: Align) -> i32 {
     return aligned_text_x(rect, line.width() - left - right, align) - left;
 }
 
-/// Where text `width` pixels wide starts across `rect`; it's assumed to fit.
 pub fn aligned_text_x(rect: Rect, width: i32, align: Align) -> i32 {
     let spare = rect.w - width;
     return match align {

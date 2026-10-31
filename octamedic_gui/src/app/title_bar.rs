@@ -17,7 +17,7 @@ const VERSION: &str = "(v4.00)";
 
 const AUTHOR: &str = "By Amano Rosuko";
 
-// where things go, from OctaMED's title bar: x across the bar, y down from its top
+// positions measured from OctaMED's title bar
 const TIMER_LABEL: [i32; 2] = [3, 3];
 const TIMER: Rect = Rect::new(50, 0, 48, 12);
 const STAR_X: i32 = 100;
@@ -28,7 +28,6 @@ const AUTHOR_RIGHT_MARGIN: i32 = 8;
 const AUTHOR_STAR_OFFSET: i32 = 30;
 const TAIL_Y: i32 = 4;
 
-/// The cross before the title. Its tail runs on to the title.
 #[rustfmt::skip]
 const STAR: [&str; 12] = [
     "...........",
@@ -45,8 +44,7 @@ const STAR: [&str; 12] = [
     "...........",
 ];
 
-/// The cross before the author, which sits on the tail running from the version to the edge.
-/// Its right arm runs on behind the author's first letters, which are drawn over it.
+// its right arm runs on under the author's first letters
 #[rustfmt::skip]
 const AUTHOR_STAR: [&str; 13] = [
     "....................s......................",
@@ -63,27 +61,6 @@ const AUTHOR_STAR: [&str; 13] = [
     "..................ss#fss...................",
     "...................sf#s....................",
 ];
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Taper {
-    Right,
-    Both,
-}
-
-/// A star's tail from `x`, `width` pixels long: a fill line between shadow lines. At a tapered
-/// end the shadow lines stop 2 pixels short and the fill line ends in shadow.
-fn render_ornament_tail(painter: &mut Painter, x: i32, y: i32, width: i32, taper: Taper) {
-    const TAPER: i32 = 2;
-    let left = if taper == Taper::Both { TAPER } else { 0 };
-    let inner = Rect::new(x + left, y, width - left - TAPER, 1);
-    if inner.w <= 0 {
-        return;
-    }
-    painter.fill(inner, Pen::SHADOW);
-    painter.fill(Rect::new(inner.x, y + 2, inner.w, 1), Pen::SHADOW);
-    painter.fill(Rect::new(x, y + 1, width, 1), Pen::SHADOW);
-    painter.fill(Rect::new(inner.x, y + 1, inner.w, 1), Pen::FILL);
-}
 
 pub struct TitleBar {
     timer: Button,
@@ -122,8 +99,7 @@ impl OctamedicWidget for TitleBar {
         let title_end = title_x + title.width();
         let version_x = title_end + VERSION_GAP;
         let version_end = version_x + Font::Title.width(VERSION);
-        // the tails go behind the text: from the star to the title, in the gaps between words
-        // and before the version, and from the version to the right edge
+        // tails go behind the text: star to title, between words, and version to the edge
         let tail_y = area.y + TAIL_Y;
         let star_end = area.x + STAR_X + STAR[0].len() as i32;
         render_ornament_tail(
@@ -141,7 +117,7 @@ impl OctamedicWidget for TitleBar {
             }
             char_x += advance;
         }
-        // starting back over the last letter's trailing gap
+        // starts back over the last letter's trailing gap
         let gap_x = title_end - 2;
         render_ornament_tail(painter, gap_x, tail_y, version_x - 1 - gap_x, Taper::Both);
         render_ornament_tail(
@@ -164,4 +140,25 @@ impl OctamedicWidget for TitleBar {
             Font::Author,
         );
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Taper {
+    Right,
+    Both,
+}
+
+// a fill line between shadow lines; at a tapered end the shadow lines stop short and the fill
+// line ends in shadow
+fn render_ornament_tail(painter: &mut Painter, x: i32, y: i32, width: i32, taper: Taper) {
+    const TAPER: i32 = 2;
+    let left = if taper == Taper::Both { TAPER } else { 0 };
+    let inner = Rect::new(x + left, y, width - left - TAPER, 1);
+    if inner.w <= 0 {
+        return;
+    }
+    painter.fill(inner, Pen::SHADOW);
+    painter.fill(Rect::new(inner.x, y + 2, inner.w, 1), Pen::SHADOW);
+    painter.fill(Rect::new(x, y + 1, width, 1), Pen::SHADOW);
+    painter.fill(Rect::new(inner.x, y + 1, inner.w, 1), Pen::FILL);
 }

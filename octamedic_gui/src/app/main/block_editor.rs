@@ -1,8 +1,13 @@
-use ggez::input::keyboard::KeyCode;
+use std::array;
+
+use ggez::input::keyboard::{KeyCode, KeyMods};
 use octamed::utility::note::SEMITONES_PER_OCTAVE;
-use octamedic_core::data::{
-    pattern::{OctamedicPattern, OctamedicPatternTrack},
-    track_count::TrackCount,
+use octamedic_core::{
+    amiga::paula::SCOPE_CHANNELS,
+    data::{
+        pattern::{OctamedicPattern, OctamedicPatternTrack},
+        track_count::TrackCount,
+    },
 };
 use octamedic_util::{base32, primitives::Flip};
 
@@ -15,33 +20,42 @@ use crate::{
         painter::{CHAR_HEIGHT, CHAR_WIDTH, Painter, Pen},
         rect::Rect,
         widget::OctamedicWidget,
+        widgets::audio_view::{Oscilloscope, VuMeter},
     },
 };
 
 // odd, so there is a middle row for the cursor's line
 const ROWS: i32 = 15;
 
+// measured from OctaMED's 4-track view, in font pixels: one sample each, starting 2 into the
+// track, over the editor's bottom 64 lines
+const SCOPE_OFFSET: i32 = 2;
+const SCOPE_SAMPLES: usize = 42;
+const SCOPE_HEIGHT: i32 = 64;
+
+// the same, for the meters, which reach up to the editor's middle when full
+const METER_OFFSET: i32 = 45;
+const METER_WIDTH: i32 = 10;
+
 const CENTER_ROW: i32 = ROWS / 2;
 
-/// The line number and the space after it.
+// 3 digits and a space
 const LINE_NUMBER_CHARS: i32 = 4;
 
-/// The note's characters at the start of a track, as in `C#1`.
 const NOTE_CHARS: i32 = 3;
 
-/// Where a track's number ends, over its instrument's first digit.
+// track numbers end over the instrument's first digit
 const TRACK_NUMBER_END: i32 = NOTE_CHARS + 1;
 
-/// Blocks with up to this many tracks are shown in wide characters.
+// blocks with up to this many tracks use the wide font
 const WIDE_TRACKS: usize = 4;
 
 const QUARTERS: usize = 4;
 
-/// Octaves past 9 are written as letters, as base 36 digits.
+// octaves past 9 are written as letters
 const OCTAVE_RADIX: u32 = 36;
 
-/// Note, instrument, command and its value, as in `C#1 10C20`: `C#1`, instrument ` 1`, command
-/// `0C` and value `20`.
+// as in `C#1 10C20`
 const TRACK_CHARS: i32 = 9;
 
 const NOTE_NAMES: [&str; SEMITONES_PER_OCTAVE as usize] = [
@@ -68,6 +82,8 @@ pub enum EditorAction {
     ScreenLeft,
     ScreenRight,
     ToggleEdit,
+    // the bottom row of note keys; the top row plays the octave above
+    Octave(u8),
 }
 
 impl Action for EditorAction {
@@ -78,10 +94,11 @@ impl Action for EditorAction {
 
 pub struct BlockEditor {
     keys: Keymap<EditorAction>,
-    /// The leftmost track on screen.
     first_track: usize,
-    /// How many tracks fit on screen, as last rendered.
+    // as of the last render
     visible_tracks: usize,
+    oscilloscopes: [Oscilloscope; SCOPE_CHANNELS],
+    meters: [VuMeter; SCOPE_CHANNELS],
 }
 
 impl BlockEditor {
@@ -105,15 +122,21 @@ impl BlockEditor {
             .bind(Key::alt(KeyCode::Right), TrackRight, "Track right")
             .bind(Key::ctrl(KeyCode::Left), ScreenLeft, "Screen left")
             .bind(Key::ctrl(KeyCode::Right), ScreenRight, "Screen right")
-            .bind(Key::plain(KeyCode::Escape), ToggleEdit, "Edit");
+            .bind(Key::plain(KeyCode::Escape), ToggleEdit, "Edit")
+            .bind(Key::plain(KeyCode::F1), Octave(1), "Octave 1")
+            .bind(Key::plain(KeyCode::F2), Octave(2), "Octave 2")
+            .bind(Key::plain(KeyCode::F3), Octave(3), "Octave 3")
+            .bind(Key::plain(KeyCode::F4), Octave(4), "Octave 4")
+            .bind(Key::plain(KeyCode::F5), Octave(5), "Octave 5");
         return Self {
             keys,
             first_track: 0,
             visible_tracks: 1,
+            oscilloscopes: array::from_fn(|_| Oscilloscope::new(SCOPE_SAMPLES)),
+            meters: array::from_fn(|_| VuMeter::default()),
         };
     }
 
-    /// Scrolls so the cursor's track is on screen.
     fn scroll_to(&mut self, track: usize, tracks: usize, visible: usize) {
         if track < self.first_track {
             self.first_track = track;
@@ -143,9 +166,7 @@ impl BlockEditor {
         }
     }
 
-    /// Over the top two rows, whatever lines are there: each track's number on the first, ending
-    /// where its instrument starts, and the block's track count on the second, ending where the
-    /// tracks start.
+    // drawn over the top two rows, whatever lines are there
     fn render_labels(
         &self,
         pattern: &OctamedicPattern,
@@ -174,7 +195,6 @@ impl BlockEditor {
         );
     }
 
-    /// Row `row` of the screen, the line `row - CENTER_ROW` from the cursor's, if there is one.
     #[allow(clippy::too_many_arguments)]
     fn render_row(
         &self,
@@ -196,12 +216,10 @@ impl BlockEditor {
         }
     }
 
-    /// The box around the cursor's field, clear of its text: lines a line above and below the
-    /// active band and sides down the band, a pixel wider than the field so the right side is
-    /// just past it.
+    // kept clear of the field's text: a line above and below the band, the right side just past
+    // the field
     fn cursor_box(&self, cursor: &EditCursor, layout: &Layout, band: Rect) -> Option<CursorBox> {
         let index = cursor.track.checked_sub(self.first_track)?;
-        // the note, then each digit is a character
         let (offset, width) = match cursor.column {
             0 => (0, NOTE_CHARS),
             digit => (NOTE_CHARS + digit as i32 - 1, 1),
@@ -218,9 +236,8 @@ impl BlockEditor {
         });
     }
 
-    /// OctaMED draws the cursor by setting the red bitplane over what's there, so its colour
-    /// depends on what it covers: red over black, pink over the band, rose over text and blush
-    /// over the active line's text. The text under each part is drawn again in its colour.
+    // OctaMED draws the cursor by setting the red bitplane, so its colour depends on what's
+    // under it; the text under each part is redrawn in the matching colour.
     fn render_cursor(
         &self,
         pattern: &OctamedicPattern,
@@ -248,53 +265,34 @@ impl BlockEditor {
             });
         }
     }
-}
 
-/// Where the cursor's box goes.
-#[derive(Clone, Copy)]
-struct CursorBox {
-    top: Rect,
-    bottom: Rect,
-    sides: [Rect; 2],
-}
-
-/// The active line's background: from a line above its text to the bottom of the row.
-fn active_band(area: Rect, center_y: i32) -> Rect {
-    return Rect::new(area.x, center_y - 1, area.w, CHAR_HEIGHT + 1);
-}
-
-/// Where the line numbers and tracks go.
-struct Layout {
-    x: i32,
-    font: Font,
-    char_width: i32,
-    /// How many tracks are shown.
-    tracks: usize,
-    /// How many tracks fit.
-    fits: usize,
-}
-
-impl Layout {
-    fn new(area: Rect, track_count: usize) -> Self {
-        let font = if track_count <= WIDE_TRACKS {
-            Font::Editor
-        } else {
-            Font::Topaz
-        };
-        let char_width = font.advance('0');
-        let columns = area.w / char_width - LINE_NUMBER_CHARS;
-        let fits = (columns / TRACK_CHARS).max(1) as usize;
-        return Self {
-            x: area.x,
-            font,
-            char_width,
-            tracks: track_count.min(fits),
-            fits,
-        };
-    }
-
-    fn track_column(&self, track: usize) -> i32 {
-        return LINE_NUMBER_CHARS + track as i32 * TRACK_CHARS;
+    // only Paula's four hardware channels, the first four tracks, have scopes
+    fn render_scopes(
+        &mut self,
+        state: &AppState,
+        pattern: &OctamedicPattern,
+        layout: &Layout,
+        area: Rect,
+        painter: &mut Painter,
+    ) {
+        for index in 0..layout.tracks {
+            let track = self.first_track + index;
+            if track >= SCOPE_CHANNELS {
+                break;
+            }
+            if state.is_playing() {
+                let x = layout.track_x(index);
+                let scope = scope_area(layout, area, index);
+                for run in self.oscilloscopes[track].runs(scope) {
+                    painter.fill(run, Pen::PINK);
+                    if let Some(cell) = cell_at(pattern, state.cursor.line, area, run.y, track) {
+                        let text_line = ((run.y - area.y) % CHAR_HEIGHT) as usize;
+                        blend_text(&track_text(cell), x, text_line, layout.font, run, painter);
+                    }
+                }
+            }
+            self.meters[track].render(state, meter_area(layout, area, index), painter);
+        }
     }
 }
 
@@ -332,6 +330,7 @@ impl KeyActions for BlockEditor {
             LastBlock => state.select_block(usize::MAX),
             PreviousBlock => state.select_block(block.saturating_sub(1)),
             NextBlock => state.select_block(block + 1),
+            Octave(octave) => state.set_octave(octave),
         }
     }
 
@@ -356,24 +355,49 @@ impl KeyActions for BlockEditor {
             ScreenLeft => "One screen left",
             ScreenRight => "One screen right",
             ToggleEdit => "Switch edit mode on or off",
+            Octave(_) => "Play notes from this octave up",
         };
     }
 }
 
 impl OctamedicWidget for BlockEditor {
     fn update(&mut self, state: &mut AppState) {
-        if state.is_playing() {
-            // the engine's line and block are read apart, so the line can be from the block before
-            let lines = state
-                .active_pattern()
-                .map_or(1, |pattern| pattern.line_count());
-            let row = state.engine.status().row();
-            state.cursor.line = row.min(lines.saturating_sub(1));
+        if !state.is_playing() {
+            self.meters = array::from_fn(|_| VuMeter::default());
+            return;
+        }
+        // the engine's line and block are read apart, so the line can be from the block before
+        let lines = state
+            .active_pattern()
+            .map_or(1, |pattern| pattern.line_count());
+        let row = state.engine.status().row();
+        state.cursor.line = row.min(lines.saturating_sub(1));
+        let scopes = state.engine.status().scopes();
+        for channel in 0..SCOPE_CHANNELS {
+            let samples = scopes.read(channel);
+            self.oscilloscopes[channel].show(&samples);
+            let peak = samples.iter().map(|sample| sample.unsigned_abs()).max();
+            self.meters[channel].set(peak.unwrap_or(0));
         }
     }
 
     fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
-        return self.dispatch(state, event);
+        if self.dispatch(state, event) {
+            return true;
+        }
+        let Event::Text {
+            character,
+            mods,
+            repeat,
+        } = *event
+        else {
+            return false;
+        };
+        // shortcuts type characters too
+        if mods.intersects(KeyMods::CTRL | KeyMods::ALT | KeyMods::LOGO) {
+            return false;
+        }
+        return enter_key(state, character, repeat);
     }
 
     fn render(&mut self, state: &AppState, area: Rect, painter: &mut Painter) {
@@ -396,19 +420,90 @@ impl OctamedicWidget for BlockEditor {
             };
             self.render_row(pattern, cursor.line, row, &layout, area, pen, painter);
         }
-        // a line just before each track but the first, one font pixel wide
+        // one font pixel wide
         let width = layout.char_width / CHAR_WIDTH;
         for track in 1..layout.tracks {
-            let x = layout.x + layout.track_column(track) * layout.char_width - 1;
+            let x = layout.track_x(track) - 1;
             painter.fill(Rect::new(x, area.y, width, area.h), Pen::PINK);
             // OctaMED draws the band by flipping a bitplane, which turns the pink red
             painter.fill(Rect::new(x, band.y, width, band.h), Pen::RED);
         }
         self.render_labels(pattern, &layout, area.y, painter);
+        self.render_scopes(state, pattern, &layout, area, painter);
         if let Some(parts) = self.cursor_box(&cursor, &layout, band) {
             self.render_cursor(pattern, cursor.line, parts, &layout, area, painter);
         }
     }
+}
+
+#[derive(Clone, Copy)]
+struct CursorBox {
+    top: Rect,
+    bottom: Rect,
+    sides: [Rect; 2],
+}
+
+fn active_band(area: Rect, center_y: i32) -> Rect {
+    return Rect::new(area.x, center_y - 1, area.w, CHAR_HEIGHT + 1);
+}
+
+struct Layout {
+    x: i32,
+    font: Font,
+    char_width: i32,
+    tracks: usize,
+    fits: usize,
+}
+
+impl Layout {
+    fn new(area: Rect, track_count: usize) -> Self {
+        let font = if track_count <= WIDE_TRACKS {
+            Font::Editor
+        } else {
+            Font::Topaz
+        };
+        let char_width = font.advance('0');
+        let columns = area.w / char_width - LINE_NUMBER_CHARS;
+        let fits = (columns / TRACK_CHARS).max(1) as usize;
+        return Self {
+            x: area.x,
+            font,
+            char_width,
+            tracks: track_count.min(fits),
+            fits,
+        };
+    }
+
+    fn track_column(&self, track: usize) -> i32 {
+        return LINE_NUMBER_CHARS + track as i32 * TRACK_CHARS;
+    }
+
+    fn track_x(&self, track: usize) -> i32 {
+        return self.x + self.track_column(track) * self.char_width;
+    }
+}
+
+// in edit mode a note key also writes the note and moves down by the line add
+fn enter_key(state: &mut AppState, key: char, repeat: bool) -> bool {
+    let cursor = state.cursor;
+    if cursor.column != 0 {
+        return false;
+    }
+    // holding a note key plays and writes its note once
+    if repeat {
+        return state.key_to_note(key).is_some();
+    }
+    if !cursor.edit_mode {
+        return state.play_key(cursor.track, key).is_some();
+    }
+    if state.enter_key(cursor.track, cursor.line, key).is_none() {
+        return false;
+    }
+    let lines = state
+        .active_pattern()
+        .map_or(0, |pattern| pattern.line_count());
+    state.cursor.move_lines(state.line_add as isize, lines);
+    return true;
 }
 
 fn note_text(note: u8) -> String {
@@ -425,9 +520,57 @@ fn note_text(note: u8) -> String {
     );
 }
 
-/// Two base-32 digits, with a space for a leading zero.
 fn instrument_text(instrument: u8) -> String {
     return base32::format(instrument as u32, 2, ' ');
+}
+
+fn scope_area(layout: &Layout, area: Rect, index: usize) -> Rect {
+    let pixel = layout.char_width / CHAR_WIDTH;
+    let x = layout.track_x(index);
+    let w = SCOPE_SAMPLES as i32 * pixel;
+    return Rect::new(
+        x + SCOPE_OFFSET * pixel,
+        area.y + area.h - SCOPE_HEIGHT,
+        w,
+        SCOPE_HEIGHT,
+    );
+}
+
+fn meter_area(layout: &Layout, area: Rect, index: usize) -> Rect {
+    let pixel = layout.char_width / CHAR_WIDTH;
+    let x = layout.track_x(index);
+    let top = area.h / 2;
+    return Rect::new(
+        x + METER_OFFSET * pixel,
+        area.y + top,
+        METER_WIDTH * pixel,
+        area.h - top,
+    );
+}
+
+// the cell of `track` on the screen line at `y`, if that line is in the block
+fn cell_at(
+    pattern: &OctamedicPattern,
+    cursor_line: usize,
+    area: Rect,
+    y: i32,
+    track: usize,
+) -> Option<&OctamedicPatternTrack> {
+    let row = (y - area.y) / CHAR_HEIGHT;
+    let line = usize::try_from(cursor_line as isize + (row - CENTER_ROW) as isize).ok()?;
+    return pattern.lines.get(line)?.tracks.get(track);
+}
+
+// OctaMED ORs the scope's bitplanes into the screen, so where a dot crosses text's ink it turns
+// the paler pink, as the cursor does
+fn blend_text(text: &str, x: i32, line: usize, font: Font, run: Rect, painter: &mut Painter) {
+    for (start, width) in font.ink(text, line) {
+        let left = (x + start).max(run.x);
+        let right = (x + start + width).min(run.x + run.w);
+        if left < right {
+            painter.fill(Rect::new(left, run.y, right - left, run.h), Pen::BLUSH);
+        }
+    }
 }
 
 fn track_text(cell: &OctamedicPatternTrack) -> String {
@@ -452,9 +595,79 @@ mod tests {
     };
 
     use super::*;
+    use crate::framework::{
+        screen::SCREEN,
+        target::{Color, RenderTarget},
+    };
 
     fn state() -> AppState {
         return AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+    }
+
+    #[derive(Default)]
+    struct Fills(Vec<Rect>);
+
+    impl RenderTarget for Fills {
+        fn fill(&mut self, rect: Rect, _color: Color) {
+            self.0.push(rect);
+        }
+
+        fn get_clip(&self) -> Rect {
+            return SCREEN;
+        }
+
+        fn set_clip(&mut self, _rect: Rect) -> bool {
+            return true;
+        }
+    }
+
+    #[test]
+    fn scopes_and_meters_sit_where_octamed_draws_them() {
+        let area = Rect::new(0, 77, 640, 120);
+        let layout = Layout::new(area, 4);
+        // two pixels a sample, starting 4 pixels into the track, over the bottom 64 lines
+        assert_eq!(scope_area(&layout, area, 0), Rect::new(68, 133, 84, 64));
+        // 90 pixels in, from the editor's middle down
+        assert_eq!(meter_area(&layout, area, 1), Rect::new(298, 137, 20, 60));
+    }
+
+    #[test]
+    fn silent_meters_still_show_their_bottom_line() {
+        let (mut editor, state) = (BlockEditor::new(), state());
+        let area = Rect::new(0, 77, 640, 120);
+        let layout = Layout::new(area, 4);
+        let mut fills = Fills::default();
+        let palette = state.palette;
+        let mut painter = Painter::new(&mut fills, &palette);
+        let pattern = state.active_pattern().unwrap().clone();
+        editor.render_scopes(&state, &pattern, &layout, area, &mut painter);
+        assert!(
+            fills.0.contains(&Rect::new(156, 196, 16, 1)),
+            "{:?}",
+            fills.0
+        );
+    }
+
+    #[test]
+    fn scope_dots_turn_paler_where_they_cross_text() {
+        let mut fills = Fills::default();
+        let palette = OctamedicProject::new().palette();
+        let mut painter = Painter::new(&mut fills, &palette);
+        let ink: Vec<(i32, i32)> = Font::Editor.ink("0", 0).collect();
+        blend_text(
+            "0",
+            100,
+            0,
+            Font::Editor,
+            Rect::new(100, 50, 16, 1),
+            &mut painter,
+        );
+        let expected: Vec<Rect> = ink
+            .iter()
+            .map(|&(x, w)| Rect::new(100 + x, 50, w, 1))
+            .collect();
+        assert!(!expected.is_empty());
+        assert_eq!(fills.0, expected);
     }
 
     fn press(editor: &mut BlockEditor, state: &mut AppState, key: KeyCode, mods: KeyMods) {
@@ -481,6 +694,59 @@ mod tests {
             press(&mut editor, &mut state, key, KeyMods::NONE);
             assert_eq!(state.cursor.line, line, "{key:?}");
         }
+    }
+
+    #[test]
+    fn function_keys_set_the_octave() {
+        let (mut editor, mut state) = (BlockEditor::new(), state());
+        let keys = [
+            KeyCode::F1,
+            KeyCode::F2,
+            KeyCode::F3,
+            KeyCode::F4,
+            KeyCode::F5,
+        ];
+        for (octave, key) in (1..).zip(keys) {
+            press(&mut editor, &mut state, key, KeyMods::NONE);
+            assert_eq!(state.current_octave, octave, "{key:?}");
+        }
+    }
+
+    #[test]
+    fn note_keys_write_notes_only_in_edit_mode() {
+        let (mut editor, mut state) = (BlockEditor::new(), state());
+        assert!(editor.handle_event(&mut state, &Event::text('z')));
+        assert!(state.is_saved());
+        state.cursor.edit_mode = true;
+        state.line_add = 2;
+        assert!(editor.handle_event(&mut state, &Event::text('z')));
+        let cell = *state.active_pattern().unwrap().track(0, 0).unwrap();
+        assert_eq!(cell.note.value, 13);
+        assert_eq!(state.cursor.line, 2);
+        state.cursor.column = 1;
+        assert!(!editor.handle_event(&mut state, &Event::text('z')));
+    }
+
+    #[test]
+    fn held_or_modified_note_keys_write_nothing() {
+        let (mut editor, mut state) = (BlockEditor::new(), state());
+        state.cursor.edit_mode = true;
+        let held = Event::Text {
+            character: 'z',
+            mods: KeyMods::NONE,
+            repeat: true,
+        };
+        assert!(editor.handle_event(&mut state, &held));
+        let with_super = Event::Text {
+            character: 'z',
+            mods: KeyMods::LOGO,
+            repeat: false,
+        };
+        assert!(!editor.handle_event(&mut state, &with_super));
+        assert!(state.is_saved());
+        assert_eq!(state.cursor.line, 0);
+        state.cursor.column = 1;
+        assert!(!editor.handle_event(&mut state, &held));
     }
 
     #[test]

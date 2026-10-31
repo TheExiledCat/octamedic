@@ -1,6 +1,6 @@
 pub trait Flip {
-    /// Sets it to its opposite. Named so it can't clash with `bool::toggle`, which arrived after
-    /// the Rust version this builds with.
+    /// Not `toggle`, so it can't clash with `bool::toggle`, which arrived after the Rust version
+    /// this builds with.
     fn flip(&mut self);
 }
 

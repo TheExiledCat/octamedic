@@ -27,27 +27,6 @@ use crate::{
 
 type Result<T> = MmdResult<T>;
 
-enum OctamedModuleKind {
-    MMD0,
-    MMD1,
-    MMD2,
-    MMD3,
-}
-
-impl TryFrom<ULong> for OctamedModuleKind {
-    type Error = MmdError;
-
-    fn try_from(value: ULong) -> Result<Self> {
-        return match value.0 {
-            MMD0_ID => Ok(Self::MMD0),
-            MMD1_ID => Ok(Self::MMD1),
-            MMD2_ID => Ok(Self::MMD2),
-            MMD3_ID => Ok(Self::MMD3),
-            id => Err(MmdError::UnknownFormat(id)),
-        };
-    }
-}
-
 pub struct OctamedMMDParser {
     mode: OctamedModuleKind,
 }
@@ -110,47 +89,6 @@ impl OctamedMMDParser {
         }
     }
 
-    fn parse_ulong<R: Read>(stream: &mut R) -> Result<ULong> {
-        let mut bytes = [0_u8; size_of::<u32>()];
-        stream.read_exact(&mut bytes)?;
-        return Ok(ULong(u32::from_be_bytes(bytes)));
-    }
-
-    fn parse_offset<R: Read>(stream: &mut R) -> Result<Offset> {
-        let val = Self::parse_ulong(stream)?;
-        return Ok(Offset(val.0));
-    }
-
-    fn parse_uword<R: Read>(stream: &mut R) -> Result<UWord> {
-        let mut bytes = [0_u8; 2];
-        stream.read_exact(&mut bytes)?;
-        return Ok(UWord(u16::from_be_bytes(bytes)));
-    }
-
-    fn parse_ubyte<R: Read>(stream: &mut R) -> Result<UByte> {
-        let mut bytes = [0_u8; 1];
-        stream.read_exact(&mut bytes)?;
-        return Ok(UByte(u8::from_be_bytes(bytes)));
-    }
-
-    fn parse_byte<R: Read>(stream: &mut R) -> Result<Byte> {
-        let ubyte = Self::parse_ubyte(stream)?;
-        let byte = Byte(ubyte.0 as i8);
-        return Ok(byte);
-    }
-
-    fn parse_word<R: Read>(stream: &mut R) -> Result<Word> {
-        let mut bytes = [0_u8; 2];
-        stream.read_exact(&mut bytes)?;
-        return Ok(Word(i16::from_be_bytes(bytes)));
-    }
-
-    fn parse_exact<R: Read>(stream: &mut R, count: usize) -> Result<Vec<u8>> {
-        let mut bytes = vec![0_u8; count];
-        stream.read_exact(&mut bytes)?;
-        return Ok(bytes.to_vec());
-    }
-
     pub fn parse_header<R: Read + Seek>(stream: &mut R) -> Result<OctamedMMD0Header> {
         let id = Self::parse_ulong(stream)?;
         let length = Self::parse_ulong(stream)?;
@@ -198,6 +136,47 @@ impl OctamedMMDParser {
             extra_songs,
         };
         return Ok(header);
+    }
+
+    fn parse_ulong<R: Read>(stream: &mut R) -> Result<ULong> {
+        let mut bytes = [0_u8; size_of::<u32>()];
+        stream.read_exact(&mut bytes)?;
+        return Ok(ULong(u32::from_be_bytes(bytes)));
+    }
+
+    fn parse_offset<R: Read>(stream: &mut R) -> Result<Offset> {
+        let val = Self::parse_ulong(stream)?;
+        return Ok(Offset(val.0));
+    }
+
+    fn parse_uword<R: Read>(stream: &mut R) -> Result<UWord> {
+        let mut bytes = [0_u8; 2];
+        stream.read_exact(&mut bytes)?;
+        return Ok(UWord(u16::from_be_bytes(bytes)));
+    }
+
+    fn parse_ubyte<R: Read>(stream: &mut R) -> Result<UByte> {
+        let mut bytes = [0_u8; 1];
+        stream.read_exact(&mut bytes)?;
+        return Ok(UByte(u8::from_be_bytes(bytes)));
+    }
+
+    fn parse_byte<R: Read>(stream: &mut R) -> Result<Byte> {
+        let ubyte = Self::parse_ubyte(stream)?;
+        let byte = Byte(ubyte.0 as i8);
+        return Ok(byte);
+    }
+
+    fn parse_word<R: Read>(stream: &mut R) -> Result<Word> {
+        let mut bytes = [0_u8; 2];
+        stream.read_exact(&mut bytes)?;
+        return Ok(Word(i16::from_be_bytes(bytes)));
+    }
+
+    fn parse_exact<R: Read>(stream: &mut R, count: usize) -> Result<Vec<u8>> {
+        let mut bytes = vec![0_u8; count];
+        stream.read_exact(&mut bytes)?;
+        return Ok(bytes.to_vec());
     }
 
     fn parse_song_mmd0<R: Read + Seek>(
@@ -509,15 +488,18 @@ impl OctamedMMDParser {
             } else {
                 stream.seek(header.instrument_info_ptr.into())?;
                 let mut infos = Vec::new();
+                let size = header.instrument_info_struct_size.0;
                 for _i in 0..header.instrument_info_array_length.0 {
                     let mut info = OctamedMMD0InstrumentInfo {
                         name: String::with_capacity(INSTRUMENT_NAME_LENGTH),
                     };
-                    for _j in 0..header.instrument_info_struct_size.0 - 1 {
+                    for _j in 0..size.saturating_sub(1) {
                         let c = Self::parse_ubyte(stream)?.as_char();
                         info.name.push(c);
                     }
-                    Self::parse_byte(stream)?; // \0
+                    if size > 0 {
+                        Self::parse_byte(stream)?; // \0
+                    }
                     infos.push(info);
                 }
                 infos
@@ -649,5 +631,26 @@ impl OctamedMMDParser {
 impl Default for OctamedMMDParser {
     fn default() -> Self {
         return Self::new();
+    }
+}
+
+enum OctamedModuleKind {
+    MMD0,
+    MMD1,
+    MMD2,
+    MMD3,
+}
+
+impl TryFrom<ULong> for OctamedModuleKind {
+    type Error = MmdError;
+
+    fn try_from(value: ULong) -> Result<Self> {
+        return match value.0 {
+            MMD0_ID => Ok(Self::MMD0),
+            MMD1_ID => Ok(Self::MMD1),
+            MMD2_ID => Ok(Self::MMD2),
+            MMD3_ID => Ok(Self::MMD3),
+            id => Err(MmdError::UnknownFormat(id)),
+        };
     }
 }

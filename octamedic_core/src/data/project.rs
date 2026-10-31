@@ -119,11 +119,11 @@ impl FromModule for OctamedicProject {
         }
         let song_length =
             (mmd_song.song_length.0 as usize).min(mmd_song.player_sequence_list.len());
-        song.sequence = mmd_song.player_sequence_list[..song_length]
+        *song.sequence_mut() = mmd_song.player_sequence_list[..song_length]
             .iter()
             .map(|&id| PatternId::from(id))
             .collect();
-        song.tempo = OctamedicTempo::from_octamed(&mmd_song.get_tempo());
+        *song.tempo_mut() = OctamedicTempo::from_octamed(&mmd_song.get_tempo());
         let flags = &mmd_song.flags;
         song.flags = OctamedicSongFlags {
             filter_on: flags.filter_is_on(),

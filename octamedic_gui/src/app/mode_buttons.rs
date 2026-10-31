@@ -22,18 +22,16 @@ const ROWS: usize = 5;
 
 const PICTURE_BLOCKS: i32 = 4;
 
-/// What a mode button switches to: a header panel, a main screen, both, or PLAY's own. The
-/// panels and screens themselves are in `app/header/` and `app/main/`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModeBinding {
     Header(HeaderMode),
     Main(MainMode),
     Both(HeaderMode, MainMode),
-    /// The play panel, and back to the editor last shown.
+    // the play panel, and back to the last editor
     Play,
 }
 
-/// Left to right, then top to bottom, as in OctaMED; the pictures have no label.
+// in OctaMED's order; the picture buttons have no label
 const BUTTONS: [(&str, ModeBinding); COLUMNS * ROWS] = [
     (
         "FILES",
@@ -55,8 +53,6 @@ const BUTTONS: [(&str, ModeBinding); COLUMNS * ROWS] = [
     ("SLIST", ModeBinding::Main(MainMode::SongList)),
 ];
 
-/// The buttons at the header's top right, which pick the header's panel and what fills the main
-/// screen. The one showing is drawn switched on.
 pub struct ModeButtons {
     grid: Grid<Button>,
 }

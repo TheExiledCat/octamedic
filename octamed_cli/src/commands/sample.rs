@@ -39,10 +39,6 @@ pub struct SampleCommand {
     fill: bool,
 }
 
-fn zero_to_100(text: &str) -> Result<u8, String> {
-    number_range(text, 0, MAX_PERCENT)
-}
-
 impl Command for SampleCommand {
     fn run(&self, mmd: &mut octamed::mmd::module::OctamedMMD) -> CommandResult {
         let header = mmd.sample_table.headers[self.sample_number]
@@ -100,6 +96,10 @@ impl Command for SampleCommand {
         thread::sleep(Duration::from_secs_f32(duration_secs));
         return Ok(());
     }
+}
+
+fn zero_to_100(text: &str) -> Result<u8, String> {
+    number_range(text, 0, MAX_PERCENT)
 }
 
 fn resample_linear(samples: &[i8], input_sample_rate: u32, output_sample_rate: u32) -> Vec<f32> {

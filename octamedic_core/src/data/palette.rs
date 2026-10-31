@@ -15,7 +15,6 @@ pub enum Channel {
 impl Channel {
     pub const ALL: [Channel; 3] = [Channel::Red, Channel::Green, Channel::Blue];
 
-    /// Where the channel's 4 bits are in a colour.
     fn shift(self) -> u16 {
         return match self {
             Channel::Red => 8,
@@ -63,7 +62,6 @@ impl OctamedColorPalette {
         self.set(pen, (self.get(pen) & !mask) | level);
     }
 
-    /// 8 bits per channel, each 4-bit level spread evenly over 0-255.
     pub fn rgb(&self, pen: usize) -> [u8; 3] {
         return OctamedMMD0Color::rgb(self.get(pen));
     }

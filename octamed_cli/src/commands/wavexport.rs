@@ -11,6 +11,7 @@ use progress_bar::{
 use crate::commands::repl::{Command, CommandError, CommandResult};
 
 const PROGRESS_BAR_WIDTH: usize = 100;
+
 #[derive(Args, Debug, Clone)]
 #[command(about = "Export a sample to wav file. Does not take into account sample transpose.")]
 pub struct WavExportCommand {

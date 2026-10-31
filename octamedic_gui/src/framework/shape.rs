@@ -1,4 +1,3 @@
-/// Which way a triangle points.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Direction {
     Up,
@@ -7,7 +6,6 @@ pub enum Direction {
     Right,
 }
 
-/// Which sides of a rect get a border.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Sides {
     pub top: bool,
@@ -31,28 +29,14 @@ impl Sides {
     };
 }
 
-/// A row of a shape: from `.0` up to but not including `.1`, across from its left edge.
+/// A row's `left..right`, from the shape's left edge.
 pub type Span = (i32, i32);
 
-/// A shape's rows, top to bottom; `None` where a row has nothing in it.
 pub type Spans = Vec<Option<Span>>;
 
-fn span(left: f32, right: f32) -> Option<Span> {
-    let span = (left.round() as i32, right.round() as i32);
-    return (span.0 < span.1).then_some(span);
-}
-
-/// How far row `y` of `h` is from the middle, from 0 there to 1 at the top and bottom edges.
-fn from_middle(y: i32, h: i32) -> f32 {
-    let half = h as f32 / 2.0;
-    return ((y as f32 + 0.5 - half) / half).abs();
-}
-
-/// A triangle filling `w` by `h`, pointing at the middle of one side from the far side. When `w`
-/// is a multiple of `h` it widens by the same whole number of pixels every row, so its edges
-/// step evenly.
+/// The edges step evenly when `w` is a multiple of `h` (Up, Down) or of `(h + 1) / 2`
+/// (Left, Right).
 pub fn triangle(w: i32, h: i32, direction: Direction) -> Spans {
-    // pointing sideways, the rows widen from the top and bottom edges in to the middle
     let half_rows = (h + 1) / 2;
     return (0..h)
         .map(|y| {
@@ -75,7 +59,7 @@ pub fn triangle(w: i32, h: i32, direction: Direction) -> Spans {
         .collect();
 }
 
-/// An ellipse filling `w` by `h`; a circle on screen when `w` is twice `h`, for the tall pixels.
+/// A circle on screen when `w` is twice `h`, because of the tall pixels.
 pub fn ellipse(w: i32, h: i32) -> Spans {
     let w_f = w as f32;
     return (0..h)
@@ -87,9 +71,7 @@ pub fn ellipse(w: i32, h: i32) -> Spans {
         .collect();
 }
 
-/// What's left of a shape inside a border `thickness` thick, as `Border` is:
-/// the pixels with the whole shape around them that far in every direction. Only right for
-/// shapes without dents, which all of these are.
+/// The shape inside a `Border` of `thickness`. Only correct for convex shapes.
 pub fn inside(spans: &Spans, thickness: i32) -> Spans {
     let rows = spans.len() as i32;
     let side = 2 * thickness;
@@ -104,6 +86,17 @@ pub fn inside(spans: &Spans, thickness: i32) -> Spans {
             (inner.0 < inner.1).then_some(inner)
         })
         .collect();
+}
+
+fn span(left: f32, right: f32) -> Option<Span> {
+    let span = (left.round() as i32, right.round() as i32);
+    return (span.0 < span.1).then_some(span);
+}
+
+/// 0 at the middle row, 1 at the top and bottom edges.
+fn from_middle(y: i32, h: i32) -> f32 {
+    let half = h as f32 / 2.0;
+    return ((y as f32 + 0.5 - half) / half).abs();
 }
 
 #[cfg(test)]

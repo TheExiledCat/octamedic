@@ -27,29 +27,20 @@ use crate::{
 const SEQUENCER_JUMP_BUTTONS: usize = 4;
 const INC_DEC_BUTTONS: usize = 2;
 const EDIT_BUTTONS: usize = 3;
-/// The row between the up and down jump buttons.
 const SEQUENCER_JUMP_SEPARATOR_ROW: usize = 2;
 const JUMP_ARROW_WIDTH: i32 = 12;
-/// Half as many lines as the arrow is pixels wide, so on the tall pixels it's as tall as it's
-/// wide.
+// pixels are twice as tall as they're wide, so this looks square
 const JUMP_ARROW_HEIGHT: i32 = JUMP_ARROW_WIDTH / 2;
 const JUMP_BUTTON_WIDTH: i32 = 20;
-/// The + and - buttons split their row between them; the INS, DEL and INS with an arrow buttons
-/// are below, and all four rows are as tall as the list.
 const INC_DEC_BUTTON_HEIGHT: i32 = 10;
 const INC_DEC_LINE_WIDTH: i32 = 10;
 const INC_DEC_LINE_HEIGHT: i32 = 5;
 const EDIT_BUTTON_HEIGHT: i32 = 11;
-/// How far into INS's frame its label starts.
 const INS_LABEL_OFFSET: i32 = 6;
-/// The jump to start and end buttons; the two between them are a line shorter, so all four and
-/// the separator are as tall as the list.
 const OUTER_JUMP_BUTTON_HEIGHT: i32 = 11;
 const INNER_JUMP_BUTTON_HEIGHT: i32 = 10;
 const JUMP_SEPARATOR_HEIGHT: i32 = 1;
 const SEQUENCE_HEIGHT: i32 = 43;
-/// The list of entries, then the jump buttons and the rest of the buttons to its right, from the
-/// play sequence editor's top left.
 const SEQUENCE_NUMBERS_RECT: Rect = Rect::new(0, 0, 36, SEQUENCE_HEIGHT);
 const JUMP_BUTTONS_RECT: Rect = Rect::new(
     SEQUENCE_NUMBERS_RECT.right(),
@@ -58,47 +49,34 @@ const JUMP_BUTTONS_RECT: Rect = Rect::new(
     SEQUENCE_HEIGHT,
 );
 const BUTTONS_RECT: Rect = Rect::new(JUMP_BUTTONS_RECT.right(), 0, 36, SEQUENCE_HEIGHT);
-/// The play sequence editor, from the panel's top left.
 const SEQUENCE_RECT: Rect = Rect::new(2, 1, BUTTONS_RECT.right(), SEQUENCE_HEIGHT);
 
-/// How many sequence entries are shown at once.
 const SEQUENCE_COUNT_MAX: usize = 5;
-/// The row of the active entry, with the entries before it above and the ones after below.
 const ACTIVE_ROW: usize = SEQUENCE_COUNT_MAX / 2;
-/// Blank lines above the first entry, inside the frame.
 const SEQUENCE_TOP_MARGIN: i32 = 1;
 
-// the play controls, from the panel's top left, right of the play sequence editor
-/// The primary tempo's slider, then the secondary tempo's.
+// Positions below are measured from an OctaMED screenshot, from the panel's top left.
 const TEMPO_SLIDERS: [Rect; 2] = [Rect::new(94, 0, 190, 15), Rect::new(320, 0, 92, 15)];
-/// The arrows down and up beside each slider.
 const TEMPO_STEPS: [[Rect; 2]; 2] = [
     [Rect::new(284, 0, 18, 15), Rect::new(302, 0, 18, 15)],
     [Rect::new(412, 0, 18, 15), Rect::new(430, 0, 18, 15)],
 ];
-/// Pixels wide and lines tall.
 const STEP_ARROW: [i32; 2] = [8, 7];
-/// The tempo sliders' handles are this long whatever their range, as OctaMED's are.
+// OctaMED's tempo handles don't scale with the range
 const TEMPO_HANDLE_LENGTH: i32 = 5;
-/// BPM or SPD, then the primary and secondary tempo.
 const TEMPO_MODE: Rect = Rect::new(347, 15, 36, 11);
 const TEMPO: Rect = Rect::new(383, 15, 65, 11);
-/// Where the VOL: label starts, then its row of buttons.
 const VOL_LABEL: [i32; 2] = [95, 18];
 const HEX: Rect = Rect::new(122, 15, 30, 11);
 const DEC: Rect = Rect::new(152, 15, 30, 11);
 const FILTER: Rect = Rect::new(182, 15, 51, 11);
-/// E1, E2 and E3 side by side.
 const METERS: Rect = Rect::new(233, 15, 78, 11);
 const STS: Rect = Rect::new(311, 15, 30, 11);
-/// Where the CH.MODE: label starts, in the tighter `Font::Small`, then HQ and the 4 to 8
-/// channel modes side by side under it.
 const CHANNEL_MODE_LABEL: [i32; 2] = [97, 28];
 const HQ: Rect = Rect::new(145, 26, 26, 9);
 const CHANNEL_MODES: Rect = Rect::new(96, 35, 75, 9);
 const CHANNEL_MODES_COUNT: usize = 5;
 const CHANNEL_MODE_LABELS: [&str; CHANNEL_MODES_COUNT] = ["4", "5", "6", "7", "8"];
-/// As tall as both rows of play buttons.
 const STOP: Rect = Rect::new(173, 26, 48, 18);
 const PLAY_SONG: Rect = Rect::new(221, 26, 113, 9);
 const CONTINUE_SONG: Rect = Rect::new(334, 26, 114, 9);
@@ -119,24 +97,17 @@ impl Play {
     }
 }
 impl OctamedicWidget for Play {
-    fn update(&mut self, state: &mut crate::app::state::AppState) {
+    fn update(&mut self, state: &mut AppState) {
         self.sequencer.update(state);
         self.playback.update(state);
     }
-    fn handle_event(
-        &mut self,
-        state: &mut crate::app::state::AppState,
-        event: &crate::framework::event::Event,
-    ) -> bool {
+
+    fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
         return self.sequencer.handle_event(state, event)
             || self.playback.handle_event(state, event);
     }
-    fn render(
-        &mut self,
-        state: &crate::app::state::AppState,
-        area: Rect,
-        painter: &mut crate::framework::painter::Painter,
-    ) {
+
+    fn render(&mut self, state: &AppState, area: Rect, painter: &mut Painter) {
         self.sequencer
             .render(state, SEQUENCE_RECT.within(area), painter);
         self.playback.render(state, area, painter);
@@ -150,7 +121,7 @@ struct Sequencer {
 }
 impl Sequencer {
     fn new() -> Self {
-        let mut jump_buttons = std::array::from_fn(|_| Button::new(""));
+        let mut jump_buttons = array::from_fn(|_| Button::new(""));
         jump_buttons[0] =
             Button::new(Triangle::new(Up, JUMP_ARROW_WIDTH, JUMP_ARROW_HEIGHT).with_bar())
                 .on_click(|state, click| {
@@ -180,7 +151,7 @@ impl Sequencer {
                     let MouseButton::Left = click.button else {
                         return;
                     };
-                    state.set_sequence(state.song().sequence().len().saturating_sub(1));
+                    state.set_sequence(usize::MAX);
                 });
 
         let mut inc_dec_buttons = array::from_fn(|_| Button::new(""));
@@ -212,7 +183,7 @@ impl Sequencer {
 
         let mut edit_buttons = array::from_fn(|_| Button::new("").font(Font::Label));
         let [ins, del, ins_current] = &mut edit_buttons;
-        // a pixel right of the middle, where OctaMED has it
+        // OctaMED has this label a pixel right of centre
         *ins = Button::new("INS")
             .font(Font::Label)
             .align(Align::Left)
@@ -246,11 +217,7 @@ impl Sequencer {
     }
 }
 impl OctamedicWidget for Sequencer {
-    fn handle_event(
-        &mut self,
-        state: &mut crate::app::state::AppState,
-        event: &crate::framework::event::Event,
-    ) -> bool {
+    fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
         return self
             .jump_buttons
             .iter_mut()
@@ -259,12 +226,7 @@ impl OctamedicWidget for Sequencer {
             .any(|button| button.handle_event(state, event));
     }
 
-    fn render(
-        &mut self,
-        state: &crate::app::state::AppState,
-        area: crate::framework::rect::Rect,
-        painter: &mut crate::framework::painter::Painter,
-    ) {
+    fn render(&mut self, state: &AppState, area: Rect, painter: &mut Painter) {
         let list_rect = SEQUENCE_NUMBERS_RECT.within(area);
         let sequence = state.song().sequence();
         let active = state.active_sequence_index;
@@ -277,7 +239,7 @@ impl OctamedicWidget for Sequencer {
         let (_, list) = inside.split_top(SEQUENCE_TOP_MARGIN);
         let rows = list.rows(&[CHAR_HEIGHT; SEQUENCE_COUNT_MAX]);
         painter.fill(rows[ACTIVE_ROW], Pen::SHADOW);
-        // nothing past the end, as when a song is loaded with an empty sequence
+        // a loaded song can have an empty sequence
         let shown = sequence
             .get(active - previous..=active + next)
             .unwrap_or_default();
@@ -321,7 +283,6 @@ impl OctamedicWidget for Sequencer {
     }
 }
 
-/// The play controls' buttons that start playback, in the order they're kept in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Start {
     Song,
@@ -356,7 +317,7 @@ impl Start {
         };
     }
 
-    /// OctaMED doesn't centre these labels: each starts this far into its button's frame.
+    // OctaMED doesn't centre these labels
     fn label_offset(self) -> i32 {
         return match self {
             Self::Song => 20,
@@ -365,8 +326,6 @@ impl Start {
         };
     }
 
-    /// The song from its start, or the block from its first line; continuing plays them from
-    /// the edit bar's line.
     fn play(self, state: &mut AppState) {
         let line = state.cursor.line;
         match self {
@@ -378,8 +337,7 @@ impl Start {
     }
 }
 
-/// The tempo's two numbers, as the sliders and the readout show them: the primary tempo, then
-/// lines per beat in BPM mode or ticks per line otherwise.
+// the secondary tempo is lines per beat in BPM mode, else ticks per line
 fn tempo_values(tempo: &OctamedicTempo) -> [u16; 2] {
     let secondary = if tempo.is_bpm_mode {
         tempo.lines_per_beat
@@ -389,7 +347,6 @@ fn tempo_values(tempo: &OctamedicTempo) -> [u16; 2] {
     return [tempo.primary_tempo, secondary as u16];
 }
 
-/// The most each of `tempo_values` goes to; they start at 1.
 fn tempo_maxima(tempo: &OctamedicTempo) -> [u16; 2] {
     let secondary = if tempo.is_bpm_mode {
         MAX_LINES_PER_BEAT
@@ -399,7 +356,6 @@ fn tempo_maxima(tempo: &OctamedicTempo) -> [u16; 2] {
     return [MAX_BPM as u16, secondary as u16];
 }
 
-/// Sets tempo value `index`, as `tempo_values` has them, kept to its range.
 fn set_tempo_value(state: &mut AppState, index: usize, value: u16) {
     let mut tempo = state.song().tempo();
     let value = value.clamp(1, tempo_maxima(&tempo)[index]);
@@ -411,13 +367,11 @@ fn set_tempo_value(state: &mut AppState, index: usize, value: u16) {
     state.set_tempo(tempo);
 }
 
-/// The primary and secondary tempo, like `125⁄04`, as OctaMED draws them: 3 pixels into the
-/// frame rather than centred, and further apart around the slash than the status row has them.
+// OctaMED doesn't centre this, and spaces the slash wider than the status row does
 struct TempoReadout([u16; 2]);
 
 impl TempoReadout {
     const INDENT: i32 = 3;
-    /// Extra pixels before the slash, and after it.
     const SLASH_GAPS: [i32; 2] = [1, 2];
 }
 
@@ -450,31 +404,24 @@ fn label_button(label: &'static str) -> Button {
     return Button::new(label).font(Font::Label);
 }
 
-/// The play panel's controls right of the play sequence editor: the tempo, the volume and
-/// channel settings, and the buttons that play and stop the song.
 struct Playback {
-    /// The primary and secondary tempo's sliders, and their arrows down and up.
     sliders: [Slider; 2],
     steps: [[Button; 2]; 2],
-    /// Each slider's value as it was last set from the tempo or written to it, so a drag shows
-    /// as a change.
+    // the value last set on each slider, so a drag shows up as a change
     slid: [u16; 2],
     tempo_mode: Button,
     tempo: Button,
     hex: Button,
     dec: Button,
     filter: Button,
-    /// E1, E2 and E3.
     meters: [Button; 3],
     sts: Button,
     hq: Button,
-    /// 4 to 8.
     channel_modes: [Button; CHANNEL_MODES_COUNT],
     stop: Button,
     starts: [Button; 4],
-    /// D: play the block when a note is entered.
+    // D: play the block when a note is entered
     play_on_note: Button,
-    /// The button that started what's playing, which shows switched on while it plays.
     started: Option<Start>,
 }
 
@@ -556,22 +503,18 @@ impl Playback {
                 set_tempo_value(state, index, value.saturating_sub(1));
             }
             if left_clicked(up) {
-                set_tempo_value(state, index, value + 1);
+                set_tempo_value(state, index, value.saturating_add(1));
             }
         }
         if left_clicked(&mut self.tempo_mode) {
             let mut tempo = state.song().tempo();
             tempo.is_bpm_mode = !tempo.is_bpm_mode;
             state.set_tempo(tempo);
-            // the secondary value changes meaning, and lines per beat and ticks per line keep
-            // their own ranges
-            let secondary = tempo_values(&tempo)[1];
-            set_tempo_value(state, 1, secondary);
         }
         let tempo = state.song().tempo();
         let values = tempo_values(&tempo);
         for (index, slider) in self.sliders.iter_mut().enumerate() {
-            slider.set_value(values[index] - 1);
+            slider.set_value(values[index].saturating_sub(1));
             self.slid[index] = slider.value() + 1;
         }
         self.tempo_mode
@@ -579,7 +522,7 @@ impl Playback {
         self.tempo.set_content(TempoReadout(values));
     }
 
-    /// The buttons nothing plays differently for yet, which switch on and off.
+    // these don't affect playback yet
     fn update_switches(&mut self) {
         if left_clicked(&mut self.hex) {
             self.hex.set_toggled(true);

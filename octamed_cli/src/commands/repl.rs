@@ -21,13 +21,14 @@ use crate::commands::{
     wavexport::WavExportCommand,
 };
 
+const MAX_SUGGESTIONS: usize = 5;
+
 pub type CommandResult = Result<(), CommandError>;
 
 pub trait Command {
     fn run(&self, mmd: &mut OctamedMMD) -> CommandResult;
 }
 
-const MAX_SUGGESTIONS: usize = 5;
 #[derive(Debug)]
 pub enum CommandError {
     Generic(String),

@@ -265,7 +265,8 @@ impl OctamedMMDTrackLine {
 
     pub const BLOCK_LINE_NOTE_NUMBER_MASK_MMD1: u8 = 0x7f;
 
-    /// In MMD0, the note takes byte 1's low 6 bits, and the instrument's high bits the rest.
+    /// In MMD0, the note takes byte 1's low 6 bits, and the instrument's high bits the rest:
+    /// bit 7 is the instrument's bit 4 and bit 6 its bit 5.
     pub const MMD0_NOTE_BITS: u32 = 6;
 
     /// In MMD0, the instrument's low bits take byte 2's high 4.
@@ -275,16 +276,21 @@ impl OctamedMMDTrackLine {
         let command_value = byte3;
         let command_number = UByte(byte2.0 & Self::BLOCK_LINE_COMMAND_NUMBER_MASK_MMD0);
         let note_number = UByte(byte1.0 & Self::BLOCK_LINE_NOTE_NUMBER_MASK_MMD0);
-        // leftmost 2 bits of byte 1 need to be prepended to byte 2 to get the value for the instrument number
-        let xy = (byte1.0 >> Self::MMD0_NOTE_BITS) << Self::MMD0_INSTRUMENT_LOW_BITS;
+        let xy = byte1.0 >> Self::MMD0_NOTE_BITS;
+        let high = ((xy & 0b10) << 3) | ((xy & 0b01) << 5);
         let iiii = byte2.0 >> Self::MMD0_INSTRUMENT_LOW_BITS;
-        let instrument_number = UByte(xy | iiii);
+        let instrument_number = UByte(high | iiii);
         return Self {
             note_number,
             instrument_number,
             command_number,
             command_value,
         };
+    }
+
+    /// Byte 1's top two bits for `instrument`, the inverse of `from_bytes_mmd0`.
+    pub fn instrument_high_bits_mmd0(instrument: u8) -> u8 {
+        return (((instrument >> 4) & 1) << 7) | (((instrument >> 5) & 1) << 6);
     }
 
     pub fn from_bytes_mmd1(byte1: UByte, byte2: UByte, byte3: UByte, byte4: UByte) -> Self {
@@ -311,20 +317,6 @@ impl Display for OctamedMMDTrackLine {
             self.command_number.0,
             self.command_value.0
         )
-    }
-}
-
-trait AsInstrumentString {
-    fn as_inst_string(&self) -> String;
-}
-
-impl AsInstrumentString for UByte {
-    /// Two base-32 digits with a space for a leading zero, as OctaMED shows instruments.
-    fn as_inst_string(&self) -> String {
-        if self.0 as usize > MAX_INSTRUMENTS {
-            return "??".to_owned();
-        }
-        return base32::format(self.0 as u32, 2, ' ');
     }
 }
 
@@ -547,12 +539,6 @@ impl OctamedMMD0Color {
 
     const CHANNEL_MAX: u16 = 0xf;
 
-    /// The rgb values in in half byte accuracy, where 0 = 0 and 15 = 255 / lowest - maximum brightness
-    pub fn as_rgb_4(&self) -> (UByte, UByte, UByte) {
-        let [r, g, b] = Self::rgb(self.value.0);
-        return (UByte(r), UByte(g), UByte(b));
-    }
-
     /// An Amiga colour word as 8-bit red, green and blue, with each 4-bit channel stretched
     /// to the full range.
     pub fn rgb(color: u16) -> [u8; 3] {
@@ -715,9 +701,38 @@ impl Display for OctamedMMD0SongFlags {
     }
 }
 
+trait AsInstrumentString {
+    fn as_inst_string(&self) -> String;
+}
+
+impl AsInstrumentString for UByte {
+    /// Two base-32 digits with a space for a leading zero, as OctaMED shows instruments.
+    fn as_inst_string(&self) -> String {
+        if self.0 as usize > MAX_INSTRUMENTS {
+            return "??".to_owned();
+        }
+        return base32::format(self.0 as u32, 2, ' ');
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mmd0_instrument_bit_7_is_bit_4_and_bit_6_is_bit_5() {
+        let instrument = |byte1: u8, byte2: u8| {
+            let line = OctamedMMDTrackLine::from_bytes_mmd0(UByte(byte1), UByte(byte2), UByte(0));
+            return line.instrument_number.0;
+        };
+        assert_eq!(instrument(0x80 | 1, 0x00), 16);
+        assert_eq!(instrument(0x40 | 1, 0x00), 32);
+        assert_eq!(instrument(0xC0, 0xF0), 63);
+        for i in 0..64 {
+            let byte1 = OctamedMMDTrackLine::instrument_high_bits_mmd0(i);
+            assert_eq!(instrument(byte1, i << 4), i, "{i}");
+        }
+    }
 
     #[test]
     fn bpm_beat_length_is_one_more_than_the_stored_bits() {

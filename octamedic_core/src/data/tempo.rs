@@ -22,12 +22,6 @@ const COMPATIBILITY_COUNTS: [u16; 10] = [
     2417, 4833, 7250, 9666, 12083, 14500, 16916, 19332, 21436, 24163,
 ];
 
-/// BPM mode divides this by BPM × lines per beat: the E-clock × 2.5, rounded down.
-fn bpm_timer_constant(clock: AmigaClock) -> u32 {
-    const TIMES_TWO_AND_A_HALF: (u32, u32) = (5, 2);
-    return clock.e_clock * TIMES_TWO_AND_A_HALF.0 / TIMES_TWO_AND_A_HALF.1;
-}
-
 /// BPM mode runs a tick on every 4th timer interrupt.
 const BPM_INTERRUPTS_PER_TICK: u32 = 4;
 
@@ -124,6 +118,11 @@ impl Default for OctamedicTempo {
     fn default() -> Self {
         return Self::new();
     }
+}
+
+/// BPM mode divides this by BPM × lines per beat: the E-clock × 2.5, rounded down.
+fn bpm_timer_constant(clock: AmigaClock) -> u32 {
+    return clock.e_clock * 5 / 2;
 }
 
 #[cfg(test)]

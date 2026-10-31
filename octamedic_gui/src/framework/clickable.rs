@@ -3,13 +3,11 @@ use crate::framework::{
     rect::{Point, Rect},
 };
 
-/// What a `Clickable` made of an event.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Click {
     Ignored,
-    /// Taken without clicking: the release of a press that clicked.
+    /// The release of a press that clicked.
     Handled,
-    /// Pressed at `pos`, over the area.
     Clicked {
         button: MouseButton,
         pos: Point,
@@ -22,8 +20,8 @@ impl Click {
     }
 }
 
-/// An area that clicks the moment it's pressed, as OctaMED's gadgets do. The release of that
-/// press is taken too, wherever it is, so nothing under the pointer sees half a click.
+/// Clicks on press, like OctaMED's gadgets. The release is taken too, wherever it lands, so
+/// nothing under the pointer sees half a click.
 #[derive(Clone, Debug, Default)]
 pub struct Clickable {
     area: Rect,
@@ -32,19 +30,17 @@ pub struct Clickable {
 }
 
 impl Clickable {
-    /// Set while rendering, which is where the area is worked out.
     pub fn set_area(&mut self, area: Rect) {
         self.area = area;
     }
 
-    /// Held down with the pointer over it.
     // nothing draws itself pressed at the moment
     #[allow(dead_code)]
     pub fn is_pressed(&self) -> bool {
         return self.hovered && self.pressed.is_some();
     }
 
-    /// Mouse moves are never taken, so every clickable sees them.
+    // Mouse moves are never taken, so every clickable sees them.
     pub fn handle(&mut self, event: &Event) -> Click {
         match *event {
             Event::MouseMove { pos } => {
@@ -53,7 +49,9 @@ impl Clickable {
             }
             Event::MouseDown { pos, button } => {
                 self.hovered = self.area.contains(pos);
-                if !self.hovered || self.pressed.is_some() {
+                // a press of the button held means its release went to another widget
+                let other_held = self.pressed.is_some_and(|held| held != button);
+                if !self.hovered || other_held {
                     return Click::Ignored;
                 }
                 self.pressed = Some(button);
@@ -126,6 +124,18 @@ mod tests {
         assert!(!clickable.is_pressed());
         clickable.handle(&Event::MouseMove { pos: [15, 15] });
         assert!(clickable.is_pressed());
+    }
+
+    #[test]
+    fn a_press_whose_release_was_missed_still_clicks_next_time() {
+        let mut clickable = clickable();
+        clickable.handle(&down(15, 15));
+        assert!(clickable.handle(&down(15, 15)) != Click::Ignored);
+        let right = Event::MouseDown {
+            pos: [15, 15],
+            button: MouseButton::Right,
+        };
+        assert_eq!(clickable.handle(&right), Click::Ignored);
     }
 
     #[test]

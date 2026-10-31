@@ -1,23 +1,15 @@
-/// The places the cursor stops in a track: the note, then the instrument's, the command's and its
-/// value's two digits each.
+// the note, then two digits each for the instrument, command and value
 pub const TRACK_COLUMNS: usize = 7;
 
-/// Where the cursor is in the block being edited.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct EditCursor {
     pub edit_mode: bool,
     pub line: usize,
     pub track: usize,
-    /// Within the track, 0 to `TRACK_COLUMNS - 1`.
     pub column: usize,
 }
 
-fn wrap(value: usize, delta: isize, count: usize) -> usize {
-    return (value as isize + delta).rem_euclid(count as isize) as usize;
-}
-
 impl EditCursor {
-    /// Wraps around the ends of the block.
     pub fn move_lines(&mut self, delta: isize, lines: usize) {
         if lines > 0 {
             self.line = wrap(self.line, delta, lines);
@@ -28,8 +20,6 @@ impl EditCursor {
         self.line = line.min(lines.saturating_sub(1));
     }
 
-    /// Moves into the next or previous track past either end of one, and wraps around the first
-    /// and last tracks.
     pub fn move_columns(&mut self, delta: isize, tracks: usize) {
         if tracks == 0 {
             return;
@@ -40,24 +30,25 @@ impl EditCursor {
         self.column = position % TRACK_COLUMNS;
     }
 
-    /// Keeps the column, and wraps around the first and last tracks.
     pub fn move_tracks(&mut self, delta: isize, tracks: usize) {
         if tracks > 0 {
             self.track = wrap(self.track, delta, tracks);
         }
     }
 
-    /// Keeps the column, and stops at the first and last tracks.
     pub fn move_tracks_clamped(&mut self, delta: isize, tracks: usize) {
         let last = tracks.saturating_sub(1) as isize;
         self.track = (self.track as isize + delta).clamp(0, last) as usize;
     }
 
-    /// Keeps the cursor in a block of this size.
     pub fn clamp(&mut self, lines: usize, tracks: usize) {
         self.line = self.line.min(lines.saturating_sub(1));
         self.track = self.track.min(tracks.saturating_sub(1));
     }
+}
+
+fn wrap(value: usize, delta: isize, count: usize) -> usize {
+    return (value as isize + delta).rem_euclid(count as isize) as usize;
 }
 
 #[cfg(test)]

@@ -32,33 +32,14 @@ pub enum PlayMode {
 
 impl PlayMode {
     pub fn from_u8(value: u8) -> Self {
-        const ALL: [PlayMode; 5] = [
-            PlayMode::Paused,
-            PlayMode::Song,
-            PlayMode::SongLoop,
-            PlayMode::PatternLoop,
-            PlayMode::Pattern,
-        ];
-        return ALL
-            .into_iter()
-            .find(|mode| *mode as u8 == value)
-            .unwrap_or(PlayMode::Paused);
+        return match value {
+            1 => PlayMode::Song,
+            2 => PlayMode::SongLoop,
+            3 => PlayMode::PatternLoop,
+            4 => PlayMode::Pattern,
+            _ => PlayMode::Paused,
+        };
     }
-}
-
-#[derive(Clone, Copy)]
-struct Position {
-    sequence_index: usize,
-    pattern: PatternId,
-    row: usize,
-}
-
-/// Counted in output frames, so ticks land on the right sample.
-struct Clock {
-    /// The tick within the row; its notes play on tick 0.
-    tick: u32,
-    /// Keeps the fraction, so the tempo doesn't drift.
-    frames_until_tick: f64,
 }
 
 /// Runs inside the audio callback, which drives it through `process`.
@@ -93,7 +74,8 @@ impl OctamedicEngine {
         status: Arc<EngineStatus>,
         sample_rate: u32,
     ) -> Self {
-        let renderer = PaulaRenderer::new(sample_rate, AmigaClock::PAL, MAX_TRACKS);
+        let scopes = status.scopes().clone();
+        let renderer = PaulaRenderer::new(sample_rate, AmigaClock::PAL, MAX_TRACKS, scopes);
         return Self::with_renderer(commands, status, sample_rate, Box::new(renderer));
     }
 
@@ -248,8 +230,8 @@ impl OctamedicEngine {
         });
     }
 
-    /// The first row plays on the next tick, which is due straight away.
-    /// Plays from the position, starting at the block's last line when it's past the end.
+    /// The first row plays on the next tick, which is due straight away. A row past the block's
+    /// end starts at its last line.
     fn start(&mut self, mode: PlayMode) {
         let Some(lines) = self.current_pattern().map(OctamedicPattern::line_count) else {
             self.stop();
@@ -470,6 +452,21 @@ impl OctamedicEngine {
             self.release(track);
         }
     }
+}
+
+#[derive(Clone, Copy)]
+struct Position {
+    sequence_index: usize,
+    pattern: PatternId,
+    row: usize,
+}
+
+/// Counted in output frames, so ticks land on the right sample.
+struct Clock {
+    /// The tick within the row; its notes play on tick 0.
+    tick: u32,
+    /// Keeps the fraction, so the tempo doesn't drift.
+    frames_until_tick: f64,
 }
 
 #[cfg(test)]

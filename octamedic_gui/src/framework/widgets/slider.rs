@@ -16,10 +16,8 @@ pub enum SliderDirection {
     Vertical,
 }
 
-/// What a slider's handler is told while it's dragged.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Slide {
-    /// The value when the drag started.
     pub start_value: u16,
     pub value: u16,
 }
@@ -28,29 +26,19 @@ pub trait SlideHandler: Fn(&mut AppState, Slide) + 'static {}
 
 impl<F: Fn(&mut AppState, Slide) + 'static> SlideHandler for F {}
 
-/// Where the pointer took hold of the handle, and the value it started at.
-#[derive(Clone, Copy, Debug)]
-struct Drag {
-    start_value: u16,
-    /// From the handle's start along the slider.
-    grab: i32,
-}
-
-/// A handle in a dotted track, dragged between `steps` positions. A clone shares the original's
-/// handler.
+/// A clone shares the original's handler.
 #[derive(Clone)]
 pub struct Slider {
     direction: SliderDirection,
-    /// The last step at the start of the track: the left, or the top when vertical.
+    /// The last step is at the left, or the top when vertical.
     reversed: bool,
-    /// How many positions the handle has; the handle is the track split into this many, unless
-    /// `handle` says how long it is.
+    /// Handle positions. The handle is the track split into this many unless `handle` is set.
     steps: u16,
     handle: Option<i32>,
     value: u16,
     on_slide: Option<Rc<dyn SlideHandler>>,
     drag: Option<Drag>,
-    /// Where the slider was last rendered.
+    /// Where it was last rendered.
     area: Rect,
 }
 
@@ -68,7 +56,6 @@ impl Slider {
         };
     }
 
-    /// A handle `length` pixels long whatever the steps, like the play panel's tempo sliders'.
     pub fn fixed_handle(mut self, length: i32) -> Self {
         self.handle = Some(length);
         return self;
@@ -87,12 +74,11 @@ impl Slider {
         return self.value;
     }
 
-    /// A step from 0 to `steps - 1`.
     pub fn set_value(&mut self, value: u16) {
         self.value = value.min(self.steps - 1);
     }
 
-    /// `area` laid flat: `w` along the slider and `h` across it, whichever way it goes.
+    /// `area` laid flat: `w` along the slider, `h` across it.
     fn track(&self, area: Rect) -> Rect {
         return match self.direction {
             SliderDirection::Horizontal => area,
@@ -107,7 +93,6 @@ impl Slider {
             .clamp(1, track.w.max(1));
     }
 
-    /// Where the handle starts along the track for `value`.
     fn handle_offset(&self, value: u16, track: Rect) -> i32 {
         let last = self.steps as i32 - 1;
         if last == 0 {
@@ -121,7 +106,6 @@ impl Slider {
         return step * (track.w - self.handle_length(track)) / last;
     }
 
-    /// The value whose handle starts nearest `offset` along the track.
     fn value_at(&self, offset: i32, track: Rect) -> u16 {
         let last = self.steps as i32 - 1;
         let room = track.w - self.handle_length(track);
@@ -133,7 +117,6 @@ impl Slider {
         return step as u16;
     }
 
-    /// The handle in `area`.
     fn handle_rect(&self, area: Rect) -> Rect {
         let track = self.track(area);
         let offset = self.handle_offset(self.value, track);
@@ -145,7 +128,6 @@ impl Slider {
         return handle.within(area);
     }
 
-    /// How far `pos` is along the slider from the start of `area`.
     fn along(&self, pos: Point, area: Rect) -> i32 {
         return match self.direction {
             SliderDirection::Horizontal => pos[0] - area.x,
@@ -153,7 +135,6 @@ impl Slider {
         };
     }
 
-    /// Moves the handle to follow the pointer, and tells the handler if that changed the value.
     fn drag_to(&mut self, state: &mut AppState, pos: Point, drag: Drag) {
         let track = self.track(self.area);
         let value = self.value_at(self.along(pos, self.area) - drag.grab, track);
@@ -209,8 +190,7 @@ impl OctamedicWidget for Slider {
         }
     }
 
-    /// As OctaMED draws its sliders: a dotted track in a frame, and a light handle with a shadow
-    /// along its bottom and just past its right edge.
+    // As OctaMED draws it: the handle's shadow runs along its bottom and just past its right edge.
     fn render(&mut self, _state: &AppState, area: Rect, painter: &mut Painter) {
         let track = painter.frame(area, 1);
         self.area = track;
@@ -226,6 +206,13 @@ impl OctamedicWidget for Slider {
             );
         }
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct Drag {
+    start_value: u16,
+    /// Where the handle was grabbed, from its start.
+    grab: i32,
 }
 
 #[cfg(test)]

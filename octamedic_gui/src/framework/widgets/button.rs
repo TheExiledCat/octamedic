@@ -16,56 +16,35 @@ use crate::{
     },
 };
 
-/// What a button's click handler is told.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ButtonClick {
     pub button: MouseButton,
-    /// The part of the content under the pointer, if any: for a label, its character, counting
-    /// from 0.
+    /// For a label, the index of the character clicked.
     pub char_index: Option<usize>,
 }
 
-/// What a button runs when it's clicked: any closure taking the state and the click.
 pub trait ButtonHandler: Fn(&mut AppState, ButtonClick) + 'static {}
 
 impl<F: Fn(&mut AppState, ButtonClick) + 'static> ButtonHandler for F {}
 
-/// Where a button's content goes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ContentArea {
-    /// Inside the frame.
     pub inside: Rect,
-    /// Inside the frame and the padding.
     pub padded: Rect,
     pub align: Align,
     pub font: Font,
     pub bold: bool,
-    /// The button's fill, for content that draws a background of its own in the content pen.
+    /// For content that draws its own background.
     pub fill: Pen,
 }
 
-/// What's drawn inside a button's frame.
 #[allow(unused_variables)]
 pub trait ButtonContent {
-    /// Draws the content in `pen`, which is inverted with the button.
     fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter);
 
-    /// Which part of the content is at `pos`, for `ButtonClick::char_index`.
     fn index_at(&self, area: ContentArea, pos: Point) -> Option<usize> {
         return None;
     }
-}
-
-/// The part of `line` that's drawn, and where it starts. It's cut to fit inside the frame and
-/// lined up in the padding, but moved into the padding when it's too long for it, as OctaMED
-/// does with labels like `CHRD`.
-fn place_line<'a>(line: &'a Line, area: ContentArea) -> (Line<'a>, i32) {
-    let line = line.fit(area.inside.w);
-    let width = line.width();
-    let x = line_x(area.padded, &line, area.align);
-    // it may only hang a pixel over the end when it doesn't fit otherwise
-    let last = area.inside.right() - width;
-    return (line, x.min(last).max(area.inside.x));
 }
 
 impl ButtonContent for Line<'static> {
@@ -78,13 +57,6 @@ impl ButtonContent for Line<'static> {
         let (line, x) = place_line(self, area);
         return line.index_at(pos[0] - x);
     }
-}
-
-/// A plain label is a line of one span, in the button's font.
-fn label_line(text: &str, area: ContentArea) -> Line<'_> {
-    let mut span = Span::new(text).font(area.font);
-    span.bold = area.bold;
-    return Line::from(span);
 }
 
 impl ButtonContent for str {
@@ -121,13 +93,12 @@ impl ButtonContent for String {
     }
 }
 
-/// A solid triangle pointing one way, `width` pixels by `height` lines.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Triangle {
     pub direction: Direction,
     pub width: i32,
     pub height: i32,
-    /// A bar across the point, as on the buttons that jump to the start or end.
+    /// A bar across the point, as on the jump to start/end buttons.
     pub bar: bool,
 }
 
@@ -141,14 +112,6 @@ impl Triangle {
         };
     }
 
-    const ARROW_WIDTH: i32 = 6;
-    const ARROW_HEIGHT: i32 = 5;
-
-    /// A bar is a line tall, or two pixels wide across a left or right pointing triangle, as
-    /// `Border` is.
-    const BAR_LINES: i32 = 1;
-    const BAR_PIXELS: i32 = 2;
-
     pub fn arrow(direction: Direction) -> Self {
         return Self::new(direction, Self::ARROW_WIDTH, Self::ARROW_HEIGHT);
     }
@@ -158,7 +121,13 @@ impl Triangle {
         return self;
     }
 
-    /// The width and height of the triangle and its bar.
+    const ARROW_WIDTH: i32 = 6;
+    const ARROW_HEIGHT: i32 = 5;
+
+    // Across a left or right triangle the bar is two pixels wide, like `Border`.
+    const BAR_LINES: i32 = 1;
+    const BAR_PIXELS: i32 = 2;
+
     fn size(&self) -> [i32; 2] {
         if !self.bar {
             return [self.width, self.height];
@@ -169,7 +138,7 @@ impl Triangle {
         };
     }
 
-    /// In the middle of the inside of the frame, rounding right and down.
+    /// Centred inside the frame, rounding right and down.
     fn area(&self, inside: Rect) -> Rect {
         let [width, height] = self.size();
         return Rect::new(
@@ -180,7 +149,7 @@ impl Triangle {
         );
     }
 
-    /// `area` split into the bar, at the point, and the triangle.
+    /// Returns (bar, triangle).
     fn split_bar(&self, area: Rect) -> (Rect, Rect) {
         return match self.direction {
             Direction::Up => area.split_top(Self::BAR_LINES),
@@ -209,30 +178,26 @@ impl ButtonContent for Triangle {
     }
 }
 
-/// A label with a down arrow after it, like the play sequence's INS that inserts the current
-/// block: a stem over a head.
+/// A label followed by a down arrow, like the play sequence's INS.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ArrowLabel {
     pub label: &'static str,
 }
 
 impl ArrowLabel {
-    /// Pixels between the label and the arrow, besides the blank pixel the label's font leaves
-    /// after its last letter.
-    const GAP: i32 = 1;
-    /// Two pixels wide, as `Border` is, and lines tall.
-    const STEM: [i32; 2] = [2, 4];
-    /// Pixels wide and lines tall, under the stem.
-    const HEAD: [i32; 2] = [6, 3];
-    const ARROW: [i32; 2] = [Self::HEAD[0], Self::STEM[1] + Self::HEAD[1]];
-
     pub fn new(label: &'static str) -> Self {
         return Self { label };
     }
 
-    /// Where `line` starts, and the arrow, together in the middle of the inside of the frame,
-    /// rounding right as OctaMED does here. When they don't fit, the arrow stays inside the frame
-    /// and the label goes past its left side.
+    /// On top of the blank pixel the font leaves after the last letter.
+    const GAP: i32 = 1;
+    /// [width, height]; two pixels wide, like `Border`.
+    const STEM: [i32; 2] = [2, 4];
+    const HEAD: [i32; 2] = [6, 3];
+    const ARROW: [i32; 2] = [Self::HEAD[0], Self::STEM[1] + Self::HEAD[1]];
+
+    /// Centred together, rounding right as OctaMED does here. When they don't fit, the arrow
+    /// stays inside the frame and the label overflows to the left.
     fn place(&self, line: &Line, inside: Rect) -> (i32, Rect) {
         // from the label's first letter, as `line_x` centres it
         let (blank, _) = line.blank_sides();
@@ -260,8 +225,6 @@ impl ButtonContent for ArrowLabel {
     }
 }
 
-/// A plus or a minus, `width` pixels by `height` lines, its lines `thickness` thick as `Border`
-/// is.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct IncDec {
     is_increment: bool,
@@ -280,8 +243,7 @@ impl IncDec {
         };
     }
 
-    /// The line across, and the one down for a plus, in the middle of the inside of the frame,
-    /// rounding right and up, as OctaMED's sit.
+    /// Centred rounding right and up, as OctaMED's sit.
     fn lines(&self, inside: Rect) -> (Rect, Option<Rect>) {
         let x = inside.x + (inside.w - self.width + 1) / 2;
         let y = inside.y + (inside.h - self.height) / 2;
@@ -312,25 +274,22 @@ impl ButtonContent for IncDec {
     }
 }
 
-/// A gadget showing a label or anything else that's `ButtonContent`, which changes the state
-/// when clicked. A clone shares the original's content and handler.
+/// A clone shares the original's content and handler.
 #[derive(Clone)]
 pub struct Button {
     content: Rc<dyn ButtonContent>,
     clickable: Clickable,
     on_click: Option<Rc<dyn ButtonHandler>>,
-    /// Drawn inverted, like OctaMED's buttons that are switched on.
+    /// Drawn inverted, like OctaMED's switched-on buttons.
     toggled: bool,
-    /// The frame's thickness, as `Painter::frame` takes it.
     border: i32,
-    /// Between the frame and the content: pixels at the sides, then lines at the top and bottom.
+    /// [sides, top and bottom].
     padding: [i32; 2],
     align: Align,
     font: Font,
     bold: bool,
-    /// Where the button was last rendered.
+    /// Where it was last rendered.
     area: Rect,
-    /// The last click, until `clicked` takes it.
     click: Option<ButtonClick>,
 }
 
@@ -351,8 +310,7 @@ impl Button {
         };
     }
 
-    /// The click since this was last called, if there was one. The widget that owns the button
-    /// can check this after passing it events, instead of giving it a handler.
+    /// Takes the last click, for owners that poll instead of setting a handler.
     pub fn clicked(&mut self) -> Option<ButtonClick> {
         return self.click.take();
     }
@@ -396,18 +354,6 @@ impl Button {
         return self;
     }
 
-    fn content_area(&self, area: Rect) -> ContentArea {
-        let inside = inside_frame(area, self.border);
-        return ContentArea {
-            inside,
-            padded: inside.inset(self.padding[0], self.padding[1]),
-            align: self.align,
-            font: self.font,
-            bold: self.bold,
-            fill: self.pens().0,
-        };
-    }
-
     pub fn set_content(&mut self, content: impl ButtonContent + 'static) {
         self.content = Rc::new(content);
     }
@@ -416,7 +362,6 @@ impl Button {
         self.set_content(text.into());
     }
 
-    /// Switches between drawn normally and inverted.
     pub fn toggle(&mut self) {
         self.toggled.flip();
     }
@@ -429,8 +374,20 @@ impl Button {
         return self.toggled;
     }
 
-    /// The fill and content pens, swapped while it's toggled. Holding it down doesn't change
-    /// how it looks; a button that should show it does so through its toggle.
+    fn content_area(&self, area: Rect) -> ContentArea {
+        let inside = inside_frame(area, self.border);
+        return ContentArea {
+            inside,
+            padded: inside.inset(self.padding[0], self.padding[1]),
+            align: self.align,
+            font: self.font,
+            bold: self.bold,
+            fill: self.pens().0,
+        };
+    }
+
+    /// (fill, content), swapped while toggled. Holding it down doesn't change how it looks; a
+    /// button that should show that does it through its toggle.
     fn pens(&self) -> (Pen, Pen) {
         let (fill, content) = (Pen::FILL, Pen::BLACK);
         return if self.toggled {
@@ -464,6 +421,23 @@ impl OctamedicWidget for Button {
         self.content
             .render(self.content_area(area), content, painter);
     }
+}
+
+/// The fitted line and its x. A label too long for the padding moves into it, as OctaMED does
+/// with `CHRD`.
+fn place_line<'a>(line: &'a Line, area: ContentArea) -> (Line<'a>, i32) {
+    let line = line.fit(area.inside.w);
+    let width = line.width();
+    let x = line_x(area.padded, &line, area.align);
+    // it may only hang a pixel over the end when it doesn't fit otherwise
+    let last = area.inside.right() - width;
+    return (line, x.min(last).max(area.inside.x));
+}
+
+fn label_line(text: &str, area: ContentArea) -> Line<'_> {
+    let mut span = Span::new(text).font(area.font);
+    span.bold = area.bold;
+    return Line::from(span);
 }
 
 #[cfg(test)]

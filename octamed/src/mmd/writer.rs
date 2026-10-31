@@ -13,56 +13,6 @@ use crate::{
     utility::bytes::{Offset, UByte, ULong, UWord, ValueMap}, // UByte used in MMD0 track encoding
 };
 
-/// A part of the module file, placed by the layout before anything is written.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-enum Slot {
-    Header,
-    Song,
-    BlockTable,
-    BlockHeader(usize),
-    BlockData(usize),
-    BlockInfo(usize),
-    BlockHighlights(usize),
-    BlockName(usize),
-    SampleTable,
-    SampleHeader(usize),
-    SampleData(usize),
-    Expansion,
-    ExternalInstruments,
-    Annotation,
-    InstrumentInfos,
-    Palette,
-    NotationInfo,
-    SongName,
-}
-
-struct AllocatorLayout {
-    cursor: u32,
-    positions: HashMap<Slot, Offset>,
-}
-
-impl AllocatorLayout {
-    pub fn new() -> Self {
-        Self {
-            cursor: 0,
-            positions: HashMap::new(),
-        }
-    }
-
-    pub fn alloc(&mut self, slot: Slot, size: u32) {
-        self.positions.insert(slot, Offset(self.cursor));
-        self.cursor += size;
-    }
-
-    /// Panics if `slot` wasn't allocated, which is a bug in the writer.
-    fn at(&self, slot: Slot) -> Offset {
-        return *self
-            .positions
-            .get(&slot)
-            .unwrap_or_else(|| panic!("{slot:?} wasn't allocated"));
-    }
-}
-
 type Result<T> = MmdResult<T>;
 
 pub struct OctamedMMDWriter {
@@ -73,11 +23,11 @@ pub struct OctamedMMDWriter {
 
 impl OctamedMMDWriter {
     pub fn new() -> Self {
-        Self {
+        return Self {
             layout: AllocatorLayout::new(),
             writer: Vec::new(),
             byte_count_stack: vec![],
-        }
+        };
     }
 
     pub fn write_module(mut self, mmd: &OctamedMMD) -> Result<Vec<u8>> {
@@ -87,6 +37,13 @@ impl OctamedMMDWriter {
         self.write(mmd)?;
         assert_eq!(allocated as usize, self.writer.len());
         return Ok(self.writer);
+    }
+
+    pub fn write_module_file(self, path: PathBuf, mmd: &OctamedMMD) -> Result<()> {
+        let bytes = self.write_module(mmd)?;
+        let mut file = File::create(path)?;
+        file.write_all(&bytes)?;
+        return Ok(());
     }
 
     fn push_size(&mut self) {
@@ -109,13 +66,6 @@ impl OctamedMMDWriter {
         self.write_blocks(mmd)?;
         self.write_samples(mmd)?;
         self.write_expansion_data(mmd)?;
-        return Ok(());
-    }
-
-    pub fn write_module_file(self, path: PathBuf, mmd: &OctamedMMD) -> Result<()> {
-        let bytes = self.write_module(mmd)?;
-        let mut file = File::create(path)?;
-        file.write_all(&bytes)?;
         return Ok(());
     }
 
@@ -345,10 +295,7 @@ impl OctamedMMDWriter {
                                 .0
                                 | track
                                     .instrument_number
-                                    .map(|i| {
-                                        (i >> OctamedMMDTrackLine::MMD0_INSTRUMENT_LOW_BITS)
-                                            << OctamedMMDTrackLine::MMD0_NOTE_BITS
-                                    })
+                                    .map(OctamedMMDTrackLine::instrument_high_bits_mmd0)
                                     .0,
                         )
                     };
@@ -544,5 +491,55 @@ impl OctamedMMDWriter {
 impl Default for OctamedMMDWriter {
     fn default() -> Self {
         return Self::new();
+    }
+}
+
+/// A part of the module file, placed by the layout before anything is written.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum Slot {
+    Header,
+    Song,
+    BlockTable,
+    BlockHeader(usize),
+    BlockData(usize),
+    BlockInfo(usize),
+    BlockHighlights(usize),
+    BlockName(usize),
+    SampleTable,
+    SampleHeader(usize),
+    SampleData(usize),
+    Expansion,
+    ExternalInstruments,
+    Annotation,
+    InstrumentInfos,
+    Palette,
+    NotationInfo,
+    SongName,
+}
+
+struct AllocatorLayout {
+    cursor: u32,
+    positions: HashMap<Slot, Offset>,
+}
+
+impl AllocatorLayout {
+    pub fn new() -> Self {
+        return Self {
+            cursor: 0,
+            positions: HashMap::new(),
+        };
+    }
+
+    pub fn alloc(&mut self, slot: Slot, size: u32) {
+        self.positions.insert(slot, Offset(self.cursor));
+        self.cursor += size;
+    }
+
+    /// Panics if `slot` wasn't allocated, which is a bug in the writer.
+    fn at(&self, slot: Slot) -> Offset {
+        return *self
+            .positions
+            .get(&slot)
+            .unwrap_or_else(|| panic!("{slot:?} wasn't allocated"));
     }
 }

@@ -18,11 +18,9 @@ const HEIGHT: i32 = 11;
 
 const TEXT_OFFSET: [i32; 2] = [5, 1];
 
-/// How wide the gadget at the right end is, bevel included. In OctaMED it sends the screen behind
-/// Workbench; here it quits.
+// in OctaMED this gadget sends the screen behind Workbench; here it quits
 const GADGET_WIDTH: i32 = 23;
 
-/// The gadget's picture inside its bevel: two windows, one in front of the other.
 #[rustfmt::skip]
 const GADGET_PICTURE: [&str; 9] = [
     ".....................",
@@ -36,8 +34,6 @@ const GADGET_PICTURE: [&str; 9] = [
     ".....................",
 ];
 
-/// OctaMED's screen title, over the top of the title bar. A right click nothing else takes shows
-/// and hides it.
 #[derive(Default)]
 pub struct CopyrightBar {
     visible: bool,
@@ -82,7 +78,7 @@ impl OctamedicWidget for CopyrightBar {
         painter.text_in_font(bar.x + x, bar.y + y, COPYRIGHT, Pen::BLACK, Font::Interface);
         let gadget = Rect::new(bar.right() - GADGET_WIDTH, bar.y, GADGET_WIDTH, HEIGHT);
         self.gadget.set_area(gadget);
-        // a one pixel bevel: light top and left, shadow bottom and right
+        // bevel: light top and left, shadow bottom and right
         painter.fill(gadget, Pen::SHADOW);
         painter.fill(
             Rect::new(gadget.x, gadget.y, gadget.w - 1, gadget.h - 1),

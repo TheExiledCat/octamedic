@@ -6,20 +6,12 @@ use crate::{
     framework::{event::Event, painter::Painter, rect::Rect, widget::OctamedicWidget},
 };
 
-/// Widgets laid out in rows of `columns`, left to right and then top to bottom. The cells share
-/// the area between them; when it doesn't divide evenly, the spare pixels are spread over the
-/// cells.
+/// Widgets in rows of `columns`. When the area doesn't divide evenly, the spare pixels are spread
+/// over the cells.
 pub struct Grid<W> {
     columns: usize,
     rows: usize,
     cells: Vec<W>,
-}
-
-/// Where cell `index` of `count` starts and how long it is, in `length` pixels from `start`.
-fn span(start: i32, length: i32, index: usize, count: usize) -> (i32, i32) {
-    let edge = |i: usize| start + length * i as i32 / count as i32;
-    let from = edge(index);
-    return (from, edge(index + 1) - from);
 }
 
 impl<W> Grid<W> {
@@ -78,6 +70,13 @@ impl<W: OctamedicWidget> OctamedicWidget for Grid<W> {
             self.cells[index].render(state, cell_area, painter);
         }
     }
+}
+
+/// Start and length of cell `index` of `count`.
+fn span(start: i32, length: i32, index: usize, count: usize) -> (i32, i32) {
+    let edge = |i: usize| start + length * i as i32 / count as i32;
+    let from = edge(index);
+    return (from, edge(index + 1) - from);
 }
 
 #[cfg(test)]

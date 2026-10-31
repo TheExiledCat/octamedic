@@ -16,7 +16,6 @@ use crate::{
 mod app;
 mod framework;
 
-/// The module given as the first argument, or a new project without one.
 fn load_project() -> OctamedicProject {
     let Some(path) = std::env::args_os().nth(1).map(PathBuf::from) else {
         return OctamedicProject::new();
@@ -31,7 +30,7 @@ fn load_project() -> OctamedicProject {
     return OctamedicProject::new();
 }
 
-/// How many window pixels a screen pixel starts as, across; its tall pixels are twice that down.
+// window pixels per screen pixel across; screen pixels are twice as tall
 const WINDOW_SCALE: i32 = 2;
 
 fn main() -> GameResult<()> {

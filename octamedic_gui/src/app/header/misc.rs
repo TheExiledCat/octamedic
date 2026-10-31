@@ -16,19 +16,16 @@ use crate::{
     },
 };
 
-// the sections, from the top left of the area the panel is drawn in, which is 448 by 45
-/// The R/G/B sliders and colour boxes, and RES/UNDO beside them, 2 lines down.
+// Positions are measured from an OctaMED screenshot, from the panel's top left.
 const COLOR_SECTION: Rect = Rect::new(0, 2, 182, 42);
 const SLIDERS: Rect = Rect::new(0, 2, 160, 30);
 const COLOR_BOXES: Rect = Rect::new(0, 32, 160, 12);
 const RES: Rect = Rect::new(160, 2, 22, 21);
 const UNDO: Rect = Rect::new(160, 23, 22, 21);
-/// PTKEY, the paths, LOADGFX, MOUSE2, SAVE PREFS, NO16 and DEP2.
 const PREFS_SECTION: Rect = Rect::new(182, 0, 146, 44);
-/// CLEAR ALL, CLEAR SONG ONLY, QUIT and CONFIRM, after a 2 pixel gap.
 const PROJECT_SECTION: Rect = Rect::new(330, 0, 118, 45);
 
-// a slider's row, from the top left of `SLIDERS`: its letter, the slider and the value box
+// within a slider row
 const ROW_HEIGHT: i32 = 10;
 const LETTER: [i32; 2] = [2, 2];
 const SLIDER: Rect = Rect::new(14, 0, 134, ROW_HEIGHT);
@@ -37,38 +34,8 @@ const CHANNEL_LETTERS: [&str; 3] = ["R", "G", "B"];
 
 const COLOR_BOX_WIDTH: i32 = 20;
 
-/// How far down each stacked letter on RES and UNDO is from the one above.
 const STACKED_LINE: i32 = 6;
 
-/// A colour box's colour, filling the inside of its frame.
-struct Swatch(Pen);
-
-impl ButtonContent for Swatch {
-    fn render(&self, area: ContentArea, _pen: Pen, painter: &mut Painter) {
-        painter.fill(area.inside, self.0);
-    }
-}
-
-/// Lines of the small capitals stacked from `offset` inside the frame, like RES's and UNDO's
-/// labels.
-struct StackedLabel {
-    lines: &'static [&'static str],
-    offset: [i32; 2],
-}
-
-impl ButtonContent for StackedLabel {
-    fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter) {
-        let [x, y] = self.offset;
-        for (line, text) in self.lines.iter().enumerate() {
-            let line_y = area.inside.y + y + line as i32 * STACKED_LINE;
-            painter.text_in_font(area.inside.x + x, line_y, text, pen, Font::Small);
-        }
-    }
-}
-
-/// The MISC panel. Its colour section edits the screen's palette: pick a colour box, then set
-/// its red, green and blue with the sliders. RES puts OctaMED's colours back, and UNDO the ones
-/// the panel was first shown with.
 pub struct Misc {
     sliders: [Slider; Channel::ALL.len()],
     values: [Button; Channel::ALL.len()],
@@ -76,9 +43,9 @@ pub struct Misc {
     res: Button,
     undo: Button,
     selected_color: usize,
-    /// Each slider's level as it was last set from the palette or written to it, so a drag
-    /// shows as a change.
+    // the level last set on each slider, so a drag shows up as a change
     levels: [u8; Channel::ALL.len()],
+    // the palette when the panel was first shown, which UNDO restores
     undo_palette: Option<OctamedColorPalette>,
 }
 
@@ -110,7 +77,6 @@ impl Misc {
         };
     }
 
-    /// The slider row for `channel` in `area`.
     fn row(area: Rect, channel: usize) -> Rect {
         let sliders = SLIDERS.within(area);
         return Rect::new(
@@ -189,5 +155,28 @@ impl OctamedicWidget for Misc {
         }
         self.res.render(state, RES.within(area), painter);
         self.undo.render(state, UNDO.within(area), painter);
+    }
+}
+
+struct Swatch(Pen);
+
+impl ButtonContent for Swatch {
+    fn render(&self, area: ContentArea, _pen: Pen, painter: &mut Painter) {
+        painter.fill(area.inside, self.0);
+    }
+}
+
+struct StackedLabel {
+    lines: &'static [&'static str],
+    offset: [i32; 2],
+}
+
+impl ButtonContent for StackedLabel {
+    fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter) {
+        let [x, y] = self.offset;
+        for (line, text) in self.lines.iter().enumerate() {
+            let line_y = area.inside.y + y + line as i32 * STACKED_LINE;
+            painter.text_in_font(area.inside.x + x, line_y, text, pen, Font::Small);
+        }
     }
 }

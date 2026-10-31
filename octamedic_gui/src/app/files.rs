@@ -12,14 +12,12 @@ const FOLDER_ROOT_NAME: &str = "octamedic";
 const CONFIG_FILE_NAME: &str = "config.toml";
 pub const KEYBINDS_FILE_NAME: &str = "keybinds.toml";
 
-/// Creates the config and projects folders when they don't exist yet.
 pub fn initialize() -> io::Result<()> {
     fs::create_dir_all(get_config_directory_root().ok_or_else(|| missing("config"))?)?;
     fs::create_dir_all(get_projects_directory_root().ok_or_else(|| missing("music"))?)?;
     return Ok(());
 }
 
-/// Where modules are saved and opened from by default: the music folder's `octamedic`.
 pub fn get_projects_directory_root() -> Option<PathBuf> {
     return dirs::audio_dir()
         .or_else(|| dirs::home_dir().map(|home| home.join("Music")))
@@ -71,7 +69,7 @@ fn file_manager_command(folder: &Path) -> io::Result<Command> {
     return Ok(command);
 }
 
-/// Uses Explorer on WSL, where xdg-open usually can't open folders.
+// xdg-open usually can't open folders on WSL
 #[cfg(not(any(windows, target_os = "macos")))]
 fn file_manager_command(folder: &Path) -> io::Result<Command> {
     if std::env::var_os("WSL_DISTRO_NAME").is_none() {
@@ -91,7 +89,6 @@ fn config_file(name: &str) -> io::Result<PathBuf> {
     return Ok(root.join(name));
 }
 
-/// The error for a folder the OS doesn't say where to put.
 fn missing(folder: &str) -> io::Error {
     return io::Error::new(
         io::ErrorKind::NotFound,

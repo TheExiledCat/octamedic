@@ -8,7 +8,7 @@ pub enum MouseButton {
     Right,
 }
 
-/// Input, with mouse positions in screen pixels.
+/// Mouse positions are in screen pixels.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Event {
     MouseMove {
@@ -27,5 +27,20 @@ pub enum Event {
         mods: KeyMods,
         repeat: bool,
     },
-    Text(char),
+    Text {
+        character: char,
+        mods: KeyMods,
+        repeat: bool,
+    },
+}
+
+#[cfg(test)]
+impl Event {
+    pub fn text(character: char) -> Self {
+        return Event::Text {
+            character,
+            mods: KeyMods::NONE,
+            repeat: false,
+        };
+    }
 }

@@ -8,18 +8,18 @@ use crate::{
     framework::{
         event::{Event, MouseButton},
         keymap::{Action, Key, KeyActions, Keymap},
-        painter::{Painter, Pen},
+        painter::{Align, Painter, Pen},
         rect::Rect,
+        text::Line,
         widget::OctamedicWidget,
     },
 };
 
-// heights in screen lines, top to bottom; the footer takes the rest of the screen
+// the footer takes the rest of the screen
 const TITLE_HEIGHT: i32 = 13;
 const HEADER_HEIGHT: i32 = 64;
 const EDITOR_HEIGHT: i32 = 120;
 
-/// The debug console covers the top half of the screen.
 const CONSOLE_HEIGHT: i32 = 128;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -29,7 +29,6 @@ pub enum MainAction {
 
 impl Action for MainAction {}
 
-/// The whole screen.
 pub struct MainView {
     keys: Keymap<MainAction>,
     title: TitleBar,
@@ -100,7 +99,16 @@ impl OctamedicWidget for MainView {
         self.header.render(state, header, painter);
         match self.screens.screen(state.main_mode()) {
             Some(screen) => screen.render(state, editor, painter),
-            None => painter.fill(editor, Pen::BLACK),
+            None => {
+                painter.fill(editor, Pen::BLACK);
+
+                painter.line_in(
+                    editor,
+                    &Line::from("Not implemented"),
+                    Pen::LIGHT,
+                    Align::Center,
+                );
+            }
         }
         self.footer.render(state, footer, painter);
         let (console, _) = area.split_top(CONSOLE_HEIGHT);

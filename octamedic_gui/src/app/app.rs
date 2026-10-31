@@ -6,7 +6,9 @@ use ggez::{
     graphics::{Canvas, Color, DrawParam, Image, Rect as WindowRect, Sampler},
     input::{keyboard::KeyInput, mouse},
 };
-use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
+use octamedic_core::{
+    amiga::clock::AmigaClock, data::project::OctamedicProject, engine::handle::EngineHandle,
+};
 
 use crate::{
     app::{main_view::MainView, state::AppState},
@@ -22,24 +24,26 @@ use crate::{
 
 const CURSOR: &[u8] = include_bytes!("../../assets/cursor.png");
 
-/// The pointer is a sprite, whose pixels are twice as wide as the screen's.
+// the pointer sprite's pixels are twice as wide as the screen's
 const CURSOR_SCALE: [f32; 2] = [2.0, 1.0];
 
-/// 240 frames a second at most, since vsync is off.
-const MIN_FRAME_TIME: Duration = Duration::from_micros(1_000_000 / 240);
+// vsync is off, so frames are paced here, at the Amiga's display rate
+const MACHINE: AmigaClock = AmigaClock::PAL;
 
 pub struct App {
     state: AppState,
     main: MainView,
-    /// Drawn at the screen's own size, then scaled into the window.
+    // drawn at the screen's own size, then scaled into the window
     screen: Image,
     cursor: Image,
     scale_mode: ScaleMode,
-    /// Where the screen is in the window.
     viewport: WindowRect,
-    /// In screen pixels.
+    // in screen pixels
     pointer: Point,
-    last_frame: Instant,
+    // when the next frame is due
+    next_frame: Instant,
+    // text input events don't say whether the key is repeating
+    key_repeated: bool,
 }
 
 impl App {
@@ -60,7 +64,8 @@ impl App {
             scale_mode: ScaleMode::default(),
             viewport: SCREEN.into(),
             pointer: [0, 0],
-            last_frame: Instant::now(),
+            next_frame: Instant::now(),
+            key_repeated: false,
         };
         app.fit_viewport(ctx);
         return Ok(app);
@@ -76,6 +81,17 @@ impl App {
                 state
             }
         };
+    }
+
+    // against a fixed schedule, so oversleeping doesn't add up; a frame that's late starts the
+    // schedule again rather than rushing the next ones
+    fn wait_for_next_frame(&mut self) {
+        self.next_frame += Duration::from_secs(1) / MACHINE.frame_rate;
+        let now = Instant::now();
+        match self.next_frame.checked_duration_since(now) {
+            Some(rest) => std::thread::sleep(rest),
+            None => self.next_frame = now,
+        }
     }
 
     fn fit_viewport(&mut self, ctx: &Context) {
@@ -101,7 +117,7 @@ impl App {
             let mut painter = Painter::new(&mut target, &palette);
             self.main.render(&self.state, SCREEN, &mut painter);
         }
-        // after the screen's fills are drawn, so it's on top
+        // after the batched fills are flushed, so it's on top
         let [x, y] = self.pointer;
         let cursor = DrawParam::new()
             .dest([x as f32, y as f32])
@@ -109,14 +125,6 @@ impl App {
         canvas.draw(&self.cursor, cursor);
         return canvas.finish(ctx);
     }
-}
-
-fn mouse_button(button: MouseButton) -> Option<event::MouseButton> {
-    return match button {
-        MouseButton::Left => Some(event::MouseButton::Left),
-        MouseButton::Right => Some(event::MouseButton::Right),
-        _ => None,
-    };
 }
 
 impl EventHandler for App {
@@ -143,10 +151,7 @@ impl EventHandler for App {
                 .scale([w / SCREEN_WIDTH as f32, h / SCREEN_HEIGHT as f32]),
         );
         frame.finish(ctx)?;
-        if let Some(rest) = MIN_FRAME_TIME.checked_sub(self.last_frame.elapsed()) {
-            std::thread::sleep(rest);
-        }
-        self.last_frame = Instant::now();
+        self.wait_for_next_frame();
         return Ok(());
     }
 
@@ -174,6 +179,10 @@ impl EventHandler for App {
         x: f32,
         y: f32,
     ) -> GameResult {
+        // presses in the bars around the screen would land on its edge
+        if !self.viewport.contains([x, y]) {
+            return Ok(());
+        }
         if let Some(button) = mouse_button(button) {
             self.mouse_event(x, y, |pos| Event::MouseDown { pos, button });
         }
@@ -199,6 +208,7 @@ impl EventHandler for App {
         input: KeyInput,
         repeated: bool,
     ) -> GameResult {
+        self.key_repeated = repeated;
         let Some(key) = input.keycode else {
             return Ok(());
         };
@@ -211,8 +221,20 @@ impl EventHandler for App {
         return Ok(());
     }
 
-    fn text_input_event(&mut self, _ctx: &mut Context, character: char) -> GameResult {
-        self.dispatch(Event::Text(character));
+    fn text_input_event(&mut self, ctx: &mut Context, character: char) -> GameResult {
+        self.dispatch(Event::Text {
+            character,
+            mods: ctx.keyboard.active_mods(),
+            repeat: self.key_repeated,
+        });
         return Ok(());
     }
+}
+
+fn mouse_button(button: MouseButton) -> Option<event::MouseButton> {
+    return match button {
+        MouseButton::Left => Some(event::MouseButton::Left),
+        MouseButton::Right => Some(event::MouseButton::Right),
+        _ => None,
+    };
 }

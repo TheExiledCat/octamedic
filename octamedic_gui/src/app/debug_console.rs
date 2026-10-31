@@ -11,16 +11,13 @@ use crate::{
     },
 };
 
-/// The key left of 1, as `~` or `` ` ``. The key rather than the character it types, as the
-/// character repeats while held, and comes late or not at all on layouts where it's a dead key.
+// the key rather than the character, which repeats while held and is a dead key on some layouts
 const TOGGLE: KeyCode = KeyCode::Grave;
 
 const OPACITY: f32 = 0.8;
 
 const MARGIN: [i32; 2] = [4, 2];
 
-/// Lines from `AppState::debug`, over the top of the screen, newest at the bottom. Shown and
-/// hidden with the `~` key.
 #[derive(Default)]
 pub struct DebugConsole {
     visible: bool,
@@ -40,7 +37,10 @@ impl OctamedicWidget for DebugConsole {
                 return true;
             }
             // what the toggle types
-            Event::Text('~' | '`') => return true,
+            Event::Text {
+                character: '~' | '`',
+                ..
+            } => return true,
             _ => return false,
         }
     }
@@ -82,7 +82,7 @@ mod tests {
         let mut console = DebugConsole::default();
         assert!(console.handle_event(&mut state, &key(false)));
         assert!(console.handle_event(&mut state, &key(true)));
-        assert!(console.handle_event(&mut state, &Event::Text('~')));
+        assert!(console.handle_event(&mut state, &Event::text('~')));
         assert!(console.visible);
         console.handle_event(&mut state, &key(false));
         assert!(!console.visible);

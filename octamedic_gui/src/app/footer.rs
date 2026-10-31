@@ -11,7 +11,6 @@ const INFO_HEIGHT: i32 = 10;
 
 const NOTIFICATION_OFFSET: [i32; 2] = [4, 1];
 
-/// The message line and, below it, the scopes.
 pub struct Footer;
 
 impl OctamedicWidget for Footer {

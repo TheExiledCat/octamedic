@@ -2,16 +2,14 @@ use std::borrow::Cow;
 
 use crate::framework::{font::Font, painter::Pen};
 
-/// A run of text drawn the same way.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Span<'a> {
     pub text: Cow<'a, str>,
     pub font: Font,
     pub bold: bool,
-    /// Drawn over copies of itself in the fill and shadow pens, a line and a pixel further down
-    /// and right each, as the title is.
+    /// Drawn over fill and shadow copies offset down and right, like the title.
     pub shadowed: bool,
-    /// `None` draws it in the pen the line is drawn in, so it inverts with a button.
+    /// `None` uses the line's pen, so it inverts with a button.
     pub pen: Option<Pen>,
 }
 
@@ -73,7 +71,6 @@ impl From<String> for Span<'static> {
     }
 }
 
-/// Spans side by side, each in its own font and style.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Line<'a>(pub Vec<Span<'a>>);
 
@@ -82,9 +79,8 @@ impl<'a> Line<'a> {
         return self.0.iter().map(Span::width).sum();
     }
 
-    /// Blank pixels before the first ink and after the last, as if it were drawn plain: OctaMED
-    /// centres bold text as plain text, and the bold pixel hangs past it. None for a line
-    /// without any ink.
+    /// Blank pixels before the first ink and after the last, ignoring bold: OctaMED centres
+    /// bold text as if it were plain.
     pub fn blank_sides(&self) -> (i32, i32) {
         let mut x = 0;
         let mut first = None;
@@ -114,16 +110,8 @@ impl<'a> Line<'a> {
             .unwrap_or(0);
     }
 
-    /// The characters, with the font each is drawn in.
-    fn chars(&self) -> impl Iterator<Item = (char, Font)> + '_ {
-        return self
-            .0
-            .iter()
-            .flat_map(|span| span.text.chars().map(move |c| (c, span.font)));
-    }
-
-    /// As much of the line as fits in `width` pixels, in whole characters. The fonts leave the
-    /// last column of a character blank, so the last one may hang a pixel past the end.
+    /// Whole characters that fit in `width`. The last may hang a pixel past it, since glyphs
+    /// leave their last column blank.
     pub fn fit(&self, width: i32) -> Line<'_> {
         let mut used = 0;
         let mut spans = Vec::new();
@@ -142,8 +130,6 @@ impl<'a> Line<'a> {
         return Line(spans);
     }
 
-    /// The character `offset` pixels into the line, counting across all its spans, if it's over
-    /// one.
     pub fn index_at(&self, offset: i32) -> Option<usize> {
         if offset < 0 {
             return None;
@@ -156,6 +142,13 @@ impl<'a> Line<'a> {
             }
         }
         return None;
+    }
+
+    fn chars(&self) -> impl Iterator<Item = (char, Font)> + '_ {
+        return self
+            .0
+            .iter()
+            .flat_map(|span| span.text.chars().map(move |c| (c, span.font)));
     }
 }
 

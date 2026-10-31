@@ -2,30 +2,25 @@ use ggez::graphics::Rect as WindowRect;
 
 use crate::framework::rect::{Point, Rect};
 
-/// A PAL hires screen, which everything is drawn on in its own pixels.
+/// PAL hires; everything is drawn in its pixels.
 pub const SCREEN_WIDTH: i32 = 640;
 
 pub const SCREEN_HEIGHT: i32 = 256;
 
 pub const SCREEN: Rect = Rect::new(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
 
-/// Hires pixels on a non-interlaced screen are twice as tall as they are wide.
+/// Non-interlaced hires pixels are twice as tall as they are wide.
 pub const PIXEL_ASPECT: f32 = 2.0;
 
-/// How the screen fills the window.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ScaleMode {
-    /// The largest whole multiple that fits, so every pixel is the same size. Below 1×, it fits
-    /// instead.
+    /// Whole multiples only; below 1× it falls back to `Fit`.
     #[default]
     Integer,
-    /// As large as fits, keeping the aspect ratio.
     Fit,
-    /// The whole window, whatever the aspect ratio.
     Stretch,
 }
 
-/// Where the screen is drawn in a window of `window` size, in window pixels.
 pub fn viewport(window: [f32; 2], mode: ScaleMode) -> WindowRect {
     let [width, height] = window;
     if mode == ScaleMode::Stretch {
@@ -47,7 +42,6 @@ pub fn viewport(window: [f32; 2], mode: ScaleMode) -> WindowRect {
     );
 }
 
-/// A window position as a screen pixel, kept on the screen.
 pub fn to_screen(viewport: WindowRect, point: [f32; 2]) -> Point {
     let x = (point[0] - viewport.x) / viewport.w * SCREEN_WIDTH as f32;
     let y = (point[1] - viewport.y) / viewport.h * SCREEN_HEIGHT as f32;
