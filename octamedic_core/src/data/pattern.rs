@@ -13,6 +13,10 @@ use crate::data::{
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct PatternId(pub u8);
 
+impl PatternId {
+    pub const ZERO: PatternId = PatternId(0);
+}
+
 impl From<UByte> for PatternId {
     fn from(value: UByte) -> Self {
         return Self(value.0);
