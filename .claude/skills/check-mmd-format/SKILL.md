@@ -51,4 +51,4 @@ Don't change code unless asked. Finish with:
 - a short table per format version: structure, read, written, notes;
 - concrete mismatches with the code location and the documented offset or meaning;
 - unsupported parts that would lose data when a module is loaded and saved again;
-- anything in `TODO.md` this confirms or makes outdated.
+- anything in the README's roadmap this confirms or makes outdated.

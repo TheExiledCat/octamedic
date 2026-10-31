@@ -32,7 +32,6 @@ A faithful clone of OctaMED Professional v4
 ## Contributing
 
 - [CONTRIBUTING.md](CONTRIBUTING.md) — setup, architecture overview, code style, and PR process
-- [TODO.md](TODO.md) — ordered developer roadmap; start here if you want to help
 - [docs/PLAYER.md](docs/PLAYER.md) — how the player works: Paula, DMA and the CIA timer
 - [Bug report](.github/ISSUE_TEMPLATE/bug_report.md) / [Feature request](.github/ISSUE_TEMPLATE/feature_request.md) — issue templates
 
@@ -87,6 +86,6 @@ When using the installer, automatic updates are also added. Whenever you startup
     - [ ] Midi control mapping 
 - [ ] Midi mapping
 - [ ] Track to audio interface routing support
-- [ ] Gui overhaul to make it look like octamed
+- [X] Gui overhaul to make it look like octamed
 - [ ] Octamed configuration support
 - [ ] Custom configuration overrides

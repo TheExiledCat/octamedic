@@ -36,7 +36,7 @@ vague ("uiredo", "voicetest"), so the diff is the source of truth.
 - `git diff <prev>..HEAD -- octamed octamed_cli octamedic_core octamedic_gui README.md Cargo.toml`
   and read the hunks. Open the changed files where the diff alone doesn't make the behavior
   clear.
-- The README and `TODO.md` diffs for items that were ticked off.
+- The README diff for roadmap items that were ticked off.
 - `Cargo.toml` dependency changes (workspace root and each crate).
 
 The workspace ships two programs: the CLI (`octamed_cli`) and the GUI (`octamedic_gui`), built
