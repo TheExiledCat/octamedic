@@ -28,7 +28,7 @@ use crate::{
 const ROWS: i32 = 15;
 
 // measured from OctaMED's 4-track view, in font pixels: one sample each, starting 2 into the
-// track. Scopes and meters both span the editor's bottom half.
+// track. Scopes run from the top of the highlighted line down, meters from the editor's middle.
 const SCOPE_OFFSET: i32 = 2;
 const SCOPE_SAMPLES: usize = 42;
 
@@ -525,19 +525,15 @@ fn instrument_text(instrument: u8) -> String {
 fn scope_area(layout: &Layout, area: Rect, index: usize) -> Rect {
     let pixel = layout.char_width / CHAR_WIDTH;
     let x = layout.track_x(index) + SCOPE_OFFSET * pixel;
-    return lower_half(area, x, SCOPE_SAMPLES as i32 * pixel);
+    let top = active_band(area, area.y + CENTER_ROW * CHAR_HEIGHT).y;
+    return Rect::new(x, top, SCOPE_SAMPLES as i32 * pixel, area.y + area.h - top);
 }
 
 fn meter_area(layout: &Layout, area: Rect, index: usize) -> Rect {
     let pixel = layout.char_width / CHAR_WIDTH;
     let x = layout.track_x(index) + METER_OFFSET * pixel;
-    return lower_half(area, x, METER_WIDTH * pixel);
-}
-
-// from the editor's middle down to its bottom line
-fn lower_half(area: Rect, x: i32, w: i32) -> Rect {
     let top = area.h / 2;
-    return Rect::new(x, area.y + top, w, area.h - top);
+    return Rect::new(x, area.y + top, METER_WIDTH * pixel, area.h - top);
 }
 
 // the cell of `track` on the screen line at `y`, if that line is in the block
@@ -617,8 +613,8 @@ mod tests {
     fn scopes_and_meters_sit_where_octamed_draws_them() {
         let area = Rect::new(0, 77, 640, 120);
         let layout = Layout::new(area, 4);
-        // two pixels a sample, starting 4 pixels into the track, over the bottom half
-        assert_eq!(scope_area(&layout, area, 0), Rect::new(68, 137, 84, 60));
+        // two pixels a sample, starting 4 pixels into the track, from the highlighted line down
+        assert_eq!(scope_area(&layout, area, 0), Rect::new(68, 132, 84, 65));
         // 90 pixels in, from the editor's middle down
         assert_eq!(meter_area(&layout, area, 1), Rect::new(298, 137, 20, 60));
     }
