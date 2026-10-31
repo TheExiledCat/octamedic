@@ -12,7 +12,7 @@ use crate::commands::{
     exit::ExitCommand,
     inspect::InspectCommand,
     instruments::InstrumentsCommand,
-    pallete::PalleteCommand,
+    palette::PaletteCommand,
     play::PlayCommand,
     record::RecordCommand,
     rewrite::RewriteCommand,
@@ -20,6 +20,8 @@ use crate::commands::{
     sequence::ShowSequenceCommand,
     wavexport::WavExportCommand,
 };
+
+const MAX_SUGGESTIONS: usize = 5;
 
 pub type CommandResult = Result<(), CommandError>;
 
@@ -75,8 +77,8 @@ pub enum MMDCommandKind {
     Sequence(ShowSequenceCommand),
     #[command(name = "rewrite")]
     Rewrite(RewriteCommand),
-    #[command(name = "pallete")]
-    Pallete(PalleteCommand),
+    #[command(name = "palette", alias = "pallete")]
+    Palette(PaletteCommand),
     #[command(name = "play")]
     Play(PlayCommand),
     #[command(name = "record")]
@@ -96,7 +98,7 @@ impl MMDCommandKind {
             MMDCommandKind::Sample(c) => c.run(mmd),
             MMDCommandKind::Sequence(c) => c.run(mmd),
             MMDCommandKind::Rewrite(c) => c.run(mmd),
-            MMDCommandKind::Pallete(c) => c.run(mmd),
+            MMDCommandKind::Palette(c) => c.run(mmd),
             MMDCommandKind::Play(c) => c.run(mmd),
             MMDCommandKind::Record(c) => c.run(mmd),
         }
@@ -188,7 +190,7 @@ impl Autocomplete for MMDReplCompleter {
             .command_list
             .iter()
             .filter(|c| c.starts_with(input))
-            .take(5)
+            .take(MAX_SUGGESTIONS)
             .map(|s| s.to_owned());
         return Ok(sug.collect::<Vec<String>>());
     }

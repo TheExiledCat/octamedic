@@ -5,62 +5,13 @@ use crate::{
     mmd::{
         conversion::{BinarySize, BinaryWriter},
         module::{
-            OctamedMMD, OctamedMMD0Block, OctamedMMD0BlockHeader, OctamedMMD1Block,
-            OctamedMMD1BlockHeader, OctamedMMDBlockTable, OctamedMMDTrackLine,
+            OctamedMMD, OctamedMMD0Block, OctamedMMD0BlockHeader, OctamedMMD0Header,
+            OctamedMMD0Song, OctamedMMD1Block, OctamedMMD1BlockHeader, OctamedMMDBlockTable,
+            OctamedMMDTrackLine,
         },
     },
     utility::bytes::{Offset, UByte, ULong, UWord, ValueMap}, // UByte used in MMD0 track encoding
 };
-
-/// A part of the module file, placed by the layout before anything is written.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-enum Slot {
-    Header,
-    Song,
-    BlockTable,
-    BlockHeader(usize),
-    BlockData(usize),
-    BlockInfo(usize),
-    BlockHighlights(usize),
-    BlockName(usize),
-    SampleTable,
-    SampleHeader(usize),
-    SampleData(usize),
-    Expansion,
-    ExternalInstruments,
-    Annotation,
-    InstrumentInfos,
-    Palette,
-    NotationInfo,
-    SongName,
-}
-
-struct AllocatorLayout {
-    cursor: u32,
-    positions: HashMap<Slot, Offset>,
-}
-
-impl AllocatorLayout {
-    pub fn new() -> Self {
-        Self {
-            cursor: 0,
-            positions: HashMap::new(),
-        }
-    }
-
-    pub fn alloc(&mut self, slot: Slot, size: u32) {
-        self.positions.insert(slot, Offset(self.cursor));
-        self.cursor += size;
-    }
-
-    /// Panics if `slot` wasn't allocated, which is a bug in the writer.
-    fn at(&self, slot: Slot) -> Offset {
-        return *self
-            .positions
-            .get(&slot)
-            .unwrap_or_else(|| panic!("{slot:?} wasn't allocated"));
-    }
-}
 
 type Result<T> = MmdResult<T>;
 
@@ -72,11 +23,11 @@ pub struct OctamedMMDWriter {
 
 impl OctamedMMDWriter {
     pub fn new() -> Self {
-        Self {
+        return Self {
             layout: AllocatorLayout::new(),
             writer: Vec::new(),
             byte_count_stack: vec![],
-        }
+        };
     }
 
     pub fn write_module(mut self, mmd: &OctamedMMD) -> Result<Vec<u8>> {
@@ -86,6 +37,13 @@ impl OctamedMMDWriter {
         self.write(mmd)?;
         assert_eq!(allocated as usize, self.writer.len());
         return Ok(self.writer);
+    }
+
+    pub fn write_module_file(self, path: PathBuf, mmd: &OctamedMMD) -> Result<()> {
+        let bytes = self.write_module(mmd)?;
+        let mut file = File::create(path)?;
+        file.write_all(&bytes)?;
+        return Ok(());
     }
 
     fn push_size(&mut self) {
@@ -108,13 +66,6 @@ impl OctamedMMDWriter {
         self.write_blocks(mmd)?;
         self.write_samples(mmd)?;
         self.write_expansion_data(mmd)?;
-        return Ok(());
-    }
-
-    pub fn write_module_file(self, path: PathBuf, mmd: &OctamedMMD) -> Result<()> {
-        let bytes = self.write_module(mmd)?;
-        let mut file = File::create(path)?;
-        file.write_all(&bytes)?;
         return Ok(());
     }
 
@@ -154,7 +105,7 @@ impl OctamedMMDWriter {
                         Slot::BlockData(i),
                         (track_count.0 as u32)
                             * ((line_count.0 as u32) + 1)
-                            * ((size_of::<UByte>() as u32) * 3),
+                            * OctamedMMDTrackLine::MMD0_SIZE as u32,
                     );
                 }
             }
@@ -167,12 +118,12 @@ impl OctamedMMDWriter {
                         Slot::BlockData(i),
                         (track_count.0 as u32)
                             * ((line_count.0 as u32) + 1)
-                            * ((size_of::<UByte>() as u32) * 4),
+                            * OctamedMMDTrackLine::MMD1_SIZE as u32,
                     );
                     if let Some(info_block) = &blocks[i].info {
                         self.layout
                             .alloc(Slot::BlockInfo(i), info_block.header.get_size(mmd));
-                        let bits_per_ulong = size_of::<ULong>() * 8;
+                        let bits_per_ulong = u32::BITS as usize;
                         let count = ((line_count.0 as usize) + 1).div_ceil(bits_per_ulong);
                         self.layout.alloc(
                             Slot::BlockHighlights(i),
@@ -232,7 +183,7 @@ impl OctamedMMDWriter {
             );
             if !e.header.rgb_table_ptr.is_null() {
                 self.layout
-                    .alloc(Slot::Palette, e.color_pallete.get_size(mmd));
+                    .alloc(Slot::Palette, e.color_palette.get_size(mmd));
             }
             if !e.header.notation_info_ptr.is_null() {
                 self.layout
@@ -274,7 +225,7 @@ impl OctamedMMDWriter {
         self.writer.write_bytes(&header.active_play_line)?;
         self.writer.write_bytes(&header.counter)?;
         self.writer.write_bytes(&header.extra_songs)?;
-        self.assert_size(52);
+        self.assert_size(OctamedMMD0Header::SIZE);
         return Ok(());
     }
 
@@ -299,7 +250,7 @@ impl OctamedMMDWriter {
         self.writer.write_bytes(&song.track_volumes)?;
         self.writer.write_bytes(&song.master_volume)?;
         self.writer.write_bytes(&song.sample_count)?;
-        self.assert_size(788);
+        self.assert_size(OctamedMMD0Song::SIZE);
         return Ok(());
     }
 
@@ -342,7 +293,10 @@ impl OctamedMMDWriter {
                                 .note_number
                                 .map(|n| n & OctamedMMDTrackLine::BLOCK_LINE_NOTE_NUMBER_MASK_MMD0)
                                 .0
-                                | track.instrument_number.map(|i| (i >> 4) << 6).0,
+                                | track
+                                    .instrument_number
+                                    .map(OctamedMMDTrackLine::instrument_high_bits_mmd0)
+                                    .0,
                         )
                     };
                     let byte2 = {
@@ -354,7 +308,10 @@ impl OctamedMMDWriter {
                                     b & OctamedMMDTrackLine::BLOCK_LINE_COMMAND_NUMBER_MASK_MMD0
                                 })
                                 .0
-                                | track.instrument_number.map(|i| i << 4).0,
+                                | track
+                                    .instrument_number
+                                    .map(|i| i << OctamedMMDTrackLine::MMD0_INSTRUMENT_LOW_BITS)
+                                    .0,
                         )
                     };
                     let byte3 = track.command_value;
@@ -403,7 +360,7 @@ impl OctamedMMDWriter {
             //blockinfo
             let info = &block.info;
             if let Some(info_blk) = info {
-                let bits_per_ulong = size_of::<ULong>() * 8;
+                let bits_per_ulong = u32::BITS as usize;
                 let line_count = header.line_count;
                 // line_count is zero-indexed; actual count is line_count.0 + 1
                 let count = ((line_count.0 as usize) + 1).div_ceil(bits_per_ulong);
@@ -514,7 +471,7 @@ impl OctamedMMDWriter {
             self.writer.write_bytes(&info.name)?;
         }
         if !exp.header.rgb_table_ptr.is_null() {
-            self.writer.write_bytes(&exp.color_pallete)?;
+            self.writer.write_bytes(&exp.color_palette)?;
         }
         if !exp.header.notation_info_ptr.is_null() {
             let info = &exp.notation_info;
@@ -534,5 +491,55 @@ impl OctamedMMDWriter {
 impl Default for OctamedMMDWriter {
     fn default() -> Self {
         return Self::new();
+    }
+}
+
+/// A part of the module file, placed by the layout before anything is written.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum Slot {
+    Header,
+    Song,
+    BlockTable,
+    BlockHeader(usize),
+    BlockData(usize),
+    BlockInfo(usize),
+    BlockHighlights(usize),
+    BlockName(usize),
+    SampleTable,
+    SampleHeader(usize),
+    SampleData(usize),
+    Expansion,
+    ExternalInstruments,
+    Annotation,
+    InstrumentInfos,
+    Palette,
+    NotationInfo,
+    SongName,
+}
+
+struct AllocatorLayout {
+    cursor: u32,
+    positions: HashMap<Slot, Offset>,
+}
+
+impl AllocatorLayout {
+    pub fn new() -> Self {
+        return Self {
+            cursor: 0,
+            positions: HashMap::new(),
+        };
+    }
+
+    pub fn alloc(&mut self, slot: Slot, size: u32) {
+        self.positions.insert(slot, Offset(self.cursor));
+        self.cursor += size;
+    }
+
+    /// Panics if `slot` wasn't allocated, which is a bug in the writer.
+    fn at(&self, slot: Slot) -> Offset {
+        return *self
+            .positions
+            .get(&slot)
+            .unwrap_or_else(|| panic!("{slot:?} wasn't allocated"));
     }
 }

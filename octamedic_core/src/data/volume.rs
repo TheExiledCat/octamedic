@@ -1,3 +1,5 @@
+pub const MAX_VOLUME: u8 = 64;
+
 #[derive(Clone, Copy, Debug)]
 pub struct OctamedicVolume {
     value: u8,
@@ -15,6 +17,6 @@ impl OctamedicVolume {
     }
 
     pub fn set(&mut self, value: u8) {
-        self.value = value.min(64);
+        self.value = value.min(MAX_VOLUME);
     }
 }

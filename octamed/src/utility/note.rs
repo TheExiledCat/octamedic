@@ -1,6 +1,14 @@
 use std::fmt::Display;
 
-use crate::utility::{bytes::UByte, frequency::Frequency};
+use crate::utility::{
+    bytes::UByte,
+    frequency::{BASE_FREQ, Frequency},
+};
+
+pub const SEMITONES_PER_OCTAVE: u8 = 12;
+
+/// The MIDI note of A above middle C, which `BASE_FREQ` is the pitch of.
+const BASE_FREQ_MIDI: i32 = 69;
 
 #[derive(Clone, Copy)]
 pub struct MidiNote {
@@ -14,7 +22,9 @@ impl MidiNote {
 
     pub fn from_frequency(frequency: Frequency) -> Self {
         return Self {
-            midi: (69.0 + 12.0 * (frequency.as_hertz() / 440.0).log2()).round() as i32,
+            midi: (BASE_FREQ_MIDI as f32
+                + SEMITONES_PER_OCTAVE as f32 * (frequency.as_hertz() / BASE_FREQ as f32).log2())
+            .round() as i32,
         };
     }
 
@@ -31,14 +41,15 @@ impl MidiNote {
     }
 
     pub fn get_frequency(&self) -> Frequency {
-        return Frequency::hertz(440.0 * (2f32).powf(((self.midi as f32) - 69.0) / 12.0));
+        let octaves = (self.midi - BASE_FREQ_MIDI) as f32 / SEMITONES_PER_OCTAVE as f32;
+        return Frequency::hertz(BASE_FREQ as f32 * 2f32.powf(octaves));
     }
 
     pub fn get_note_name(&self) -> String {
         if self.midi < 0 {
             return "---".to_string();
         }
-        let note_index = (self.midi % 12) as usize;
+        let note_index = (self.midi % SEMITONES_PER_OCTAVE as i32) as usize;
         let octave = ((self.midi as f32) / (NOTE_NAMES.len() as f32)).floor() + 1.0;
         let note = NOTE_NAMES[note_index];
         return if note.chars().count() > 1 {

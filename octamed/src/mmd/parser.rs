@@ -8,52 +8,24 @@ use crate::{
     mmd::{
         error::{MmdError, MmdResult},
         module::{
-            MAX_INSTRUMENTS, OctamedMMD, OctamedMMD0Block, OctamedMMD0BlockHeader,
-            OctamedMMD0BlockLine, OctamedMMD0ColorPallete, OctamedMMD0Dump, OctamedMMD0Expansion,
+            AMIGA_CHANNELS, BLOCK_INFO_RESERVED, EXPANSION_RESERVED, HEADER_RESERVED,
+            INSTRUMENT_NAME_LENGTH, MAX_INSTRUMENTS, MMD0_ID, MMD1_ID, MMD2_ID, MMD3_ID,
+            OctamedMMD, OctamedMMD0Block, OctamedMMD0BlockHeader, OctamedMMD0BlockLine,
+            OctamedMMD0ColorPalette, OctamedMMD0Dump, OctamedMMD0Expansion,
             OctamedMMD0ExpansionHeader, OctamedMMD0ExternalInstrument, OctamedMMD0Header,
             OctamedMMD0Info, OctamedMMD0InstrumentInfo, OctamedMMD0InstrumentType,
             OctamedMMD0MidiCommands, OctamedMMD0NotationInfo, OctamedMMD0Rexx, OctamedMMD0Sample,
             OctamedMMD0SampleHeader, OctamedMMD0SampleTable, OctamedMMD0Song, OctamedMMD0SongFlags,
             OctamedMMD1Block, OctamedMMD1BlockHeader, OctamedMMD1BlockInfo,
             OctamedMMD1BlockInfoHeader, OctamedMMD1HighlightMask, OctamedMMD2BlockCommandPageTable,
-            OctamedMMDBlockTable, OctamedMMDTrackLine, SONG_TRACKS,
+            OctamedMMDBlockTable, OctamedMMDTrackLine, PALETTE_COLORS, SEQUENCE_LENGTH,
+            SONG_TRACKS,
         },
     },
     utility::bytes::{Byte, Offset, UByte, ULong, UWord, Word},
 };
 
 type Result<T> = MmdResult<T>;
-
-enum OctamedModuleKind {
-    MMD0,
-    MMD1,
-    MMD2,
-    MMD3,
-}
-
-impl OctamedModuleKind {
-    const MMD0_ID: u32 = 0x4d4d4430;
-
-    const MMD1_ID: u32 = 0x4d4d4431;
-
-    const MMD2_ID: u32 = 0x4d4d4432;
-
-    const MMD3_ID: u32 = 0x4d4d4433;
-}
-
-impl TryFrom<ULong> for OctamedModuleKind {
-    type Error = MmdError;
-
-    fn try_from(value: ULong) -> Result<Self> {
-        return match value.0 {
-            Self::MMD0_ID => Ok(Self::MMD0),
-            Self::MMD1_ID => Ok(Self::MMD1),
-            Self::MMD2_ID => Ok(Self::MMD2),
-            Self::MMD3_ID => Ok(Self::MMD3),
-            id => Err(MmdError::UnknownFormat(id)),
-        };
-    }
-}
 
 pub struct OctamedMMDParser {
     mode: OctamedModuleKind,
@@ -117,47 +89,6 @@ impl OctamedMMDParser {
         }
     }
 
-    fn parse_ulong<R: Read>(stream: &mut R) -> Result<ULong> {
-        let mut bytes = [0_u8; 4];
-        stream.read_exact(&mut bytes)?;
-        return Ok(ULong(u32::from_be_bytes(bytes)));
-    }
-
-    fn parse_offset<R: Read>(stream: &mut R) -> Result<Offset> {
-        let val = Self::parse_ulong(stream)?;
-        return Ok(Offset(val.0));
-    }
-
-    fn parse_uword<R: Read>(stream: &mut R) -> Result<UWord> {
-        let mut bytes = [0_u8; 2];
-        stream.read_exact(&mut bytes)?;
-        return Ok(UWord(u16::from_be_bytes(bytes)));
-    }
-
-    fn parse_ubyte<R: Read>(stream: &mut R) -> Result<UByte> {
-        let mut bytes = [0_u8; 1];
-        stream.read_exact(&mut bytes)?;
-        return Ok(UByte(u8::from_be_bytes(bytes)));
-    }
-
-    fn parse_byte<R: Read>(stream: &mut R) -> Result<Byte> {
-        let ubyte = Self::parse_ubyte(stream)?;
-        let byte = Byte(ubyte.0.cast_signed());
-        return Ok(byte);
-    }
-
-    fn parse_word<R: Read>(stream: &mut R) -> Result<Word> {
-        let mut bytes = [0_u8; 2];
-        stream.read_exact(&mut bytes)?;
-        return Ok(Word(i16::from_be_bytes(bytes)));
-    }
-
-    fn parse_exact<R: Read>(stream: &mut R, count: usize) -> Result<Vec<u8>> {
-        let mut bytes = vec![0_u8; count];
-        stream.read_exact(&mut bytes)?;
-        return Ok(bytes.to_vec());
-    }
-
     pub fn parse_header<R: Read + Seek>(stream: &mut R) -> Result<OctamedMMD0Header> {
         let id = Self::parse_ulong(stream)?;
         let length = Self::parse_ulong(stream)?;
@@ -166,8 +97,8 @@ impl OctamedMMDParser {
         let player_sequence = Self::parse_uword(stream)?;
         let block_array_ptr: Offset = Self::parse_offset(stream)?;
         let flags = super::module::OctamedMMD0HeaderFlags::from_byte(Self::parse_ubyte(stream)?);
-        let reserved = Self::parse_exact(stream, 3)?;
-        let mut reserved_buffer = [UByte(0); 3];
+        let reserved = Self::parse_exact(stream, HEADER_RESERVED)?;
+        let mut reserved_buffer = [UByte(0); HEADER_RESERVED];
         for (i, byte) in reserved.iter().enumerate() {
             reserved_buffer[i] = UByte(*byte);
         }
@@ -207,6 +138,47 @@ impl OctamedMMDParser {
         return Ok(header);
     }
 
+    fn parse_ulong<R: Read>(stream: &mut R) -> Result<ULong> {
+        let mut bytes = [0_u8; size_of::<u32>()];
+        stream.read_exact(&mut bytes)?;
+        return Ok(ULong(u32::from_be_bytes(bytes)));
+    }
+
+    fn parse_offset<R: Read>(stream: &mut R) -> Result<Offset> {
+        let val = Self::parse_ulong(stream)?;
+        return Ok(Offset(val.0));
+    }
+
+    fn parse_uword<R: Read>(stream: &mut R) -> Result<UWord> {
+        let mut bytes = [0_u8; 2];
+        stream.read_exact(&mut bytes)?;
+        return Ok(UWord(u16::from_be_bytes(bytes)));
+    }
+
+    fn parse_ubyte<R: Read>(stream: &mut R) -> Result<UByte> {
+        let mut bytes = [0_u8; 1];
+        stream.read_exact(&mut bytes)?;
+        return Ok(UByte(u8::from_be_bytes(bytes)));
+    }
+
+    fn parse_byte<R: Read>(stream: &mut R) -> Result<Byte> {
+        let ubyte = Self::parse_ubyte(stream)?;
+        let byte = Byte(ubyte.0 as i8);
+        return Ok(byte);
+    }
+
+    fn parse_word<R: Read>(stream: &mut R) -> Result<Word> {
+        let mut bytes = [0_u8; 2];
+        stream.read_exact(&mut bytes)?;
+        return Ok(Word(i16::from_be_bytes(bytes)));
+    }
+
+    fn parse_exact<R: Read>(stream: &mut R, count: usize) -> Result<Vec<u8>> {
+        let mut bytes = vec![0_u8; count];
+        stream.read_exact(&mut bytes)?;
+        return Ok(bytes.to_vec());
+    }
+
     fn parse_song_mmd0<R: Read + Seek>(
         &self,
         song_offset: Offset,
@@ -217,9 +189,9 @@ impl OctamedMMDParser {
         self.parse_samples(&mut samples, stream)?;
         let block_count = Self::parse_uword(stream)?;
         let song_length = Self::parse_uword(stream)?;
-        let mut player_sequence_list_bytes = [0_u8; 256];
+        let mut player_sequence_list_bytes = [0_u8; SEQUENCE_LENGTH];
         stream.read_exact(&mut player_sequence_list_bytes)?;
-        let mut player_sequence_list = [UByte(0); 256];
+        let mut player_sequence_list = [UByte(0); SEQUENCE_LENGTH];
         for i in 0..player_sequence_list_bytes.len() {
             player_sequence_list[i] = UByte(player_sequence_list_bytes[i]);
         }
@@ -257,7 +229,7 @@ impl OctamedMMDParser {
         stream: &mut R,
     ) -> Result<()> {
         for i in 0..MAX_INSTRUMENTS {
-            let mut buffer = [0_u8; 8];
+            let mut buffer = [0_u8; OctamedMMD0Sample::SIZE];
             stream.read_exact(&mut buffer)?;
             let repeat = buffer[0..2].try_into().unwrap();
             let repeat = UWord(u16::from_be_bytes(repeat));
@@ -266,7 +238,7 @@ impl OctamedMMDParser {
             let midi_channel = UByte(buffer[4]);
             let midi_preset = UByte(buffer[5]);
             let sample_volume = UByte(buffer[6]);
-            let sample_transpose = Byte(buffer[7].cast_signed());
+            let sample_transpose = Byte(buffer[7] as i8);
             buf[i] = OctamedMMD0Sample {
                 repeat,
                 repeat_length,
@@ -435,7 +407,7 @@ impl OctamedMMDParser {
         let block_name_string_ptr = Self::parse_offset(stream)?;
         let block_name_length = Self::parse_ulong(stream)?;
         let page_table_ptr = Self::parse_offset(stream)?;
-        let mut reserved = [ULong(0); 5];
+        let mut reserved = [ULong(0); BLOCK_INFO_RESERVED];
         for i in 0..reserved.len() {
             reserved[i] = Self::parse_ulong(stream)?;
         }
@@ -499,15 +471,15 @@ impl OctamedMMDParser {
                 text
             }
         };
-        let color_pallete = if header.rgb_table_ptr.is_null() {
-            OctamedMMD0ColorPallete::from_bytes([UWord(0); 8])
+        let color_palette = if header.rgb_table_ptr.is_null() {
+            OctamedMMD0ColorPalette::from_bytes([UWord(0); PALETTE_COLORS])
         } else {
             stream.seek(header.rgb_table_ptr.into())?;
-            let mut pallete = [UWord(0); 8];
-            for i in 0..pallete.len() {
-                pallete[i] = Self::parse_uword(stream)?;
+            let mut palette = [UWord(0); PALETTE_COLORS];
+            for i in 0..palette.len() {
+                palette[i] = Self::parse_uword(stream)?;
             }
-            OctamedMMD0ColorPallete::from_bytes(pallete)
+            OctamedMMD0ColorPalette::from_bytes(palette)
         };
         let external_instruments = Self::parse_external_instruments(stream, &header)?;
         let instrument_infos = {
@@ -516,15 +488,18 @@ impl OctamedMMDParser {
             } else {
                 stream.seek(header.instrument_info_ptr.into())?;
                 let mut infos = Vec::new();
+                let size = header.instrument_info_struct_size.0;
                 for _i in 0..header.instrument_info_array_length.0 {
                     let mut info = OctamedMMD0InstrumentInfo {
-                        name: String::with_capacity(40),
+                        name: String::with_capacity(INSTRUMENT_NAME_LENGTH),
                     };
-                    for _j in 0..header.instrument_info_struct_size.0 - 1 {
+                    for _j in 0..size.saturating_sub(1) {
                         let c = Self::parse_ubyte(stream)?.as_char();
                         info.name.push(c);
                     }
-                    Self::parse_byte(stream)?; // \0
+                    if size > 0 {
+                        Self::parse_byte(stream)?; // \0
+                    }
                     infos.push(info);
                 }
                 infos
@@ -552,7 +527,7 @@ impl OctamedMMDParser {
         return Ok(Some(OctamedMMD0Expansion {
             header,
             annotation,
-            color_pallete,
+            color_palette,
             external_instruments,
             instrument_infos,
             mmd_dump,
@@ -609,7 +584,7 @@ impl OctamedMMDParser {
         let instrument_info_struct_size = Self::parse_uword(stream)?;
         let jump_mask = Self::parse_ulong(stream)?;
         let rgb_table_ptr = Self::parse_offset(stream)?;
-        let channel_split: [UByte; 4] = Self::parse_exact(stream, 4)?
+        let channel_split: [UByte; AMIGA_CHANNELS] = Self::parse_exact(stream, AMIGA_CHANNELS)?
             .iter()
             .map(|b| UByte(*b))
             .collect::<Vec<UByte>>()
@@ -622,7 +597,7 @@ impl OctamedMMDParser {
         let mmd_info_ptr = Self::parse_offset(stream)?;
         let mmd_rexx_ptr = Self::parse_offset(stream)?;
         let mmd_midi_commands_ptr = Self::parse_offset(stream)?;
-        let mut reserved = [ULong(0); 3];
+        let mut reserved = [ULong(0); EXPANSION_RESERVED];
         for i in 0..reserved.len() {
             reserved[i] = Self::parse_ulong(stream)?;
         }
@@ -656,5 +631,26 @@ impl OctamedMMDParser {
 impl Default for OctamedMMDParser {
     fn default() -> Self {
         return Self::new();
+    }
+}
+
+enum OctamedModuleKind {
+    MMD0,
+    MMD1,
+    MMD2,
+    MMD3,
+}
+
+impl TryFrom<ULong> for OctamedModuleKind {
+    type Error = MmdError;
+
+    fn try_from(value: ULong) -> Result<Self> {
+        return match value.0 {
+            MMD0_ID => Ok(Self::MMD0),
+            MMD1_ID => Ok(Self::MMD1),
+            MMD2_ID => Ok(Self::MMD2),
+            MMD3_ID => Ok(Self::MMD3),
+            id => Err(MmdError::UnknownFormat(id)),
+        };
     }
 }

@@ -42,21 +42,6 @@ impl PlayMode {
     }
 }
 
-#[derive(Clone, Copy)]
-struct Position {
-    sequence_index: usize,
-    pattern: PatternId,
-    row: usize,
-}
-
-/// Counted in output frames, so ticks land on the right sample.
-struct Clock {
-    /// The tick within the row; its notes play on tick 0.
-    tick: u32,
-    /// Keeps the fraction, so the tempo doesn't drift.
-    frames_until_tick: f64,
-}
-
 /// Runs inside the audio callback, which drives it through `process`.
 pub struct OctamedicEngine {
     commands: Receiver<EngineCommand>,
@@ -89,7 +74,8 @@ impl OctamedicEngine {
         status: Arc<EngineStatus>,
         sample_rate: u32,
     ) -> Self {
-        let renderer = PaulaRenderer::new(sample_rate, AmigaClock::PAL, MAX_TRACKS);
+        let scopes = status.scopes().clone();
+        let renderer = PaulaRenderer::new(sample_rate, AmigaClock::PAL, MAX_TRACKS, scopes);
         return Self::with_renderer(commands, status, sample_rate, Box::new(renderer));
     }
 
@@ -160,11 +146,16 @@ impl OctamedicEngine {
 
     fn apply(&mut self, command: EngineCommand) {
         match command {
-            EngineCommand::PlayPattern { pattern, looping } => self.play_pattern(pattern, looping),
+            EngineCommand::PlayPattern {
+                pattern,
+                row,
+                looping,
+            } => self.play_pattern(pattern, row, looping),
             EngineCommand::PlaySong {
                 sequence_start,
+                row,
                 looping,
-            } => self.play_song(sequence_start, looping),
+            } => self.play_song(sequence_start, row, looping),
             EngineCommand::Stop => self.stop(),
             EngineCommand::SetPattern { id, pattern } => self.set_pattern(id, pattern),
             EngineCommand::SetSequence { sequence } => self.sequence = sequence,
@@ -210,11 +201,11 @@ impl OctamedicEngine {
         self.instruments[index] = instrument;
     }
 
-    fn play_pattern(&mut self, id: PatternId, looping: bool) {
+    fn play_pattern(&mut self, id: PatternId, row: usize, looping: bool) {
         self.position = Position {
             sequence_index: 0,
             pattern: id,
-            row: 0,
+            row,
         };
         self.start(if looping {
             PlayMode::PatternLoop
@@ -223,14 +214,14 @@ impl OctamedicEngine {
         });
     }
 
-    fn play_song(&mut self, sequence_index: usize, looping: bool) {
+    fn play_song(&mut self, sequence_index: usize, row: usize, looping: bool) {
         let Some(&pattern) = self.sequence.get(sequence_index) else {
             return;
         };
         self.position = Position {
             sequence_index,
             pattern,
-            row: 0,
+            row,
         };
         self.start(if looping {
             PlayMode::SongLoop
@@ -239,12 +230,14 @@ impl OctamedicEngine {
         });
     }
 
-    /// The first row plays on the next tick, which is due straight away.
+    /// The first row plays on the next tick, which is due straight away. A row past the block's
+    /// end starts at its last line.
     fn start(&mut self, mode: PlayMode) {
-        if self.current_pattern().is_none() {
+        let Some(lines) = self.current_pattern().map(OctamedicPattern::line_count) else {
             self.stop();
             return;
-        }
+        };
+        self.position.row = self.position.row.min(lines.saturating_sub(1));
         self.release_all();
         self.track_instruments = [None; MAX_TRACKS];
         self.clock = Some(Clock {
@@ -461,6 +454,21 @@ impl OctamedicEngine {
     }
 }
 
+#[derive(Clone, Copy)]
+struct Position {
+    sequence_index: usize,
+    pattern: PatternId,
+    row: usize,
+}
+
+/// Counted in output frames, so ticks land on the right sample.
+struct Clock {
+    /// The tick within the row; its notes play on tick 0.
+    tick: u32,
+    /// Keeps the fraction, so the tempo doesn't drift.
+    frames_until_tick: f64,
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{
@@ -515,6 +523,29 @@ mod tests {
     }
 
     #[test]
+    fn playing_starts_from_the_line_given_or_the_last_one_past_the_end() {
+        let (mut engine, commands, status) = engine();
+        commands.send(EngineCommand::SetTempo(tempo(3))).unwrap();
+        commands
+            .send(EngineCommand::SetPattern {
+                id: PatternId(0),
+                pattern: Arc::new(pattern(4, &[])),
+            })
+            .unwrap();
+        for (row, starts_at) in [(2, 2), (10, 3)] {
+            commands
+                .send(EngineCommand::PlayPattern {
+                    pattern: PatternId(0),
+                    row,
+                    looping: false,
+                })
+                .unwrap();
+            run(&mut engine, 1);
+            assert_eq!(status.row(), starts_at, "from line {row}");
+        }
+    }
+
+    #[test]
     fn rows_advance_after_ticks_per_line_ticks() {
         let (mut engine, commands, status) = engine();
         commands.send(EngineCommand::SetTempo(tempo(3))).unwrap();
@@ -527,6 +558,7 @@ mod tests {
         commands
             .send(EngineCommand::PlayPattern {
                 pattern: PatternId(0),
+                row: 0,
                 looping: false,
             })
             .unwrap();
@@ -557,6 +589,7 @@ mod tests {
         commands
             .send(EngineCommand::PlayPattern {
                 pattern: PatternId(0),
+                row: 0,
                 looping: true,
             })
             .unwrap();
@@ -585,6 +618,7 @@ mod tests {
         commands
             .send(EngineCommand::PlaySong {
                 sequence_start: 0,
+                row: 0,
                 looping: false,
             })
             .unwrap();

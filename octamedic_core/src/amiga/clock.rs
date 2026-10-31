@@ -5,16 +5,20 @@ pub struct AmigaClock {
     pub e_clock: u32,
     /// A Paula channel plays `paula_clock / period` bytes a second.
     pub paula_clock: u32,
+    /// Frames a second on the display.
+    pub frame_rate: u32,
 }
 
 impl AmigaClock {
     pub const PAL: Self = Self {
         e_clock: 709_379,
         paula_clock: 3_546_895,
+        frame_rate: 50,
     };
 
     pub const NTSC: Self = Self {
         e_clock: 715_909,
         paula_clock: 3_579_545,
+        frame_rate: 60,
     };
 }

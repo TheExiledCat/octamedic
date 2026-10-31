@@ -14,21 +14,27 @@ use cpal::{
 };
 
 use super::engine::{OctamedicEngine, PlayMode};
-use crate::data::{
-    instrument::{InstrumentId, OctamedicInstrument},
-    note::OctamedicNote,
-    pattern::{OctamedicPattern, PatternId},
-    song::OctamedicSong,
-    tempo::OctamedicTempo,
+use crate::{
+    amiga::paula::Scopes,
+    data::{
+        instrument::{InstrumentId, OctamedicInstrument},
+        note::OctamedicNote,
+        pattern::{OctamedicPattern, PatternId},
+        song::OctamedicSong,
+        tempo::OctamedicTempo,
+    },
 };
 
 pub enum EngineCommand {
     PlayPattern {
         pattern: PatternId,
+        row: usize,
         looping: bool,
     },
+    /// From line `row` of the block at `sequence_start`.
     PlaySong {
         sequence_start: usize,
+        row: usize,
         looping: bool,
     },
     Stop,
@@ -64,7 +70,7 @@ pub enum EngineCommand {
 impl EngineCommand {
     pub fn load_song(song: &OctamedicSong) -> Vec<Self> {
         let mut commands = vec![
-            EngineCommand::SetTempo(song.tempo),
+            EngineCommand::SetTempo(song.tempo()),
             EngineCommand::SetMasterVolume(song.master_volume.get()),
             EngineCommand::SetGlobalTranspose(song.global_transpose),
         ];
@@ -87,7 +93,7 @@ impl EngineCommand {
             });
         }
         commands.push(EngineCommand::SetSequence {
-            sequence: song.sequence.to_vec(),
+            sequence: song.sequence().to_vec(),
         });
         return commands;
     }
@@ -99,6 +105,7 @@ pub struct EngineStatus {
     sequence_index: AtomicUsize,
     pattern: AtomicUsize,
     row: AtomicUsize,
+    scopes: Arc<Scopes>,
 }
 
 impl EngineStatus {
@@ -116,6 +123,10 @@ impl EngineStatus {
 
     pub fn row(&self) -> usize {
         return self.row.load(Ordering::Relaxed);
+    }
+
+    pub fn scopes(&self) -> &Arc<Scopes> {
+        return &self.scopes;
     }
 
     pub fn set_play_mode(&self, mode: PlayMode) {
@@ -229,13 +240,18 @@ impl EngineHandle {
             .for_each(|command| self.send(command));
     }
 
-    pub fn play_pattern(&self, pattern: PatternId, looping: bool) {
-        self.send(EngineCommand::PlayPattern { pattern, looping });
+    pub fn play_pattern(&self, pattern: PatternId, row: usize, looping: bool) {
+        self.send(EngineCommand::PlayPattern {
+            pattern,
+            row,
+            looping,
+        });
     }
 
-    pub fn play_song(&self, sequence_start: usize, looping: bool) {
+    pub fn play_song(&self, sequence_start: usize, row: usize, looping: bool) {
         self.send(EngineCommand::PlaySong {
             sequence_start,
+            row,
             looping,
         });
     }
@@ -286,15 +302,15 @@ impl EngineHandle {
         self.send(EngineCommand::ReleaseNote { track });
     }
 
-    fn send(&self, command: EngineCommand) {
-        let _ = self.commands.send(command);
-    }
-
     pub fn shut_down(&mut self) {
         self.shutdown.take();
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
+    }
+
+    fn send(&self, command: EngineCommand) {
+        let _ = self.commands.send(command);
     }
 }
 

@@ -1,3 +1,5 @@
+pub mod audio_view;
 pub mod button;
-pub mod label;
-pub mod panel;
+pub mod grid;
+pub mod slider;
+pub mod symbols;

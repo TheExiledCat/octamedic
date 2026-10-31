@@ -1,168 +1,607 @@
-use ggez::graphics::{Canvas, Color};
-use taffy::{
-    AlignItems, JustifyContent, NodeId, Rect, Size, Style,
-    prelude::{auto, length},
-};
+use std::rc::Rc;
+
+use octamedic_util::primitives::Flip;
 
 use crate::{
     app::state::AppState,
     framework::{
-        input::MouseButton,
-        ui::{Ui, UiEvent},
-        widget::{DrawState, Widget},
-        widgets::{label::Label, panel::fill_rect},
+        clickable::{Click, Clickable},
+        event::{Event, MouseButton},
+        font::Font,
+        painter::{Align, Painter, Pen, inside_frame, line_x, text_y},
+        rect::{Point, Rect},
+        shape::Direction,
+        text::{Line, Span},
+        widget::OctamedicWidget,
     },
 };
 
-type ClickHandler = Box<dyn FnMut(&mut Ui, &mut AppState, NodeId, MouseButton) -> bool>;
-
-pub struct Button {
-    initial_text: String,
-    font_size: f32,
-    label: Option<NodeId>,
-    on_click: Option<ClickHandler>,
-    background_colors: ButtonColors,
-    text_colors: ButtonColors,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ButtonClick {
+    pub button: MouseButton,
+    /// For a label, the index of the character clicked.
+    pub char_index: Option<usize>,
 }
 
-impl Button {
-    pub fn new(text: impl Into<String>, font_size: f32) -> Self {
+pub trait ButtonHandler: Fn(&mut AppState, ButtonClick) + 'static {}
+
+impl<F: Fn(&mut AppState, ButtonClick) + 'static> ButtonHandler for F {}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ContentArea {
+    pub inside: Rect,
+    pub padded: Rect,
+    pub align: Align,
+    pub font: Font,
+    pub bold: bool,
+    /// For content that draws its own background.
+    pub fill: Pen,
+}
+
+#[allow(unused_variables)]
+pub trait ButtonContent {
+    fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter);
+
+    fn index_at(&self, area: ContentArea, pos: Point) -> Option<usize> {
+        return None;
+    }
+}
+
+impl ButtonContent for Line<'static> {
+    fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter) {
+        let (line, x) = place_line(self, area);
+        painter.line(x, text_y(area.padded, line.height()), &line, pen);
+    }
+
+    fn index_at(&self, area: ContentArea, pos: Point) -> Option<usize> {
+        let (line, x) = place_line(self, area);
+        return line.index_at(pos[0] - x);
+    }
+}
+
+impl ButtonContent for str {
+    fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter) {
+        let line = label_line(self, area);
+        let (line, x) = place_line(&line, area);
+        painter.line(x, text_y(area.padded, line.height()), &line, pen);
+    }
+
+    fn index_at(&self, area: ContentArea, pos: Point) -> Option<usize> {
+        let line = label_line(self, area);
+        let (line, x) = place_line(&line, area);
+        return line.index_at(pos[0] - x);
+    }
+}
+
+impl ButtonContent for &'static str {
+    fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter) {
+        (**self).render(area, pen, painter);
+    }
+
+    fn index_at(&self, area: ContentArea, pos: Point) -> Option<usize> {
+        return (**self).index_at(area, pos);
+    }
+}
+
+impl ButtonContent for String {
+    fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter) {
+        self.as_str().render(area, pen, painter);
+    }
+
+    fn index_at(&self, area: ContentArea, pos: Point) -> Option<usize> {
+        return self.as_str().index_at(area, pos);
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Triangle {
+    pub direction: Direction,
+    pub width: i32,
+    pub height: i32,
+    /// A bar across the point, as on the jump to start/end buttons.
+    pub bar: bool,
+}
+
+impl Triangle {
+    pub fn new(direction: Direction, width: i32, height: i32) -> Self {
         return Self {
-            initial_text: text.into(),
-            font_size,
-            label: None,
-            on_click: None,
-            background_colors: ButtonColors::background(),
-            text_colors: ButtonColors::text(),
+            direction,
+            width,
+            height,
+            bar: false,
         };
     }
 
-    // the handler returns whether it handled the click; if not, or without a handler, the click
-    // bubbles on to the button's ancestors
-    pub fn on_click(
-        mut self,
-        handler: impl FnMut(&mut Ui, &mut AppState, NodeId, MouseButton) -> bool + 'static,
-    ) -> Self {
-        self.on_click = Some(Box::new(handler));
+    pub fn arrow(direction: Direction) -> Self {
+        return Self::new(direction, Self::ARROW_WIDTH, Self::ARROW_HEIGHT);
+    }
+
+    pub fn with_bar(mut self) -> Self {
+        self.bar = true;
         return self;
     }
 
-    pub fn label_node(&self) -> Option<NodeId> {
-        return self.label;
+    const ARROW_WIDTH: i32 = 6;
+    const ARROW_HEIGHT: i32 = 5;
+
+    // Across a left or right triangle the bar is two pixels wide, like `Border`.
+    const BAR_LINES: i32 = 1;
+    const BAR_PIXELS: i32 = 2;
+
+    fn size(&self) -> [i32; 2] {
+        if !self.bar {
+            return [self.width, self.height];
+        }
+        return match self.direction {
+            Direction::Up | Direction::Down => [self.width, self.height + Self::BAR_LINES],
+            Direction::Left | Direction::Right => [self.width + Self::BAR_PIXELS, self.height],
+        };
     }
 
-    pub fn set_text(ui: &mut Ui, node: NodeId, text: impl Into<String>) {
-        let Some(label) = ui.get::<Button>(node).and_then(Button::label_node) else {
-            return;
+    /// Centred inside the frame, rounding right and down.
+    fn area(&self, inside: Rect) -> Rect {
+        let [width, height] = self.size();
+        return Rect::new(
+            inside.x + (inside.w - width + 1) / 2,
+            inside.y + (inside.h - height + 1) / 2,
+            width,
+            height,
+        );
+    }
+
+    /// Returns (bar, triangle).
+    fn split_bar(&self, area: Rect) -> (Rect, Rect) {
+        return match self.direction {
+            Direction::Up => area.split_top(Self::BAR_LINES),
+            Direction::Left => area.split_left(Self::BAR_PIXELS),
+            Direction::Down => {
+                let (triangle, bar) = area.split_top(area.h - Self::BAR_LINES);
+                (bar, triangle)
+            }
+            Direction::Right => {
+                let (triangle, bar) = area.split_left(area.w - Self::BAR_PIXELS);
+                (bar, triangle)
+            }
         };
-        if let Some(label) = ui.get_mut::<Label>(label) {
-            label.set_text(text);
-        }
     }
 }
 
-impl Widget for Button {
-    fn style(&self) -> Style {
-        return Style {
-            size: Size {
-                width: auto(),
-                height: auto(),
-            },
-            padding: Rect {
-                left: length(2.0_f32),
-                right: length(2.0_f32),
-                bottom: length(1.0_f32),
-                top: length(1.0_f32),
-            },
-            justify_content: Some(JustifyContent::Center),
-            align_items: Some(AlignItems::Center),
-            ..Default::default()
-        };
-    }
-
-    fn mount(&mut self, ui: &mut Ui, node: NodeId) {
-        let label = Label::new(std::mem::take(&mut self.initial_text), self.font_size)
-            .with_color(self.text_colors.default_color);
-        self.label = Some(ui.add(node, label));
-    }
-
-    fn update(&mut self, ui: &mut Ui, _state: &mut AppState, node: NodeId) {
-        let color = self
-            .text_colors
-            .for_state(ui.is_hovered(node), ui.is_pressed(node));
-        let Some(label) = self.label else {
-            return;
-        };
-        // only through `get_mut` when it changes, since that marks the label for layout.
-        if ui
-            .get::<Label>(label)
-            .is_some_and(|label| label.color() != color)
-            && let Some(label) = ui.get_mut::<Label>(label)
-        {
-            label.set_color(color);
+impl ButtonContent for Triangle {
+    fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter) {
+        let mut triangle = self.area(area.inside);
+        if self.bar {
+            let (bar, rest) = self.split_bar(triangle);
+            painter.fill(bar, pen);
+            triangle = rest;
         }
-    }
-
-    fn draw(&self, canvas: &mut Canvas, draw: &DrawState, _state: &AppState) {
-        let background = self.background_colors.for_state(draw.hovered, draw.pressed);
-        fill_rect(canvas, draw.rect, background);
-    }
-
-    fn on_event(
-        &mut self,
-        ui: &mut Ui,
-        state: &mut AppState,
-        node: NodeId,
-        event: &UiEvent,
-    ) -> bool {
-        let UiEvent::Clicked {
-            node: clicked,
-            button,
-        } = *event;
-        if clicked != node {
-            return false;
-        }
-        let Some(handler) = &mut self.on_click else {
-            return false;
-        };
-        return handler(ui, state, node, button);
-    }
-
-    fn is_interactive(&self) -> bool {
-        return true;
+        painter.triangle(triangle, Some(pen), None, self.direction);
     }
 }
 
-pub struct ButtonColors {
-    default_color: Color,
-    hover_color: Color,
-    press_color: Color,
+/// A label followed by a down arrow, like the play sequence's INS.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ArrowLabel {
+    pub label: &'static str,
 }
 
-impl ButtonColors {
-    pub fn background() -> Self {
+impl ArrowLabel {
+    pub fn new(label: &'static str) -> Self {
+        return Self { label };
+    }
+
+    /// On top of the blank pixel the font leaves after the last letter.
+    const GAP: i32 = 1;
+    /// [width, height]; two pixels wide, like `Border`.
+    const STEM: [i32; 2] = [2, 4];
+    const HEAD: [i32; 2] = [6, 3];
+    const ARROW: [i32; 2] = [Self::HEAD[0], Self::STEM[1] + Self::HEAD[1]];
+
+    /// Centred together, rounding right as OctaMED does here. When they don't fit, the arrow
+    /// stays inside the frame and the label overflows to the left.
+    fn place(&self, line: &Line, inside: Rect) -> (i32, Rect) {
+        // from the label's first letter, as `line_x` centres it
+        let (blank, _) = line.blank_sides();
+        let [arrow_width, arrow_height] = Self::ARROW;
+        let width = line.width() - blank + Self::GAP + arrow_width;
+        let centred = inside.x + (inside.w - width + 1) / 2;
+        let ink_x = centred.min(inside.right() - width);
+        let x = ink_x - blank;
+        let arrow_x = x + line.width() + Self::GAP;
+        let arrow_y = inside.y + (inside.h - arrow_height + 1) / 2;
+        return (x, Rect::new(arrow_x, arrow_y, arrow_width, arrow_height));
+    }
+}
+
+impl ButtonContent for ArrowLabel {
+    fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter) {
+        let line = label_line(self.label, area);
+        let (x, arrow) = self.place(&line, area.inside);
+        painter.line(x, text_y(area.padded, line.height()), &line, pen);
+        let [stem_width, stem_height] = Self::STEM;
+        let stem_x = arrow.x + (arrow.w - stem_width) / 2;
+        painter.fill(Rect::new(stem_x, arrow.y, stem_width, stem_height), pen);
+        let (_, head) = arrow.split_top(stem_height);
+        painter.triangle(head, Some(pen), None, Direction::Down);
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct IncDec {
+    is_increment: bool,
+    width: i32,
+    height: i32,
+    thickness: i32,
+}
+
+impl IncDec {
+    pub fn new(increment: bool, width: i32, height: i32, thickness: i32) -> Self {
         return Self {
-            default_color: Color::WHITE,
-            hover_color: Color::from_rgb(211, 211, 211),
-            press_color: Color::BLACK,
+            is_increment: increment,
+            width,
+            height,
+            thickness,
         };
     }
 
-    pub fn text() -> Self {
+    /// Centred rounding right and up, as OctaMED's sit.
+    fn lines(&self, inside: Rect) -> (Rect, Option<Rect>) {
+        let x = inside.x + (inside.w - self.width + 1) / 2;
+        let y = inside.y + (inside.h - self.height) / 2;
+        let across = Rect::new(
+            x,
+            y + (self.height - self.thickness + 1) / 2,
+            self.width,
+            self.thickness,
+        );
+        let down_width = 2 * self.thickness;
+        let down = Rect::new(
+            x + (self.width - down_width + 1) / 2,
+            y,
+            down_width,
+            self.height,
+        );
+        return (across, self.is_increment.then_some(down));
+    }
+}
+
+impl ButtonContent for IncDec {
+    fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter) {
+        let (across, down) = self.lines(area.inside);
+        painter.fill(across, pen);
+        if let Some(down) = down {
+            painter.fill(down, pen);
+        }
+    }
+}
+
+/// A clone shares the original's content and handler.
+#[derive(Clone)]
+pub struct Button {
+    content: Rc<dyn ButtonContent>,
+    clickable: Clickable,
+    on_click: Option<Rc<dyn ButtonHandler>>,
+    /// Drawn inverted, like OctaMED's switched-on buttons.
+    toggled: bool,
+    border: i32,
+    /// [sides, top and bottom].
+    padding: [i32; 2],
+    align: Align,
+    font: Font,
+    bold: bool,
+    /// Where it was last rendered.
+    area: Rect,
+    click: Option<ButtonClick>,
+}
+
+impl Button {
+    pub fn new(content: impl ButtonContent + 'static) -> Self {
         return Self {
-            default_color: Color::BLACK,
-            hover_color: Color::BLACK,
-            press_color: Color::WHITE,
+            content: Rc::new(content),
+            clickable: Clickable::default(),
+            on_click: None,
+            toggled: false,
+            border: 1,
+            padding: [1, 1],
+            align: Align::Center,
+            font: Font::Topaz,
+            bold: false,
+            area: Rect::default(),
+            click: None,
         };
     }
 
-    fn for_state(&self, hovered: bool, pressed: bool) -> Color {
-        return if pressed {
-            self.press_color
-        } else if hovered {
-            self.hover_color
+    /// Takes the last click, for owners that poll instead of setting a handler.
+    pub fn clicked(&mut self) -> Option<ButtonClick> {
+        return self.click.take();
+    }
+
+    pub fn on_click(mut self, handler: impl Fn(&mut AppState, ButtonClick) + 'static) -> Self {
+        self.set_on_click(handler);
+        return self;
+    }
+
+    pub fn set_on_click(&mut self, handler: impl Fn(&mut AppState, ButtonClick) + 'static) {
+        self.on_click = Some(Rc::new(handler));
+    }
+
+    pub fn border(mut self, border: i32) -> Self {
+        self.border = border;
+        return self;
+    }
+
+    pub fn align(mut self, align: Align) -> Self {
+        self.align = align;
+        return self;
+    }
+
+    pub fn font(mut self, font: Font) -> Self {
+        self.font = font;
+        return self;
+    }
+
+    pub fn bold(mut self) -> Self {
+        self.bold = true;
+        return self;
+    }
+
+    pub fn padding(mut self, padding: i32) -> Self {
+        self.padding = [padding, padding];
+        return self;
+    }
+
+    pub fn padding_xy(mut self, x: i32, y: i32) -> Self {
+        self.padding = [x, y];
+        return self;
+    }
+
+    pub fn set_content(&mut self, content: impl ButtonContent + 'static) {
+        self.content = Rc::new(content);
+    }
+
+    pub fn set_text(&mut self, text: impl Into<String>) {
+        self.set_content(text.into());
+    }
+
+    pub fn toggle(&mut self) {
+        self.toggled.flip();
+    }
+
+    pub fn set_toggled(&mut self, toggled: bool) {
+        self.toggled = toggled;
+    }
+
+    pub fn is_toggled(&self) -> bool {
+        return self.toggled;
+    }
+
+    fn content_area(&self, area: Rect) -> ContentArea {
+        let inside = inside_frame(area, self.border);
+        return ContentArea {
+            inside,
+            padded: inside.inset(self.padding[0], self.padding[1]),
+            align: self.align,
+            font: self.font,
+            bold: self.bold,
+            fill: self.pens().0,
+        };
+    }
+
+    /// (fill, content), swapped while toggled. Holding it down doesn't change how it looks; a
+    /// button that should show that does it through its toggle.
+    fn pens(&self) -> (Pen, Pen) {
+        let (fill, content) = (Pen::FILL, Pen::BLACK);
+        return if self.toggled {
+            (content, fill)
         } else {
-            self.default_color
+            (fill, content)
         };
+    }
+}
+
+impl OctamedicWidget for Button {
+    fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
+        let click = self.clickable.handle(event);
+        if let Click::Clicked { button, pos } = click {
+            let char_index = self.content.index_at(self.content_area(self.area), pos);
+            let click = ButtonClick { button, char_index };
+            self.click = Some(click);
+            if let Some(handler) = &self.on_click {
+                handler(state, click);
+            }
+        }
+        return click.handled();
+    }
+
+    fn render(&mut self, _state: &AppState, area: Rect, painter: &mut Painter) {
+        self.area = area;
+        self.clickable.set_area(area);
+        let (fill, content) = self.pens();
+        painter.fill(area, fill);
+        painter.frame(area, self.border);
+        self.content
+            .render(self.content_area(area), content, painter);
+    }
+}
+
+/// The fitted line and its x. A label too long for the padding moves into it, as OctaMED does
+/// with `CHRD`.
+fn place_line<'a>(line: &'a Line, area: ContentArea) -> (Line<'a>, i32) {
+    let line = line.fit(area.inside.w);
+    let width = line.width();
+    let x = line_x(area.padded, &line, area.align);
+    // it may only hang a pixel over the end when it doesn't fit otherwise
+    let last = area.inside.right() - width;
+    return (line, x.min(last).max(area.inside.x));
+}
+
+fn label_line(text: &str, area: ContentArea) -> Line<'_> {
+    let mut span = Span::new(text).font(area.font);
+    span.bold = area.bold;
+    return Line::from(span);
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{cell::Cell, rc::Rc};
+
+    use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
+
+    use super::*;
+
+    fn state() -> AppState {
+        return AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+    }
+
+    fn click(button: &mut Button, state: &mut AppState, pos: Point) {
+        let mouse = MouseButton::Left;
+        button.handle_event(state, &Event::MouseDown { pos, button: mouse });
+        button.handle_event(state, &Event::MouseUp { pos, button: mouse });
+    }
+
+    /// "NEXT" centred in 40 pixels starts at x 4.
+    fn next_button(handler: impl ButtonHandler) -> Button {
+        let mut button = Button::new("NEXT").on_click(handler);
+        button.area = Rect::new(0, 0, 40, 10);
+        button.clickable.set_area(button.area);
+        return button;
+    }
+
+    #[test]
+    fn a_bar_goes_across_the_point() {
+        let inside = Rect::new(50, 20, 16, 9);
+        let up = Triangle::new(Direction::Up, 12, 6).with_bar();
+        let area = up.area(inside);
+        assert_eq!(area, Rect::new(52, 21, 12, 7));
+        assert_eq!(up.split_bar(area).0, Rect::new(52, 21, 12, 1));
+        let down = Triangle::new(Direction::Down, 12, 6).with_bar();
+        assert_eq!(down.split_bar(area).0, Rect::new(52, 27, 12, 1));
+        let right = Triangle::new(Direction::Right, 6, 5).with_bar();
+        assert_eq!(right.size(), [8, 5]);
+    }
+
+    #[test]
+    fn the_arrow_after_ins_stays_inside_the_frame() {
+        // the play sequence's INS with an arrow, 36 pixels wide
+        let button = Button::new("").font(Font::Label);
+        let area = button.content_area(Rect::new(56, 32, 36, 11));
+        let ins = ArrowLabel::new("INS");
+        let line = label_line(ins.label, area);
+        let (x, arrow) = ins.place(&line, area.inside);
+        assert_eq!((arrow.w, arrow.h), (6, 7));
+        assert!(arrow.right() <= area.inside.right());
+        assert!(x + line.width() < arrow.x);
+    }
+
+    #[test]
+    fn a_plus_crosses_in_the_middle_and_a_minus_is_only_the_line_across() {
+        let inside = Rect::new(10, 20, 16, 8);
+        let (across, down) = IncDec::new(true, 8, 6, 1).lines(inside);
+        assert_eq!(across, Rect::new(14, 24, 8, 1));
+        assert_eq!(down, Some(Rect::new(17, 21, 2, 6)));
+        let (minus, none) = IncDec::new(false, 8, 6, 1).lines(inside);
+        assert_eq!((minus, none), (across, None));
+    }
+
+    #[test]
+    fn only_toggling_inverts_the_button() {
+        let normal = (Pen::FILL, Pen::BLACK);
+        let inverted = (Pen::BLACK, Pen::FILL);
+        let mut button = next_button(|_, _| {});
+        let down = Event::MouseDown {
+            pos: [5, 5],
+            button: MouseButton::Left,
+        };
+        button.handle_event(&mut state(), &down);
+        assert_eq!(button.pens(), normal);
+        button.toggle();
+        assert!(button.is_toggled());
+        assert_eq!(button.pens(), inverted);
+        button.set_toggled(false);
+        assert_eq!(button.pens(), normal);
+    }
+
+    #[test]
+    fn labels_too_long_for_the_padding_move_into_it() {
+        // the status row's CHRD and < boxes
+        let place = |button: Button, rect, text: &'static str| {
+            let line = Line::from(text);
+            let (placed, x) = place_line(&line, button.content_area(rect));
+            (placed.0[0].text.to_string(), x)
+        };
+        let chord = place(Button::new(""), Rect::new(216, 65, 35, 11), "CHRD");
+        assert_eq!(chord, ("CHRD".to_string(), 218));
+        let arrow = place(Button::new(""), Rect::new(560, 65, 13, 11), "<");
+        assert_eq!(arrow, ("<".to_string(), 562));
+        let left = Button::new("").align(Align::Left);
+        let name = place(left, Rect::new(0, 0, 40, 11), "BreakBeat");
+        assert_eq!(name, ("Brea".to_string(), 3));
+    }
+
+    #[test]
+    fn a_click_is_kept_until_it_is_taken() {
+        let mut button = next_button(|_, _| {});
+        assert_eq!(button.clicked(), None);
+        click(&mut button, &mut state(), [5, 5]);
+        let clicked = button.clicked().unwrap();
+        assert_eq!(clicked.button, MouseButton::Left);
+        assert_eq!(clicked.char_index, Some(0));
+        assert_eq!(button.clicked(), None);
+    }
+
+    #[test]
+    fn a_clone_runs_the_same_handler() {
+        let mut state = state();
+        let template = next_button(|state, _| state.next_pattern());
+        let mut copy = template.clone();
+        click(&mut copy, &mut state, [5, 5]);
+        assert_eq!(state.active_pattern.0, 1);
+    }
+
+    #[test]
+    fn arrows_sit_where_octamed_has_them() {
+        let inside = inside_frame(Rect::new(561, 65, 13, 11), 1);
+        assert_eq!(
+            Triangle::arrow(Direction::Left).area(inside),
+            Rect::new(565, 68, 6, 5)
+        );
+    }
+
+    #[test]
+    fn the_label_sits_inside_the_frame_and_padding() {
+        let area = Rect::new(3, 65, 84, 11);
+        assert_eq!(
+            Button::new("").content_area(area).padded,
+            Rect::new(6, 67, 78, 7)
+        );
+        assert_eq!(
+            Button::new("").padding(0).content_area(area).padded,
+            Rect::new(5, 66, 80, 9)
+        );
+    }
+
+    #[test]
+    fn a_click_runs_the_handler_on_the_state() {
+        let mut state = state();
+        let mut button = next_button(|state, _| state.next_pattern());
+        click(&mut button, &mut state, [5, 5]);
+        assert_eq!(state.active_pattern.0, 1);
+    }
+
+    #[test]
+    fn a_click_says_which_character_of_the_label_it_was_on() {
+        let clicked = Rc::new(Cell::new(None));
+        let seen = clicked.clone();
+        let mut button = next_button(move |_, click| seen.set(Some(click.char_index)));
+        let mut state = state();
+        for (x, index) in [
+            (4, Some(0)),
+            (13, Some(1)),
+            (35, Some(3)),
+            (2, None),
+            (37, None),
+        ] {
+            click(&mut button, &mut state, [x, 5]);
+            assert_eq!(clicked.get(), Some(index), "x {x}");
+        }
     }
 }

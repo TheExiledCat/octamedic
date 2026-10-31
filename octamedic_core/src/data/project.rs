@@ -6,7 +6,10 @@ use octamed::mmd::{
 };
 
 use crate::data::{
-    instrument::{MAX_INSTRUMENT_VOLUME, OctamedicInstrument, OctamedicSample},
+    instrument::{
+        MAX_FINETUNE, MAX_INSTRUMENT_VOLUME, MIN_FINETUNE, OctamedicInstrument, OctamedicSample,
+    },
+    palette::OctamedColorPalette,
     pattern::{OctamedicPattern, PatternId},
     song::{OctamedicSong, OctamedicSongFlags, SongId},
     tempo::OctamedicTempo,
@@ -16,6 +19,7 @@ use crate::data::{
 pub struct OctamedicProject {
     name: String,
     songs: Vec<OctamedicSong>,
+    palette: OctamedColorPalette,
 }
 
 impl OctamedicProject {
@@ -23,6 +27,7 @@ impl OctamedicProject {
         return Self {
             name: String::new(),
             songs: vec![OctamedicSong::new("unnamed")],
+            palette: OctamedColorPalette::DEFAULT,
         };
     }
 
@@ -32,6 +37,14 @@ impl OctamedicProject {
 
     pub fn get_song_mut(&mut self, id: SongId) -> Option<&mut OctamedicSong> {
         return self.songs.get_mut(id.0 as usize);
+    }
+
+    pub fn song_count(&self) -> usize {
+        return self.songs.len();
+    }
+
+    pub fn palette(&self) -> OctamedColorPalette {
+        return self.palette;
     }
 }
 
@@ -46,7 +59,13 @@ impl FromModule for OctamedicProject {
         let mut s = Self {
             name: String::new(),
             songs: vec![],
+            palette: OctamedColorPalette::DEFAULT,
         };
+        if let Some(expansion) = &module.expansion_data {
+            if !expansion.header.rgb_table_ptr.is_null() {
+                s.palette = OctamedColorPalette::from_octamed(&expansion.color_palette);
+            }
+        }
         s.name = module
             .expansion_data
             .as_ref()
@@ -75,12 +94,15 @@ impl FromModule for OctamedicProject {
             let info = &mmd_song.samples[index];
             let name = names
                 .and_then(|names| names.get(index))
-                .map_or(String::new(), |info| info.name.clone());
+                // the file pads names to their full length with NULs
+                .map_or(String::new(), |info| {
+                    info.name.split('\0').next().unwrap_or_default().to_owned()
+                });
             let mut instrument = OctamedicInstrument::new(name);
             instrument.volume = info.sample_volume.0.min(MAX_INSTRUMENT_VOLUME);
             instrument.transpose = info.sample_transpose.0;
             if let Some(extension) = extensions.and_then(|e| e.get(index)) {
-                instrument.finetune = extension.fine_tune.0.clamp(-8, 7);
+                instrument.finetune = extension.fine_tune.0.clamp(MIN_FINETUNE, MAX_FINETUNE);
                 instrument.hold = extension.hold.0;
                 instrument.decay = extension.decay.0;
             }
@@ -97,11 +119,11 @@ impl FromModule for OctamedicProject {
         }
         let song_length =
             (mmd_song.song_length.0 as usize).min(mmd_song.player_sequence_list.len());
-        song.sequence = mmd_song.player_sequence_list[..song_length]
+        *song.sequence_mut() = mmd_song.player_sequence_list[..song_length]
             .iter()
             .map(|&id| PatternId::from(id))
             .collect();
-        song.tempo = OctamedicTempo::from_octamed(&mmd_song.get_tempo());
+        *song.tempo_mut() = OctamedicTempo::from_octamed(&mmd_song.get_tempo());
         let flags = &mmd_song.flags;
         song.flags = OctamedicSongFlags {
             filter_on: flags.filter_is_on(),
@@ -137,7 +159,7 @@ mod tests {
 
     fn example(name: &str) -> OctamedicProject {
         let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../octamed_cli/example_meds")
+            .join("../example_meds")
             .join(name);
         let module = OctamedMMDParser::new().parse_file(&path).unwrap().remove(0);
         return OctamedicProject::from_module(&module);

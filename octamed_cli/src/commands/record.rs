@@ -19,6 +19,47 @@ pub struct RecordCommand {
     kind: RecordKind,
 }
 
+impl Command for RecordCommand {
+    fn run(&self, mmd: &mut octamed::mmd::module::OctamedMMD) -> CommandResult {
+        let project = OctamedicProject::from_module(mmd);
+        let song = project
+            .get_song(SongId(0))
+            .ok_or_else(|| CommandError::Generic("module has no song".into()))?;
+        let error = |e: &dyn std::fmt::Display| CommandError::Generic(e.to_string());
+        let (recording, output) = match &self.kind {
+            RecordKind::Pattern {
+                block,
+                output,
+                options,
+            } => (
+                options
+                    .recorder()
+                    .record_pattern(song, PatternId(*block))
+                    .map_err(|e| error(&e))?,
+                output,
+            ),
+            RecordKind::Song {
+                output,
+                start,
+                options,
+            } => (
+                options
+                    .recorder()
+                    .record_song(song, *start)
+                    .map_err(|e| error(&e))?,
+                output,
+            ),
+        };
+        std::fs::write(output, recording.to_wav_bytes()).map_err(|e| error(&e))?;
+        println!(
+            "Recorded {:.1}s to {}",
+            recording.duration().as_secs_f32(),
+            output.to_string_lossy()
+        );
+        return Ok(());
+    }
+}
+
 #[derive(Subcommand, Debug, Clone)]
 enum RecordKind {
     #[command(about = "Record one block, played once.")]
@@ -75,47 +116,6 @@ impl RecordOptions {
     }
 }
 
-impl Command for RecordCommand {
-    fn run(&self, mmd: &mut octamed::mmd::module::OctamedMMD) -> CommandResult {
-        let project = OctamedicProject::from_module(mmd);
-        let song = project
-            .get_song(SongId(0))
-            .ok_or_else(|| CommandError::Generic("module has no song".into()))?;
-        let error = |e: &dyn std::fmt::Display| CommandError::Generic(e.to_string());
-        let (recording, output) = match &self.kind {
-            RecordKind::Pattern {
-                block,
-                output,
-                options,
-            } => (
-                options
-                    .recorder()
-                    .record_pattern(song, PatternId(*block))
-                    .map_err(|e| error(&e))?,
-                output,
-            ),
-            RecordKind::Song {
-                output,
-                start,
-                options,
-            } => (
-                options
-                    .recorder()
-                    .record_song(song, *start)
-                    .map_err(|e| error(&e))?,
-                output,
-            ),
-        };
-        std::fs::write(output, recording.to_wav_bytes()).map_err(|e| error(&e))?;
-        println!(
-            "Recorded {:.1}s to {}",
-            recording.duration().as_secs_f32(),
-            output.to_string_lossy()
-        );
-        return Ok(());
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::Path;
@@ -132,7 +132,7 @@ mod tests {
     }
 
     fn module() -> OctamedMMD {
-        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("example_meds/example.mmd0");
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../example_meds/example.mmd0");
         return OctamedMMDParser::new().parse_file(&path).unwrap().remove(0);
     }
 

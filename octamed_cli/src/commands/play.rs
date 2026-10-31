@@ -4,11 +4,15 @@ use clap_derive::Args;
 use clap_num::number_range;
 use octamed::mmd::conversion::FromModule;
 use octamedic_core::{
-    data::{project::OctamedicProject, song::SongId},
+    data::{project::OctamedicProject, song::SongId, volume::MAX_VOLUME},
     engine::{engine::PlayMode, handle::EngineHandle},
 };
 
 use crate::commands::repl::{Command, CommandError, CommandResult};
+
+const START_WAIT: Duration = Duration::from_millis(100);
+
+const POLL_INTERVAL: Duration = Duration::from_millis(5);
 
 #[derive(Args, Debug, Clone)]
 #[command(about = "Play the module.")]
@@ -32,10 +36,10 @@ impl Command for PlayCommand {
         let engine = EngineHandle::spawn().map_err(|e| CommandError::Generic(e.to_string()))?;
         engine.set_output_volume(self.volume);
         engine.load_song(song);
-        engine.play_song(0, false);
+        engine.play_song(0, 0, false);
         println!("Playing... (press Ctrl+C to stop)");
         // Give the engine a moment to pick up the play command before polling its status.
-        std::thread::sleep(Duration::from_millis(100));
+        std::thread::sleep(START_WAIT);
         let mut last_row = None;
         while engine.status().play_mode() != PlayMode::Paused {
             let status = engine.status();
@@ -44,12 +48,12 @@ impl Command for PlayCommand {
                 println!("seq {:03}  block {:03}  line {:03}", row.0, row.1, row.2);
                 last_row = Some(row);
             }
-            std::thread::sleep(Duration::from_millis(5));
+            std::thread::sleep(POLL_INTERVAL);
         }
         return Ok(());
     }
 }
 
-pub(crate) fn zero_to_64(text: &str) -> Result<u8, String> {
-    return number_range(text, 0, 64);
+pub fn zero_to_64(text: &str) -> Result<u8, String> {
+    return number_range(text, 0, MAX_VOLUME);
 }

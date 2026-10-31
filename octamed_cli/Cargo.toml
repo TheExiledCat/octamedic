@@ -1,12 +1,13 @@
 [package]
 name = "octamed_cli"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
-clap = "4.6.1"
+octamedic_util = {path="../octamedic_util"}
+clap = { version = "4.6.1", features = ["derive"] }
 clap-num = "1.2.0"
-clap-repl = "0.3.2"
 clap_derive = "4.6.1"
 clearscreen = "4.0.6"
 cpal = "0.17.3"

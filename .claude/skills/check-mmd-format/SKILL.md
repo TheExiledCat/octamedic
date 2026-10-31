@@ -42,7 +42,7 @@ say so instead of guessing.
 - `cargo test -p octamed`, and mention any failures rather than reporting around them.
 - Where the comparison raises a question a file can answer (a field's real values, whether
   round-tripping changes the bytes), check it with the example modules in
-  `octamed_cli/example_meds`. Write temporary files outside the repo and delete them after.
+  `example_meds`. Write temporary files outside the repo and delete them after.
 
 ## 4. Report
 

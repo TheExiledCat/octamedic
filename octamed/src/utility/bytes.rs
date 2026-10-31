@@ -1,7 +1,7 @@
 use std::{char, fmt::Display, io::SeekFrom};
 
 use crate::mmd::module::{
-    OctamedMMD0ColorPallete, OctamedMMD0HeaderFlags, OctamedMMD0InstrumentType,
+    OctamedMMD0ColorPalette, OctamedMMD0HeaderFlags, OctamedMMD0InstrumentType,
     OctamedMMD0SongFlags,
 };
 
@@ -40,7 +40,7 @@ impl Display for UByte {
 
 impl From<UByte> for Byte {
     fn from(val: UByte) -> Self {
-        return Byte(val.0.cast_signed());
+        return Byte(val.0 as i8);
     }
 }
 
@@ -92,7 +92,7 @@ pub fn bit_mask(byte: impl IntoByte, mask: u8) -> UByte {
 }
 
 pub fn bit_slice(byte: impl IntoByte, start: u8, end: u8) -> UByte {
-    assert!(start < end && end <= 8);
+    assert!(start < end && end as u32 <= u8::BITS);
     let mask = (1u8 << (end - start)) - 1;
     let value = (byte.as_byte().0 >> start) & mask;
     UByte(value)
@@ -292,7 +292,7 @@ impl IntoBytes for OctamedMMD0InstrumentType {
     }
 }
 
-impl IntoBytes for OctamedMMD0ColorPallete {
+impl IntoBytes for OctamedMMD0ColorPalette {
     fn as_bytes(&self) -> Vec<u8> {
         return self
             .colors

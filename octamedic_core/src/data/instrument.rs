@@ -3,8 +3,14 @@ use std::sync::Arc;
 pub use octamed::mmd::module::MAX_INSTRUMENTS;
 use octamed::mmd::module::{OctamedMMD0Sample, OctamedMMD0SampleHeader};
 
+use crate::data::volume::MAX_VOLUME;
+
 /// Also Paula's highest channel volume.
-pub const MAX_INSTRUMENT_VOLUME: u8 = 64;
+pub const MAX_INSTRUMENT_VOLUME: u8 = MAX_VOLUME;
+
+/// How far an instrument can be tuned, in eighths of a semitone.
+pub const MIN_FINETUNE: i8 = -8;
+pub const MAX_FINETUNE: i8 = 7;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct InstrumentId(pub u8);
@@ -33,12 +39,7 @@ impl OctamedicSample {
         info: &OctamedMMD0Sample,
     ) -> Self {
         let mono: Vec<i8> = if header.is_16_bit() {
-            bytes
-                .as_chunks::<2>()
-                .0
-                .iter()
-                .map(|pair| pair[0])
-                .collect()
+            bytes.chunks_exact(2).map(|pair| pair[0]).collect()
         } else {
             bytes.to_vec()
         };

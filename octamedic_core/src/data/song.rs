@@ -6,7 +6,7 @@ use crate::data::{
     instrument::{InstrumentId, MAX_INSTRUMENTS, OctamedicInstrument},
     pattern::{OctamedicPattern, PatternId},
     tempo::OctamedicTempo,
-    volume::OctamedicVolume,
+    volume::{MAX_VOLUME, OctamedicVolume},
 };
 
 #[derive(Clone, Copy)]
@@ -26,15 +26,15 @@ pub struct OctamedicSongFlags {
 }
 
 pub struct OctamedicSong {
-    pub(crate) name: String,
-    pub(crate) instruments: [Option<OctamedicInstrument>; MAX_INSTRUMENTS],
-    pub(crate) sequence: Vec<PatternId>,
-    pub(crate) tempo: OctamedicTempo,
-    pub(crate) flags: OctamedicSongFlags,
-    pub(crate) global_transpose: i8,
-    pub(crate) track_volumes: [OctamedicVolume; SONG_TRACKS],
-    pub(crate) master_volume: OctamedicVolume,
-    pub(crate) patterns: Vec<Arc<OctamedicPattern>>,
+    pub instruments: [Option<OctamedicInstrument>; MAX_INSTRUMENTS],
+    pub flags: OctamedicSongFlags,
+    pub global_transpose: i8,
+    pub track_volumes: [OctamedicVolume; SONG_TRACKS],
+    pub master_volume: OctamedicVolume,
+    pub patterns: Vec<Arc<OctamedicPattern>>,
+    name: String,
+    sequence: Vec<PatternId>,
+    tempo: OctamedicTempo,
 }
 
 impl OctamedicSong {
@@ -47,8 +47,8 @@ impl OctamedicSong {
             tempo: OctamedicTempo::new(),
             flags: OctamedicSongFlags::default(),
             global_transpose: 0,
-            track_volumes: [OctamedicVolume::new(64); SONG_TRACKS],
-            master_volume: OctamedicVolume::new(64),
+            track_volumes: [OctamedicVolume::new(MAX_VOLUME); SONG_TRACKS],
+            master_volume: OctamedicVolume::new(MAX_VOLUME),
             patterns: vec![Arc::new(OctamedicPattern::new())],
         };
     }
@@ -90,6 +90,10 @@ impl OctamedicSong {
 
     pub fn sequence(&self) -> &[PatternId] {
         return &self.sequence;
+    }
+
+    pub fn sequence_mut(&mut self) -> &mut Vec<PatternId> {
+        return &mut self.sequence;
     }
 
     pub fn tempo(&self) -> OctamedicTempo {

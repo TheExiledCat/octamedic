@@ -1,12 +1,16 @@
 [package]
 name = "octamedic_gui"
 version = "0.1.0"
-edition = "2024"
+edition.workspace = true
+rust-version.workspace = true
 
 [dependencies]
+octamedic_util = {path="../octamedic_util"}
+octamed = {path="../octamed"}
 octamedic_core = {path="../octamedic_core"}
 ggez = { version = "0.9.3", default-features = false }
-taffy = "0.10.1"
+dirs = "6.0.0"
+ab_glyph = "0.2.32"
 
 [lints]
 workspace = true
