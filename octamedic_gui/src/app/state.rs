@@ -237,6 +237,7 @@ impl AppState {
         self.active_instrument.0 = instrument.min(MAX_INSTRUMENT);
         return self.active_instrument;
     }
+
     pub fn next_instrument(&mut self) -> InstrumentId {
         self.active_instrument.0 = self
             .active_instrument
@@ -249,6 +250,27 @@ impl AppState {
     pub fn prev_instrument(&mut self) -> InstrumentId {
         self.active_instrument.0 = self.active_instrument.0.saturating_sub(1).max(1);
         return self.active_instrument;
+    }
+
+    pub fn next_sequence(&mut self) -> PatternId {
+        return self.set_sequence(self.active_sequence_index.saturating_add(1));
+    }
+
+    pub fn prev_sequence(&mut self) -> PatternId {
+        return self.set_sequence(self.active_sequence_index.saturating_sub(1));
+    }
+
+    /// Moves to entry `index` of the sequence, or the last entry past the end, and returns its
+    /// block; block 0 when the sequence is empty.
+    pub fn set_sequence(&mut self, index: usize) -> PatternId {
+        let last = self.song().sequence().len().saturating_sub(1);
+        self.active_sequence_index = index.min(last);
+        return self
+            .song()
+            .sequence()
+            .get(self.active_sequence_index)
+            .copied()
+            .unwrap_or(PatternId::ZERO);
     }
 
     pub fn increase_line_add(&mut self) {
@@ -397,6 +419,18 @@ mod tests {
 
     fn state() -> AppState {
         return AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+    }
+
+    #[test]
+    fn moving_through_the_sequence_stops_at_its_ends() {
+        let mut state = state();
+        let last = state.song().sequence().len().saturating_sub(1);
+        state.prev_sequence();
+        assert_eq!(state.active_sequence_index, 0);
+        state.set_sequence(last + 10);
+        assert_eq!(state.active_sequence_index, last);
+        state.next_sequence();
+        assert_eq!(state.active_sequence_index, last);
     }
 
     #[test]

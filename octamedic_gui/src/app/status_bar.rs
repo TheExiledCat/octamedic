@@ -46,7 +46,6 @@ pub struct StatusBar {
 
 impl StatusBar {
     pub fn new() -> Self {
-        // not wired up yet: 12, SP and CHRD show the reference's labels
         let labels = ["", "", "12", "E", "SP", "CHRD", "", "", "", "", "", ""];
         // labels start at the left, as in OctaMED
         let mut boxes: Vec<Button> = labels
@@ -54,6 +53,40 @@ impl StatusBar {
             .map(|label| Button::new(label).align(Align::Left).font(Font::Interface))
             .collect();
 
+        boxes[SONG_POSITION].set_on_click(|state, click| {
+            let song_length = state.song().sequence().len();
+            let advance = click.button == MouseButton::Left;
+            let position = state.active_sequence_index;
+            let delta = if advance { 1i8 } else { -1i8 };
+            let reset_out_of_bounds = |before: usize, after: usize| {
+                if after >= song_length { before } else { after }
+            };
+            state.set_sequence(match click.char_index.as_ref().map(|i| *i).unwrap_or(0) {
+                2 => reset_out_of_bounds(
+                    position,
+                    position.saturating_add_signed(delta as isize * 10),
+                ),
+                3 => reset_out_of_bounds(position, position.saturating_add_signed(delta as isize)),
+                _ => position,
+            });
+        });
+        boxes[BLOCK].set_on_click(|state, click| {
+            // what clicking each digit of the block number adds or takes away
+            const DIGIT_STEPS: [usize; 3] = [100, 10, 1];
+            let Some(step) = click.char_index.and_then(|index| DIGIT_STEPS.get(index)) else {
+                return;
+            };
+            let block = state.active_pattern.0 as usize;
+            let last = state.song().patterns().len().saturating_sub(1);
+            let target = if click.button == MouseButton::Left {
+                block.checked_add(*step)
+            } else {
+                block.checked_sub(*step)
+            };
+            if let Some(target) = target.filter(|&target| target <= last) {
+                state.select_block(target);
+            }
+        });
         boxes[PREVIOUS_SONG] = Button::new(Triangle::arrow(Direction::Left));
         boxes[NEXT_SONG] = Button::new(Triangle::arrow(Direction::Right));
         boxes[SONG] = Button::new("").align(Align::Right).font(Font::Interface);
@@ -74,7 +107,7 @@ impl StatusBar {
                 .font(Font::Small)
                 .padding_xy(padding, 1);
             if let Some(handler) = handler {
-                button = button.on_click(handler);
+                button.set_on_click(handler);
             }
             boxes[index] = button;
         }

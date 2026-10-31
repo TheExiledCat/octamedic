@@ -15,11 +15,11 @@ impl Rect {
         return Self { x, y, w, h };
     }
 
-    pub fn right(self) -> i32 {
+    pub const fn right(self) -> i32 {
         return self.x + self.w;
     }
 
-    pub fn bottom(self) -> i32 {
+    pub const fn bottom(self) -> i32 {
         return self.y + self.h;
     }
 
@@ -58,6 +58,29 @@ impl Rect {
             .collect();
     }
 
+    /// Stacked from the top, one per height, as wide as this.
+    pub fn rows(self, heights: &[i32]) -> Vec<Self> {
+        let mut y = self.y;
+        return heights
+            .iter()
+            .map(|&height| {
+                let row = Self::new(self.x, y, self.w, height);
+                y += height;
+                row
+            })
+            .collect();
+    }
+
+    /// `count` columns side by side, filling this rect; leftover pixels widen the first ones.
+    pub fn split_columns(self, count: i32) -> Vec<Self> {
+        return self.columns(&even_sizes(self.w, count));
+    }
+
+    /// `count` rows stacked, filling this rect; leftover lines go to the first ones.
+    pub fn split_rows(self, count: i32) -> Vec<Self> {
+        return self.rows(&even_sizes(self.h, count));
+    }
+
     /// Turned a quarter around its top left: as wide as it was tall, and as tall as it was wide.
     pub fn rotate(self) -> Self {
         return Self::new(self.x, self.y, self.h, self.w);
@@ -86,6 +109,17 @@ impl From<Rect> for ggez::graphics::Rect {
     }
 }
 
+/// `total` split into `count` sizes as even as can be, the larger ones first.
+fn even_sizes(total: i32, count: i32) -> Vec<i32> {
+    if count <= 0 {
+        return Vec::new();
+    }
+    let (size, leftover) = (total / count, total % count);
+    return (0..count)
+        .map(|index| size + i32::from(index < leftover))
+        .collect();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -111,6 +145,27 @@ mod tests {
             (Rect::new(0, 10, 70, 50), Rect::new(70, 10, 30, 50))
         );
         assert_eq!(rect.split_top(80).1.h, 0);
+    }
+
+    #[test]
+    fn splitting_evenly_fills_the_rect() {
+        let rect = Rect::new(10, 20, 22, 7);
+        let widths: Vec<i32> = rect
+            .split_columns(5)
+            .iter()
+            .map(|column| column.w)
+            .collect();
+        assert_eq!(widths, [5, 5, 4, 4, 4]);
+        assert_eq!(rect.split_columns(5)[4], Rect::new(28, 20, 4, 7));
+        assert_eq!(
+            rect.split_rows(3),
+            [
+                Rect::new(10, 20, 22, 3),
+                Rect::new(10, 23, 22, 2),
+                Rect::new(10, 25, 22, 2),
+            ]
+        );
+        assert!(rect.split_rows(0).is_empty());
     }
 
     #[test]
@@ -142,6 +197,19 @@ mod tests {
         assert_eq!(
             columns,
             vec![Rect::new(3, 65, 84, 11), Rect::new(87, 65, 14, 11)]
+        );
+    }
+
+    #[test]
+    fn rows_follow_each_other() {
+        let rows = Rect::new(3, 20, 32, 41).rows(&[1, 8, 8]);
+        assert_eq!(
+            rows,
+            vec![
+                Rect::new(3, 20, 32, 1),
+                Rect::new(3, 21, 32, 8),
+                Rect::new(3, 29, 32, 8),
+            ]
         );
     }
 }

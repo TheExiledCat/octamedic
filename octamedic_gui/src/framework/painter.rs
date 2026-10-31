@@ -1,74 +1,12 @@
-use std::sync::LazyLock;
-
-use ggez::graphics::{Canvas, Color, DrawParam, Image, PxScale, Quad, Text, TextFragment};
 use octamedic_core::data::palette::OctamedColorPallete;
 
 use crate::framework::{
-    font::{self, Font, TOPAZ_TTF},
+    font::{self, Font},
     rect::Rect,
     shape::{self, Direction, Sides, Span, Spans},
+    target::{Color, RenderTarget},
     text::Line,
 };
-
-pub const TEXT_FONT: &str = "Topaz";
-
-/// How Topaz's file says it's sized, so text can be drawn on whole pixels.
-static TOPAZ_METRICS: LazyLock<FontMetrics> =
-    LazyLock::new(|| FontMetrics::read(TOPAZ_TTF).unwrap_or(FontMetrics::EXACT));
-
-/// A font's vertical metrics, as shares of its em.
-#[derive(Clone, Copy, Debug, PartialEq)]
-struct FontMetrics {
-    /// From the top of the line to the baseline.
-    ascent: f32,
-    /// From the baseline down, as a negative number.
-    descent: f32,
-}
-
-impl FontMetrics {
-    /// An em that reaches exactly from the top of the line to the baseline.
-    const EXACT: Self = Self {
-        ascent: 1.0,
-        descent: 0.0,
-    };
-
-    // where things are in a TrueType file, in bytes
-    const TABLE_COUNT: usize = 4;
-    const TABLE_RECORDS: usize = 12;
-    const TABLE_RECORD_SIZE: usize = 16;
-    const TABLE_TAG_SIZE: usize = 4;
-    const TABLE_OFFSET: usize = 8;
-    const HEAD_UNITS_PER_EM: usize = 18;
-    const HHEA_ASCENT: usize = 4;
-    const HHEA_DESCENT: usize = 6;
-
-    /// From the `head` and `hhea` tables; `None` if they aren't there.
-    fn read(font: &[u8]) -> Option<Self> {
-        let bytes = |at: usize, count: usize| font.get(at..at + count);
-        let u16_at = |at: usize| Some(u16::from_be_bytes(bytes(at, 2)?.try_into().ok()?));
-        let u32_at = |at: usize| Some(u32::from_be_bytes(bytes(at, 4)?.try_into().ok()?));
-        let tables = u16_at(Self::TABLE_COUNT)? as usize;
-        let table = |tag: &[u8; Self::TABLE_TAG_SIZE]| {
-            (0..tables)
-                .map(|index| Self::TABLE_RECORDS + Self::TABLE_RECORD_SIZE * index)
-                .find(|&record| bytes(record, Self::TABLE_TAG_SIZE) == Some(tag))
-                .and_then(|record| u32_at(record + Self::TABLE_OFFSET))
-                .map(|offset| offset as usize)
-        };
-        let units_per_em = u16_at(table(b"head")? + Self::HEAD_UNITS_PER_EM)? as f32;
-        let hhea = table(b"hhea")?;
-        return Some(Self {
-            ascent: u16_at(hhea + Self::HHEA_ASCENT)? as i16 as f32 / units_per_em,
-            descent: u16_at(hhea + Self::HHEA_DESCENT)? as i16 as f32 / units_per_em,
-        });
-    }
-
-    /// The text renderer sizes a font by its ascent to descent rather than its em, so a font
-    /// whose ascent overshoots its em comes out a little small. This sizes it back up.
-    fn em_correction(self) -> f32 {
-        return self.ascent - self.descent;
-    }
-}
 
 /// Topaz is 8×8 in screen pixels.
 pub const CHAR_WIDTH: i32 = 8;
@@ -90,44 +28,42 @@ impl Pen {
     pub const BLUSH: Self = Self(7);
 }
 
-/// Draws onto the screen in screen pixels, with the palette's pens.
+/// Draws onto a target in screen pixels, with the palette's pens.
 pub struct Painter<'a> {
-    canvas: &'a mut Canvas,
+    target: &'a mut dyn RenderTarget,
     pallete: &'a OctamedColorPallete,
 }
 
 impl<'a> Painter<'a> {
-    pub fn new(canvas: &'a mut Canvas, pallete: &'a OctamedColorPallete) -> Self {
-        return Self { canvas, pallete };
+    pub fn new(target: &'a mut dyn RenderTarget, pallete: &'a OctamedColorPallete) -> Self {
+        return Self { target, pallete };
     }
 
     pub fn color(&self, pen: Pen) -> Color {
         let [r, g, b] = self.pallete.rgb(pen.0);
-        return Color::from_rgb(r, g, b);
+        return Color::rgb(r, g, b);
     }
 
     /// Runs `draw` with nothing drawn outside `rect`. Nothing's drawn when `rect` is empty or
     /// off the screen.
     pub fn clipped(&mut self, rect: Rect, draw: impl FnOnce(&mut Self)) {
-        let previous = self.canvas.scissor_rect();
-        if self.canvas.set_scissor_rect(rect.into()).is_ok() {
+        let previous = self.target.get_clip();
+        if self.target.set_clip(rect) {
             draw(self);
-            let _ = self.canvas.set_scissor_rect(previous);
+            self.target.set_clip(previous);
         }
     }
 
     pub fn fill(&mut self, rect: Rect, pen: Pen) {
         let color = self.color(pen);
-        self.canvas
-            .draw(&Quad, DrawParam::new().dest_rect(rect.into()).color(color));
+        self.target.fill(rect, color);
     }
 
     /// `opacity` from 0, which draws nothing, to 1, which is `fill`.
     pub fn fill_translucent(&mut self, rect: Rect, pen: Pen, opacity: f32) {
         let mut color = self.color(pen);
-        color.a = opacity;
-        self.canvas
-            .draw(&Quad, DrawParam::new().dest_rect(rect.into()).color(color));
+        color.a = (opacity.clamp(0.0, 1.0) * Color::OPAQUE as f32).round() as u8;
+        self.target.fill(rect, color);
     }
 
     pub fn text(&mut self, x: i32, y: i32, text: &str, pen: Pen) {
@@ -160,58 +96,35 @@ impl<'a> Painter<'a> {
     }
 
     pub fn text_in_font(&mut self, x: i32, y: i32, text: &str, pen: Pen, font: Font) {
-        self.glyphs(x, y, text, pen, font, [1, 1]);
+        self.glyphs(x, y, text, pen, font, [1.0, 1.0]);
     }
 
-    /// Each pixel of the glyphs as `scale` pixels across and down.
-    fn glyphs(&mut self, x: i32, y: i32, text: &str, pen: Pen, font: Font, scale: [i32; 2]) {
-        let mut char_x = x;
+    /// Each pixel of the glyphs as `scale` pixels across and down, rounded to whole pixels so
+    /// they stay sharp at any scale.
+    fn glyphs(&mut self, x: i32, y: i32, text: &str, pen: Pen, font: Font, scale: [f32; 2]) {
+        let scaled = |pixels: i32, axis: usize| (pixels as f32 * scale[axis]).round() as i32;
+        let mut advance = 0;
         for c in text.chars() {
             if let Some(glyph) = font.glyph(c) {
-                let ink_x = char_x + font.bearing() * scale[0];
+                let ink = advance + font.bearing();
                 for (line, &bits) in glyph.lines.iter().enumerate() {
-                    let line_y = y + line as i32 * scale[1];
+                    let top = scaled(line as i32, 1);
+                    let height = scaled(line as i32 + 1, 1) - top;
                     for (start, width) in font::runs(bits) {
-                        let run =
-                            Rect::new(ink_x + start * scale[0], line_y, width * scale[0], scale[1]);
-                        self.fill(run, pen);
+                        let left = scaled(ink + start, 0);
+                        let run_width = scaled(ink + start + width, 0) - left;
+                        self.fill(Rect::new(x + left, y + top, run_width, height), pen);
                     }
                 }
             }
-            char_x += font.advance(c) * scale[0];
+            advance += font.advance(c);
         }
     }
 
     /// Topaz in characters `scale` times `CHAR_WIDTH` wide and `CHAR_HEIGHT` tall, across and
-    /// down. Whole scales draw every pixel of the font as a block; others draw its outlines,
-    /// which blur where they don't land on whole pixels.
+    /// down.
     pub fn text_scaled(&mut self, x: i32, y: i32, text: &str, pen: Pen, scale: [f32; 2]) {
-        if scale.iter().all(|s| s.fract() == 0.0 && *s >= 1.0) {
-            let whole = [scale[0] as i32, scale[1] as i32];
-            self.glyphs(x, y, text, pen, Font::Topaz, whole);
-            return;
-        }
-        // the font's glyphs are half as wide as its em is tall, for the screen's tall pixels, so
-        // it's scaled twice as much across
-        let metrics = *TOPAZ_METRICS;
-        let em = [
-            (CHAR_WIDTH * 2) as f32 * scale[0],
-            CHAR_HEIGHT as f32 * scale[1],
-        ];
-        let scale = PxScale {
-            x: em[0] * metrics.em_correction(),
-            y: em[1] * metrics.em_correction(),
-        };
-        // glyphs hang from the ascent, so an ascent above the em pushes them down off the pixels
-        let raise = (metrics.ascent - 1.0) * em[1];
-        let fragment = TextFragment::new(text)
-            .font(TEXT_FONT)
-            .scale(scale)
-            .color(self.color(pen));
-        self.canvas.draw(
-            &Text::new(fragment),
-            DrawParam::new().dest([x as f32, y as f32 - raise]),
-        );
+        self.glyphs(x, y, text, pen, Font::Topaz, scale);
     }
 
     /// `line` across `rect`, cut to the characters that fit, in the middle of it down. Centring
@@ -364,13 +277,6 @@ impl<'a> Painter<'a> {
             }
         }
     }
-
-    pub fn image(&mut self, image: &Image, x: i32, y: i32, scale: [f32; 2]) {
-        self.canvas.draw(
-            image,
-            DrawParam::new().dest([x as f32, y as f32]).scale(scale),
-        );
-    }
 }
 
 pub fn text_width(text: &str) -> i32 {
@@ -417,15 +323,6 @@ pub fn aligned_text_x(rect: Rect, width: i32, align: Align) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn topaz_metrics_come_from_the_font() {
-        // the font's ascent is 1602 on an em of 1600, with no descent
-        let metrics = FontMetrics::read(TOPAZ_TTF).unwrap();
-        assert_eq!(metrics.ascent, 1602.0 / 1600.0);
-        assert_eq!(metrics.descent, 0.0);
-        assert_eq!(FontMetrics::read(b"not a font"), None);
-    }
 
     #[test]
     fn text_lines_up_with_the_rect() {

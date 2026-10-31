@@ -127,6 +127,8 @@ pub struct Triangle {
     pub direction: Direction,
     pub width: i32,
     pub height: i32,
+    /// A bar across the point, as on the buttons that jump to the start or end.
+    pub bar: bool,
 }
 
 impl Triangle {
@@ -135,30 +137,75 @@ impl Triangle {
             direction,
             width,
             height,
+            bar: false,
         };
     }
 
     const ARROW_WIDTH: i32 = 6;
     const ARROW_HEIGHT: i32 = 5;
 
+    /// A bar is a line tall, or two pixels wide across a left or right pointing triangle, so it
+    /// looks as thick on the tall pixels.
+    const BAR_LINES: i32 = 1;
+    const BAR_PIXELS: i32 = 2;
+
     pub fn arrow(direction: Direction) -> Self {
         return Self::new(direction, Self::ARROW_WIDTH, Self::ARROW_HEIGHT);
     }
 
+    pub fn with_bar(mut self) -> Self {
+        self.bar = true;
+        return self;
+    }
+
+    /// The width and height of the triangle and its bar.
+    fn size(&self) -> [i32; 2] {
+        if !self.bar {
+            return [self.width, self.height];
+        }
+        return match self.direction {
+            Direction::Up | Direction::Down => [self.width, self.height + Self::BAR_LINES],
+            Direction::Left | Direction::Right => [self.width + Self::BAR_PIXELS, self.height],
+        };
+    }
+
     /// In the middle of the inside of the frame, rounding right and down.
     fn area(&self, inside: Rect) -> Rect {
+        let [width, height] = self.size();
         return Rect::new(
-            inside.x + (inside.w - self.width + 1) / 2,
-            inside.y + (inside.h - self.height + 1) / 2,
-            self.width,
-            self.height,
+            inside.x + (inside.w - width + 1) / 2,
+            inside.y + (inside.h - height + 1) / 2,
+            width,
+            height,
         );
+    }
+
+    /// `area` split into the bar, at the point, and the triangle.
+    fn split_bar(&self, area: Rect) -> (Rect, Rect) {
+        return match self.direction {
+            Direction::Up => area.split_top(Self::BAR_LINES),
+            Direction::Left => area.split_left(Self::BAR_PIXELS),
+            Direction::Down => {
+                let (triangle, bar) = area.split_top(area.h - Self::BAR_LINES);
+                (bar, triangle)
+            }
+            Direction::Right => {
+                let (triangle, bar) = area.split_left(area.w - Self::BAR_PIXELS);
+                (bar, triangle)
+            }
+        };
     }
 }
 
 impl ButtonContent for Triangle {
     fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter) {
-        painter.triangle(self.area(area.inside), Some(pen), None, self.direction);
+        let mut triangle = self.area(area.inside);
+        if self.bar {
+            let (bar, rest) = self.split_bar(triangle);
+            painter.fill(bar, pen);
+            triangle = rest;
+        }
+        painter.triangle(triangle, Some(pen), None, self.direction);
     }
 }
 
@@ -208,9 +255,13 @@ impl Button {
         return self.click.take();
     }
 
-    pub fn on_click(mut self, handler: impl ButtonHandler) -> Self {
-        self.on_click = Some(Rc::new(handler));
+    pub fn on_click(mut self, handler: impl Fn(&mut AppState, ButtonClick) + 'static) -> Self {
+        self.set_on_click(handler);
         return self;
+    }
+
+    pub fn set_on_click(&mut self, handler: impl Fn(&mut AppState, ButtonClick) + 'static) {
+        self.on_click = Some(Rc::new(handler));
     }
 
     pub fn border(mut self, border: i32) -> Self {
@@ -337,6 +388,19 @@ mod tests {
         button.area = Rect::new(0, 0, 40, 10);
         button.clickable.set_area(button.area);
         return button;
+    }
+
+    #[test]
+    fn a_bar_goes_across_the_point() {
+        let inside = Rect::new(50, 20, 16, 9);
+        let up = Triangle::new(Direction::Up, 12, 6).with_bar();
+        let area = up.area(inside);
+        assert_eq!(area, Rect::new(52, 21, 12, 7));
+        assert_eq!(up.split_bar(area).0, Rect::new(52, 21, 12, 1));
+        let down = Triangle::new(Direction::Down, 12, 6).with_bar();
+        assert_eq!(down.split_bar(area).0, Rect::new(52, 27, 12, 1));
+        let right = Triangle::new(Direction::Right, 6, 5).with_bar();
+        assert_eq!(right.size(), [8, 5]);
     }
 
     #[test]

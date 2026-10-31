@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 use ggez::{
     Context, GameResult,
     event::{EventHandler, MouseButton},
-    graphics::{Canvas, Color, DrawParam, FontData, Image, Rect as WindowRect, Sampler},
+    graphics::{Canvas, Color, DrawParam, Image, Rect as WindowRect, Sampler},
     input::{keyboard::KeyInput, mouse},
 };
 use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
@@ -12,8 +12,7 @@ use crate::{
     app::{main_view::MainView, state::AppState},
     framework::{
         event::{self, Event},
-        font::TOPAZ_TTF,
-        painter::{Painter, TEXT_FONT},
+        painter::Painter,
         rect::Point,
         screen::{SCREEN, SCREEN_HEIGHT, SCREEN_WIDTH, ScaleMode, to_screen, viewport},
         widget::OctamedicWidget,
@@ -44,8 +43,6 @@ pub struct App {
 
 impl App {
     pub fn new(ctx: &mut Context, project: OctamedicProject) -> GameResult<Self> {
-        ctx.gfx
-            .add_font(TEXT_FONT, FontData::from_slice(TOPAZ_TTF)?);
         mouse::set_cursor_hidden(ctx, true);
         let screen = Image::new_canvas_image(
             ctx,
@@ -101,7 +98,10 @@ impl App {
         let mut painter = Painter::new(&mut canvas, &pallete);
         self.main.render(&self.state, SCREEN, &mut painter);
         let [x, y] = self.pointer;
-        painter.image(&self.cursor, x, y, CURSOR_SCALE);
+        let cursor = DrawParam::new()
+            .dest([x as f32, y as f32])
+            .scale(CURSOR_SCALE);
+        canvas.draw(&self.cursor, cursor);
         return canvas.finish(ctx);
     }
 }

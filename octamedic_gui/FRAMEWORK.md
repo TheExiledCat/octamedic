@@ -23,6 +23,7 @@ screens built with it live in `src/app/`.
 | `framework/widget.rs` | the `OctamedicWidget` trait |
 | `framework/event.rs` | `Event`, in screen pixels |
 | `framework/painter.rs` | `Painter` and `Pen`: fills, frames, shapes, text |
+| `framework/target.rs` | `RenderTarget`, what a `Painter` draws on, and `Color` |
 | `framework/font.rs` | `Font` and the glyph files in `assets/fonts/` |
 | `framework/text.rs` | `Span` and `Line`, text in more than one style |
 | `framework/shape.rs` | the rows of triangles and circles, `Direction`, `Sides` |
@@ -57,6 +58,7 @@ area to know whether a click hit it. So an area is only known once something has
 |---|---|
 | `split_top(h)` / `split_left(w)` | the first `h` lines or `w` pixels, and the rest |
 | `columns(&[w, ...])` | a row of rects with these widths |
+| `split_columns(n)` / `split_rows(n)` | `n` even columns or rows filling the rect; leftover pixels go to the first ones |
 | `inset(x, y)` | the rect made smaller on every side |
 | `inside_frame(rect, thickness)` | what's left inside `Painter::frame` |
 
@@ -67,6 +69,10 @@ they're used, e.g. the status row's `WIDTHS`.
 
 `Painter` draws with pens, the 8 colours of the song's palette (`Pen::BLACK`, `LIGHT`, `SHADOW`,
 `FILL`, `RED`, `ROSE`, `PINK`, `BLUSH`), so a module with its own colours shows them.
+
+Everything it draws comes down to filled rects, so it draws on any `RenderTarget`: something that
+can fill a rect with a colour and clip to a rect. The app's target is ggez's `Canvas`; to draw into
+a framebuffer instead, implement the trait for it and pass it to `Painter::new`.
 
 | Method | Draws |
 |---|---|
@@ -133,7 +139,8 @@ let button = Button::new("FILES")
 ```
 
 - **Content.** `Button::new` takes anything that's `ButtonContent`: a `&str`, `String` or `Line`,
-  a `Triangle`, `Blocks` or `MusicSymbol`s. For a new kind of content, implement `render` (and
+  a `Triangle` (`.with_bar()` adds a bar across its point, as on jump to start and end), `Blocks`
+  or `MusicSymbol`s. For a new kind of content, implement `render` (and
   `index_at` if clicks on parts of it matter). `set_text` and `set_content` change it.
 - **Clicks.** A button clicks the moment it's pressed, as OctaMED's gadgets do. The handler gets
   the state and a `ButtonClick` with the mouse button and `char_index`, the character of the label

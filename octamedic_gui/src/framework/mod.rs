@@ -6,6 +6,7 @@ pub mod painter;
 pub mod rect;
 pub mod screen;
 pub mod shape;
+pub mod target;
 pub mod text;
 pub mod widget;
 pub mod widgets;

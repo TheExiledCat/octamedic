@@ -1,8 +1,11 @@
 pub mod misc;
-
+pub mod play;
 use crate::{
     app::{
-        header::misc::Misc, mode::HeaderMode, mode_buttons::ModeButtons, state::AppState,
+        header::{misc::Misc, play::Play},
+        mode::HeaderMode,
+        mode_buttons::ModeButtons,
+        state::AppState,
         status_bar::StatusBar,
     },
     framework::{
@@ -29,19 +32,23 @@ const MODE_BUTTONS: Rect = Rect::new(462, 2, 174, 50);
 
 pub struct HeaderPanels {
     pub misc: Misc,
+    pub play: Play,
 }
 
 impl HeaderPanels {
     pub fn new() -> Self {
-        return Self { misc: Misc::new() };
+        return Self {
+            misc: Misc::new(),
+            play: Play::new(),
+        };
     }
 
     /// The panel `mode` shows; `None` for the ones that aren't made yet.
     pub fn panel(&mut self, mode: HeaderMode) -> Option<&mut dyn OctamedicWidget> {
         return match mode {
             HeaderMode::Misc => Some(&mut self.misc),
+            HeaderMode::Play => Some(&mut self.play),
             HeaderMode::Files
-            | HeaderMode::Play
             | HeaderMode::Instrument
             | HeaderMode::Block
             | HeaderMode::Edit

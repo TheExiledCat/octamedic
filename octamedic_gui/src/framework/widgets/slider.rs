@@ -65,9 +65,13 @@ impl Slider {
         };
     }
 
-    pub fn on_slide(mut self, handler: impl SlideHandler) -> Self {
-        self.on_slide = Some(Rc::new(handler));
+    pub fn on_slide(mut self, handler: impl Fn(&mut AppState, Slide) + 'static) -> Self {
+        self.set_on_slide(handler);
         return self;
+    }
+
+    pub fn set_on_slide(&mut self, handler: impl Fn(&mut AppState, Slide) + 'static) {
+        self.on_slide = Some(Rc::new(handler));
     }
 
     pub fn value(&self) -> u16 {
@@ -204,7 +208,10 @@ impl OctamedicWidget for Slider {
         let bottom = Rect::new(handle.x, handle.bottom() - 1, handle.w, 1);
         painter.fill(bottom, Pen::SHADOW);
         if handle.right() < track.right() {
-            painter.fill(Rect::new(handle.right(), handle.y, 1, handle.h), Pen::SHADOW);
+            painter.fill(
+                Rect::new(handle.right(), handle.y, 1, handle.h),
+                Pen::SHADOW,
+            );
         }
     }
 }
