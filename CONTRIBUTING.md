@@ -44,6 +44,18 @@ obvious from the code.
 
 Branch off `main` and say in the PR what changed and why.
 
+## Using AI
+
+The code itself should be written by you. Small help is fine, but if a PR reads like it was
+generated wholesale I'll probably ask you to rework it.
+
+Tests are a different story: write them with AI if you like, as long as you've actually gone
+through them and checked they test the right thing (a test that just repeats what the code does
+proves nothing).
+
+Docs that aren't code (this file, the guides in `docs/`, PR descriptions) can be AI written, I
+don't mind.
+
 ## Where things are explained
 
 - [docs/PLAYER.md](docs/PLAYER.md): how playback works (Paula, DMA, the CIA timer) and how the
