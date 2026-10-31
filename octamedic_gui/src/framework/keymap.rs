@@ -76,7 +76,7 @@ const FUNCTION_KEYS: [KeyCode; 12] = [
     KeyCode::F12,
 ];
 
-/// US layout.
+// US layout
 const SYMBOLS: [(KeyCode, char); 11] = [
     (KeyCode::Comma, ','),
     (KeyCode::Period, '.'),
@@ -109,7 +109,7 @@ const NAMED: [(KeyCode, &str); 15] = [
     (KeyCode::End, "End"),
 ];
 
-/// Physical keys, so Shift+1 is `S-1`, not `!`.
+// physical keys, so shift+1 is S-1 and not !
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Key {
     code: KeyCode,
@@ -146,7 +146,7 @@ impl Key {
         return *self == Key::new(code, mods);
     }
 
-    /// E.g. `z`, `Z` (Shift+Z), `^S`, `A-O`, `Su-O` or `S-Tab`.
+    // z, Z for shift+z, ^S, A-O, Su-O, S-Tab
     pub fn to_text(self) -> String {
         let letter = letter(self.code);
         if self.mods == KeyMods::SHIFT {
@@ -174,7 +174,7 @@ impl Key {
         return text;
     }
 
-    /// A prefix needs a key after it, so `^` alone isn't a key.
+    // a lone prefix like ^ isn't a key
     pub fn parse(text: &str) -> Option<Self> {
         let mut mods = KeyMods::NONE;
         let mut rest = text;
@@ -235,12 +235,12 @@ pub struct BindingInfo {
 }
 
 pub trait Action: Copy + PartialEq + fmt::Debug {
-    /// Override for variants with values.
+    // override for variants that carry values
     fn id(self) -> String {
         return snake_case(&format!("{self:?}"));
     }
 
-    /// Toggles shouldn't repeat, or holding the key flickers them.
+    // toggles flicker if they repeat while held
     fn repeats(self) -> bool {
         return true;
     }
@@ -287,8 +287,8 @@ pub struct Binding<A> {
     pub label: &'static str,
 }
 
-/// One table for both handling and displaying keys, so they can't drift apart. Overrides from
-/// `keybinds` replace the keys passed to `bind`.
+// the same table handles keys and shows them in help so the two can't drift apart. overrides
+// from keybinds replace whatever keys bind() got
 pub struct Keymap<A> {
     scope: &'static str,
     bindings: Vec<Binding<A>>,
@@ -402,10 +402,10 @@ impl<A: Action> Keymap<A> {
 
 pub const UNBOUND: &str = "none";
 
-/// Two dashes, since `-` is a key itself.
+// two dashes because - is a key
 const NO_KEY: &str = "--";
 
-/// Joins with "/", collapsing three or more consecutive function keys into e.g. "Fn9-12".
+// joins with /, 3+ function keys in a row become e.g. Fn9-12
 pub fn join_keys(keys: &[Key]) -> String {
     let mut parts = Vec::new();
     let mut start = 0;
@@ -435,7 +435,7 @@ pub fn join_keys(keys: &[Key]) -> String {
 pub trait KeyActions {
     type Action: Action;
 
-    /// Can differ per mode.
+    // can change with the mode
     fn keymap(&self) -> &Keymap<Self::Action>;
 
     fn perform(&mut self, action: Self::Action, state: &mut AppState);
@@ -446,7 +446,6 @@ pub trait KeyActions {
         return HelpSection::new(title).entries(self.keymap().help_entries(Self::describe));
     }
 
-    /// Returns whether the event was handled.
     fn dispatch(&mut self, state: &mut AppState, event: &Event) -> bool {
         let Some(action) = self.keymap().lookup(event) else {
             return false;
@@ -518,7 +517,7 @@ mod tests {
     }
 
     #[test]
-    fn keys_read_back_from_text() {
+    fn key_text_roundtrip() {
         let keys = [
             Key::ctrl(KeyCode::S),
             Key::alt(KeyCode::O),
@@ -551,7 +550,7 @@ mod tests {
     }
 
     #[test]
-    fn super_is_a_modifier_of_its_own() {
+    fn super_modifier() {
         let key = Key::ctrl(KeyCode::S);
         assert!(!key.matches(KeyCode::S, KeyMods::CTRL | KeyMods::LOGO));
         assert!(Key::super_key(KeyCode::S).matches(KeyCode::S, KeyMods::LOGO));
@@ -559,7 +558,7 @@ mod tests {
     }
 
     #[test]
-    fn lookup_finds_the_bound_action() {
+    fn lookup() {
         let keymap = Keymap::new("test")
             .bind(Key::plain(KeyCode::Up), 0, "Row")
             .bind(Key::shift(KeyCode::Up), 1, "Row");
@@ -581,7 +580,7 @@ mod tests {
     }
 
     #[test]
-    fn held_keys_repeat_only_actions_that_repeat() {
+    fn held_repeat() {
         let held = Event::Key {
             key: KeyCode::Up,
             mods: KeyMods::NONE,
@@ -598,7 +597,7 @@ mod tests {
     }
 
     #[test]
-    fn overrides_replace_every_default_key_of_their_action() {
+    fn overrides() {
         let keymap = Keymap::new("test")
             .bind(Key::plain(KeyCode::Up), 0, "Row")
             .bind(Key::plain(KeyCode::K), 0, "Row")
@@ -614,13 +613,13 @@ mod tests {
     }
 
     #[test]
-    fn action_ids_are_snake_case() {
+    fn snake_case_ids() {
         assert_eq!(snake_case("ToggleEdit"), "toggle_edit");
         assert_eq!(snake_case("Up"), "up");
     }
 
     #[test]
-    fn help_merges_the_keys_of_an_action() {
+    fn help_merges_keys() {
         let keymap = (9..=12)
             .fold(Keymap::new("test"), |keymap, n| {
                 keymap.bind(Key::plain(FUNCTION_KEYS[n - 1]), 0, "JMP")

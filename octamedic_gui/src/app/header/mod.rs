@@ -16,7 +16,7 @@ use crate::{
     },
 };
 
-// Positions are measured from an OctaMED screenshot, from the header's top left.
+// measured off an OctaMED screenshot, relative to the header's top left
 const WIDGETS_HEIGHT: i32 = 52;
 const STATUS_HEIGHT: i32 = 11;
 const STATUS_INSET: i32 = 3;

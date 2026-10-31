@@ -23,20 +23,17 @@ impl Color {
     }
 }
 
-/// Coordinates are in screen pixels.
 pub trait RenderTarget {
-    /// Translucent colors blend with what's there.
     fn fill(&mut self, rect: Rect, color: Color);
 
     fn get_clip(&self) -> Rect;
 
-    /// Clips to the part of `rect` on the target. Returns false, leaving the clip alone, if
-    /// none of it is.
+    // false if rect is entirely off the target, and the clip stays as it was
     fn set_clip(&mut self, rect: Rect) -> bool;
 }
 
-/// Batches fills into one instanced draw per clip rect, since ggez doesn't batch and a frame's
-/// text alone is thousands of fills. Flushes on drop.
+// ggez won't batch fills itself and the text alone is thousands of them a frame, so this does
+// one instanced draw per clip rect. flushes on drop
 pub struct BatchedCanvas<'a> {
     gfx: &'a GraphicsContext,
     canvas: &'a mut Canvas,

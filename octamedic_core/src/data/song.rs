@@ -12,16 +12,14 @@ use crate::data::{
 #[derive(Clone, Copy)]
 pub struct SongId(pub u8);
 
-/// The song flags that change how it plays.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct OctamedicSongFlags {
-    /// The Amiga's audio filter starts on.
     pub filter_on: bool,
-    /// The volume command's argument is hex rather than decimal.
+    // volume command arg is hex instead of decimal
     pub volumes_hex: bool,
-    /// SoundTracker/NoiseTracker/ProTracker compatible slides.
+    // ST/NT/PT style slides
     pub st_slides: bool,
-    /// A 5-8 channel song, played through the Octa mixer.
+    // 5-8 channel mode, software mixed on the real thing
     pub eight_channel: bool,
 }
 
@@ -57,7 +55,6 @@ impl OctamedicSong {
         return self.patterns.get(pattern_id.0 as usize).map(Arc::as_ref);
     }
 
-    /// For handing to the engine without copying it.
     pub fn get_shared_pattern(&self, pattern_id: &PatternId) -> Option<Arc<OctamedicPattern>> {
         return self.patterns.get(pattern_id.0 as usize).cloned();
     }
@@ -70,7 +67,7 @@ impl OctamedicSong {
         return &self.patterns;
     }
 
-    /// Copies the pattern first if the engine still has it.
+    // copy on write if the engine still holds it
     pub fn get_pattern_mut(&mut self, pattern_id: PatternId) -> Option<&mut OctamedicPattern> {
         return self
             .patterns
@@ -78,7 +75,6 @@ impl OctamedicSong {
             .map(Arc::make_mut);
     }
 
-    // creates empty patterns up to `pattern_id` if the song has fewer
     pub fn ensure_pattern(&mut self, pattern_id: PatternId) -> &mut OctamedicPattern {
         let index = pattern_id.0 as usize;
         if index >= self.patterns.len() {
@@ -125,7 +121,7 @@ mod tests {
     use crate::data::note::OctamedicNote;
 
     #[test]
-    fn editing_a_pattern_the_engine_has_leaves_its_copy_alone() {
+    fn pattern_cow() {
         let mut song = OctamedicSong::new("test");
         let sent = song.get_shared_pattern(&PatternId(0)).unwrap();
         let pattern = song.get_pattern_mut(PatternId(0)).unwrap();

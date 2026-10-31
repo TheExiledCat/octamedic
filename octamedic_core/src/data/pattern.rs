@@ -39,7 +39,6 @@ impl OctamedicPattern {
         return self.lines.len();
     }
 
-    /// Every line has the same number of tracks.
     pub fn track_count(&self) -> usize {
         return self.lines.first().map_or(0, |line| line.tracks.len());
     }

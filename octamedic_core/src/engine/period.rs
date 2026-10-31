@@ -1,7 +1,6 @@
 use crate::data::instrument::{MAX_FINETUNE, MIN_FINETUNE};
 
-/// OctaMED v4's periods for C-1 to B-3, one table per finetune from -8 to 7. They're the same as
-/// ProTracker's.
+// v4 period tables, C-1 to B-3, finetune -8..7. same numbers as ProTracker
 const PERIODS: [[u16; 36]; 16] = [
     // -8
     [
@@ -103,17 +102,17 @@ const PERIODS: [[u16; 36]; 16] = [
 
 const NOTES_PER_OCTAVE: i8 = 12;
 
-/// The highest table index the player looks up as is.
+// anything above this gets dropped an octave first
 const LAST_INDEX: i8 = 62;
 
-/// The index of C-3, the top octave.
+// C-3
 const TOP_OCTAVE: usize = 24;
 
-/// The period OctaMED v4 plays a note at, for a sample without extra octaves. `transpose` is the
-/// instrument's and the song's together. Notes below C-1 move up by octaves until they fit, notes
-/// a long way up drop an octave once, and everything above B-3 plays in the top octave.
+/// Period for a note the way v4 works it out, for normal samples, no extra octaves.
+/// `transpose` is instrument + song. Low notes get pushed up by octaves until they fit, very high
+/// ones drop one octave, and anything above B-3 folds into the top octave.
 pub fn note_period(note: u8, transpose: i8, finetune: i8) -> u16 {
-    // byte arithmetic, like the player's
+    // i8 on purpose, the player does this in a byte and wraps
     let mut index = (note as i8).wrapping_add(transpose).wrapping_sub(1);
     while index < 0 {
         index += NOTES_PER_OCTAVE;
@@ -121,14 +120,13 @@ pub fn note_period(note: u8, transpose: i8, finetune: i8) -> u16 {
     if index > LAST_INDEX {
         index -= NOTES_PER_OCTAVE;
     }
-    // the tables run from the lowest finetune up
     let table = &PERIODS[(finetune.clamp(MIN_FINETUNE, MAX_FINETUNE) - MIN_FINETUNE) as usize];
     let index = index as usize;
     if index < table.len() {
         return table[index];
     }
-    // the player's tables repeat the top octave three times above B-3; past that it reads on
-    // into the next finetune's table, which isn't copied here
+    // the player's tables repeat the top octave 3 times above B-3. past that it reads into the
+    // next finetune's table, we don't copy that
     return table[TOP_OCTAVE + index % NOTES_PER_OCTAVE as usize];
 }
 
@@ -137,7 +135,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn finetune_0_uses_protrackers_periods() {
+    fn finetune_zero() {
         assert_eq!(note_period(1, 0, 0), 856);
         assert_eq!(note_period(13, 0, 0), 428);
         assert_eq!(note_period(25, 0, 0), 214);
@@ -145,41 +143,42 @@ mod tests {
     }
 
     #[test]
-    fn finetune_picks_the_table() {
+    fn finetune_table() {
         assert_eq!(note_period(1, 0, -8), 907);
         assert_eq!(note_period(1, 0, 1), 850);
         assert_eq!(note_period(1, 0, 7), 814);
     }
 
     #[test]
-    fn transpose_moves_the_note() {
+    fn transpose() {
         assert_eq!(note_period(1, 12, 0), 428);
         assert_eq!(note_period(13, -12, 0), 856);
     }
 
     #[test]
-    fn notes_below_c_1_move_up_an_octave_until_they_fit() {
+    fn low_notes() {
         assert_eq!(note_period(0, 0, 0), 453);
         assert_eq!(note_period(1, -13, 0), 453);
         assert_eq!(note_period(1, -25, 0), 453);
     }
 
     #[test]
-    fn notes_above_b_3_play_in_the_top_octave() {
+    fn high_notes_fold() {
         assert_eq!(note_period(37, 0, 0), 214);
         assert_eq!(note_period(48, 0, 0), 113);
         assert_eq!(note_period(61, 0, 0), 214);
     }
 
     #[test]
-    fn notes_past_the_last_index_drop_an_octave_first() {
+    fn past_last_index() {
         // D#-6, looked up as D#-5
         assert_eq!(note_period(64, 0, 0), 180);
     }
 
     #[test]
-    fn the_transpose_wraps_like_a_byte() {
-        // 127 + 2 is -127 as a byte, then moves up by octaves to E-1
+    fn transpose_wraps() {
+        // 127 + 2 wraps to -127, then octaves up to E-1
+
         assert_eq!(note_period(127, 2, 0), 678);
     }
 }

@@ -5,10 +5,10 @@ use octamed::mmd::module::{OctamedMMD0Sample, OctamedMMD0SampleHeader};
 
 use crate::data::volume::MAX_VOLUME;
 
-/// Also Paula's highest channel volume.
+// same as paula's max
 pub const MAX_INSTRUMENT_VOLUME: u8 = MAX_VOLUME;
 
-/// How far an instrument can be tuned, in eighths of a semitone.
+// eighths of a semitone
 pub const MIN_FINETUNE: i8 = -8;
 pub const MAX_FINETUNE: i8 = 7;
 
@@ -16,23 +16,21 @@ pub const MAX_FINETUNE: i8 = 7;
 pub struct InstrumentId(pub u8);
 
 impl InstrumentId {
-    /// Pattern instrument numbers start at 1; 0 means none.
+    // instruments are 1-based in patterns, 0 = none
     pub fn index(&self) -> Option<usize> {
         return (self.0 as usize).checked_sub(1);
     }
 }
 
-/// 8-bit signed sample data.
 #[derive(Debug, PartialEq)]
 pub struct OctamedicSample {
     pub data: Vec<i8>,
-    /// Loop range in bytes; `None` for a one-shot sample.
+    /// Loop start..end in bytes.
     pub repeat: Option<(usize, usize)>,
 }
 
 impl OctamedicSample {
-    /// 16-bit samples keep their high byte and stereo ones are mixed down, so everything plays
-    /// as 8-bit mono.
+    /// Everything ends up 8-bit mono: 16-bit keeps the high byte, stereo gets mixed down.
     pub fn from_octamed(
         bytes: &[i8],
         header: &OctamedMMD0SampleHeader,
@@ -52,7 +50,7 @@ impl OctamedicSample {
         } else {
             mono
         };
-        // stored in words
+        // repeat is in words
         let bytes_per_frame = if header.is_16_bit() { 2 } else { 1 };
         let start = info.repeat.0 as usize * 2 / bytes_per_frame;
         let length = info.repeat_length.0 as usize * 2 / bytes_per_frame;
@@ -67,12 +65,10 @@ pub struct OctamedicInstrument {
     pub name: String,
     pub volume: u8,
     pub transpose: i8,
-    /// -8 to 7, in eighths of a semitone.
     pub finetune: i8,
-    /// OctaMED's hold and decay settings, as stored.
     pub hold: u8,
     pub decay: u8,
-    /// `None` for instruments the engine can't play yet, like synths.
+    // None for synths etc, can't play those yet
     pub sample: Option<Arc<OctamedicSample>>,
 }
 

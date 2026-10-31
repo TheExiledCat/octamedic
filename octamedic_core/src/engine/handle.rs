@@ -31,7 +31,6 @@ pub enum EngineCommand {
         row: usize,
         looping: bool,
     },
-    /// From line `row` of the block at `sequence_start`.
     PlaySong {
         sequence_start: usize,
         row: usize,
@@ -169,8 +168,7 @@ impl EngineError {
     }
 }
 
-/// The UI's side of the engine. The engine runs in the audio callback, on a thread that keeps
-/// the stream alive until the handle drops.
+/// UI side of the engine. The stream lives on its own thread until the handle drops.
 pub struct EngineHandle {
     commands: Sender<EngineCommand>,
     shutdown: Option<Sender<()>>,
@@ -179,14 +177,14 @@ pub struct EngineHandle {
 }
 
 impl EngineHandle {
-    /// Opens the default output device and starts the engine on it.
+    /// Default output device.
     pub fn spawn() -> Result<Self, EngineError> {
         let (commands, receiver) = mpsc::channel();
         let (shutdown, shutdown_receiver) = mpsc::channel::<()>();
         let (ready, ready_receiver) = mpsc::channel();
         let status = Arc::new(EngineStatus::default());
         let engine_status = status.clone();
-        // built on its own thread, since cpal streams aren't `Send` everywhere
+        // cpal streams aren't Send on every platform
         let thread = thread::Builder::new()
             .name("octamedic-engine".into())
             .spawn(move || {
@@ -198,7 +196,6 @@ impl EngineHandle {
                     }
                 };
                 let _ = ready.send(Ok(()));
-                // returns once the handle drops its sender
                 let _ = shutdown_receiver.recv();
                 drop(stream);
             })
@@ -218,7 +215,7 @@ impl EngineHandle {
         });
     }
 
-    // for running without an audio device: commands go nowhere and playback stays paused
+    // no audio device, commands go nowhere
     pub fn disconnected() -> Self {
         let (commands, _) = mpsc::channel();
         return Self {
@@ -233,7 +230,6 @@ impl EngineHandle {
         return &self.status;
     }
 
-    /// Sends everything the engine needs to play `song`.
     pub fn load_song(&self, song: &OctamedicSong) {
         EngineCommand::load_song(song)
             .into_iter()
@@ -280,12 +276,12 @@ impl EngineHandle {
         self.send(EngineCommand::SetTrackVolume { track, volume });
     }
 
-    // the song's own master volume, as stored in the module
+    // the song's master volume, from the module
     pub fn set_master_volume(&self, volume: u8) {
         self.send(EngineCommand::SetMasterVolume(volume));
     }
 
-    // the listener's volume over the whole mix, 0-64; songs loaded later don't change it
+    // listener volume, 0-64, survives loading another song
     pub fn set_output_volume(&self, volume: u8) {
         self.send(EngineCommand::SetOutputVolume(volume));
     }
@@ -341,7 +337,6 @@ fn open_stream(
     return Ok(stream);
 }
 
-/// The engine mixes in `f32`, converted to `T` on the way out.
 fn build_stream<T>(
     device: &Device,
     config: &StreamConfig,

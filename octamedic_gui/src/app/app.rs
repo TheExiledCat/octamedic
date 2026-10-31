@@ -27,20 +27,19 @@ const CURSOR: &[u8] = include_bytes!("../../assets/cursor.png");
 // the pointer sprite's pixels are twice as wide as the screen's
 const CURSOR_SCALE: [f32; 2] = [2.0, 1.0];
 
-// vsync is off, so frames are paced here, at the Amiga's display rate
+// vsync is off, frames get paced to the PAL rate by hand
 const MACHINE: AmigaClock = AmigaClock::PAL;
 
 pub struct App {
     state: AppState,
     main: MainView,
-    // drawn at the screen's own size, then scaled into the window
+    // native res, scaled up into the window
     screen: Image,
     cursor: Image,
     scale_mode: ScaleMode,
     viewport: WindowRect,
     // in screen pixels
     pointer: Point,
-    // when the next frame is due
     next_frame: Instant,
     // text input events don't say whether the key is repeating
     key_repeated: bool,
@@ -71,7 +70,7 @@ impl App {
         return Ok(app);
     }
 
-    // runs without sound rather than not at all when there's no audio device
+    // no audio device, run silent instead of bailing
     fn state_with_engine(project: OctamedicProject) -> AppState {
         return match EngineHandle::spawn() {
             Ok(engine) => AppState::new(project, engine),
@@ -83,8 +82,7 @@ impl App {
         };
     }
 
-    // against a fixed schedule, so oversleeping doesn't add up; a frame that's late starts the
-    // schedule again rather than rushing the next ones
+    // fixed schedule so oversleeping doesn't pile up. a late frame just restarts it, no catching up
     fn wait_for_next_frame(&mut self) {
         self.next_frame += Duration::from_secs(1) / MACHINE.frame_rate;
         let now = Instant::now();

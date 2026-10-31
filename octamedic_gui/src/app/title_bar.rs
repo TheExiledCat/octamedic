@@ -99,7 +99,7 @@ impl OctamedicWidget for TitleBar {
         let title_end = title_x + title.width();
         let version_x = title_end + VERSION_GAP;
         let version_end = version_x + Font::Title.width(VERSION);
-        // tails go behind the text: star to title, between words, and version to the edge
+        // tails run behind the text, star to title, between words, version to the edge
         let tail_y = area.y + TAIL_Y;
         let star_end = area.x + STAR_X + STAR[0].len() as i32;
         render_ornament_tail(
@@ -148,8 +148,7 @@ enum Taper {
     Both,
 }
 
-// a fill line between shadow lines; at a tapered end the shadow lines stop short and the fill
-// line ends in shadow
+// fill line with a shadow line either side. tapered ends: shadows stop short, fill ends in shadow
 fn render_ornament_tail(painter: &mut Painter, x: i32, y: i32, width: i32, taper: Taper) {
     const TAPER: i32 = 2;
     let left = if taper == Taper::Both { TAPER } else { 0 };

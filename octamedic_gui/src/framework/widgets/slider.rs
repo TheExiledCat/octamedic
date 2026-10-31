@@ -26,19 +26,19 @@ pub trait SlideHandler: Fn(&mut AppState, Slide) + 'static {}
 
 impl<F: Fn(&mut AppState, Slide) + 'static> SlideHandler for F {}
 
-/// A clone shares the original's handler.
+// clones share the handler
 #[derive(Clone)]
 pub struct Slider {
     direction: SliderDirection,
-    /// The last step is at the left, or the top when vertical.
+    // last step on the left, or top when vertical
     reversed: bool,
-    /// Handle positions. The handle is the track split into this many unless `handle` is set.
+    // handle is track / steps long unless `handle` is set
     steps: u16,
     handle: Option<i32>,
     value: u16,
     on_slide: Option<Rc<dyn SlideHandler>>,
     drag: Option<Drag>,
-    /// Where it was last rendered.
+    // from the last render
     area: Rect,
 }
 
@@ -78,7 +78,7 @@ impl Slider {
         self.value = value.min(self.steps - 1);
     }
 
-    /// `area` laid flat: `w` along the slider, `h` across it.
+    // area laid flat, w along and h across
     fn track(&self, area: Rect) -> Rect {
         return match self.direction {
             SliderDirection::Horizontal => area,
@@ -162,7 +162,7 @@ impl OctamedicWidget for Slider {
                 let handle = self.handle_rect(self.area);
                 let handle_start = self.along([handle.x, handle.y], self.area);
                 let handle_length = self.handle_length(self.track(self.area));
-                // pressed on the track rather than the handle: the handle jumps to the pointer
+                // track click, handle jumps to the pointer
                 let grab = if handle.contains(pos) {
                     self.along(pos, self.area) - handle_start
                 } else {
@@ -190,7 +190,7 @@ impl OctamedicWidget for Slider {
         }
     }
 
-    // As OctaMED draws it: the handle's shadow runs along its bottom and just past its right edge.
+    // like OctaMED, handle shadow along the bottom and one pixel past the right edge
     fn render(&mut self, _state: &AppState, area: Rect, painter: &mut Painter) {
         let track = painter.frame(area, 1);
         self.area = track;
@@ -211,7 +211,7 @@ impl OctamedicWidget for Slider {
 #[derive(Clone, Copy, Debug)]
 struct Drag {
     start_value: u16,
-    /// Where the handle was grabbed, from its start.
+    // offset into the handle
     grab: i32,
 }
 
@@ -237,7 +237,7 @@ mod tests {
     }
 
     #[test]
-    fn the_handle_steps_along_the_track() {
+    fn handle_steps() {
         let mut slider = slider(SliderDirection::Horizontal, false);
         assert_eq!(slider.handle_rect(slider.area), Rect::new(10, 20, 8, 8));
         slider.set_value(15);
@@ -247,7 +247,7 @@ mod tests {
     }
 
     #[test]
-    fn a_vertical_slider_steps_down_and_reversed_starts_at_the_end() {
+    fn vertical_reversed() {
         let mut slider = slider(SliderDirection::Vertical, true);
         assert_eq!(slider.handle_rect(slider.area), Rect::new(10, 140, 8, 8));
         slider.set_value(15);
@@ -255,7 +255,7 @@ mod tests {
     }
 
     #[test]
-    fn dragging_moves_the_value_and_tells_the_handler() {
+    fn drag_calls_handler() {
         let seen = Rc::new(Cell::new(None));
         let told = seen.clone();
         let mut slider = slider(SliderDirection::Horizontal, false)
@@ -290,7 +290,7 @@ mod tests {
     }
 
     #[test]
-    fn pressing_the_track_jumps_the_handle_there() {
+    fn track_click_jumps() {
         let mut slider = slider(SliderDirection::Horizontal, false);
         let press = Event::MouseDown {
             pos: [10 + 64, 22],

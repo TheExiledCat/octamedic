@@ -55,7 +55,7 @@ const SEQUENCE_COUNT_MAX: usize = 5;
 const ACTIVE_ROW: usize = SEQUENCE_COUNT_MAX / 2;
 const SEQUENCE_TOP_MARGIN: i32 = 1;
 
-// Positions below are measured from an OctaMED screenshot, from the panel's top left.
+// from the screenshot again, panel's top left
 const TEMPO_SLIDERS: [Rect; 2] = [Rect::new(94, 0, 190, 15), Rect::new(320, 0, 92, 15)];
 const TEMPO_STEPS: [[Rect; 2]; 2] = [
     [Rect::new(284, 0, 18, 15), Rect::new(302, 0, 18, 15)],

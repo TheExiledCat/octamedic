@@ -8,23 +8,21 @@ use std::{
 
 use crate::{amiga::clock::AmigaClock, data::instrument::OctamedicSample};
 
-/// So four tracks at full volume fill a mono output.
+// 4 tracks at full volume = full scale
 const MONO_GAIN: f32 = 0.25;
 
-/// Two tracks a side, so they fill it.
+// 2 tracks a side
 const STEREO_GAIN: f32 = 0.5;
 
-/// An 8-bit sample at volume 64.
 const VOICE_FULL_SCALE: f32 = 128.0 * 64.0;
 
 const MAX_VOLUME: u8 = 64;
 
 pub const SCOPE_CHANNELS: usize = 4;
 
-/// Output frames each scope keeps.
 pub const SCOPE_LENGTH: usize = 512;
 
-/// What a channel plays to stay silent with DMA on, like after a one-shot sample.
+/// Looped after a one-shot sample, so DMA can stay on.
 pub static SILENCE: LazyLock<Arc<OctamedicSample>> = LazyLock::new(|| {
     return Arc::new(OctamedicSample {
         data: vec![0, 0],
@@ -32,29 +30,26 @@ pub static SILENCE: LazyLock<Arc<OctamedicSample>> = LazyLock::new(|| {
     });
 });
 
-/// A write to a Paula channel register. Logged per tick, these can be compared with the original
-/// player's.
+/// Paula channel register writes. Logged per tick so they can be diffed against the original
+/// player.
 #[derive(Clone, Debug, PartialEq)]
 pub enum PaulaWrite {
-    /// `AUDxPER`
     Period(u16),
-    /// `AUDxVOL`, 0-64
+    /// 0-64
     Volume(u8),
-    /// `AUDxLC` and `AUDxLEN`, taken when DMA turns on or the playing range ends. The length is
-    /// in bytes, not words, so odd-length samples keep their last byte.
+    /// `AUDxLC`/`AUDxLEN`, latched until DMA on or the current range ends. len is in bytes, not
+    /// words like the real register, so odd-length samples keep their last byte.
     Sample {
         sample: Arc<OctamedicSample>,
         start: usize,
         len: usize,
     },
-    /// Starts the range last written.
     DmaOn,
     DmaOff,
 }
 
-/// The last `SCOPE_LENGTH` frames of Paula's four hardware channels, scaled by their volume. The
-/// audio thread writes it while the UI reads, so a read during a render can show part of the
-/// newest buffer at the front.
+/// Last `SCOPE_LENGTH` frames of the 4 hardware channels, after volume. No locking, so a read
+/// during a render can get a bit of the newest buffer at the front.
 pub struct Scopes {
     samples: [[AtomicI8; SCOPE_LENGTH]; SCOPE_CHANNELS],
     next: AtomicUsize,
@@ -82,11 +77,10 @@ impl Default for Scopes {
     }
 }
 
-/// Turns Paula writes into audio.
 pub trait Renderer: Send {
     fn write(&mut self, channel: usize, write: PaulaWrite);
 
-    /// Adds to `out` (interleaved, `channels` per frame).
+    /// Adds to `out`, interleaved.
     fn render(&mut self, out: &mut [f32], channels: usize);
 }
 
@@ -105,7 +99,7 @@ impl SampleRange {
 
 struct Playing {
     range: SampleRange,
-    /// In bytes, with the fraction played.
+    // in bytes, fractional
     position: f64,
 }
 
@@ -113,9 +107,9 @@ struct Playing {
 struct Channel {
     period: u16,
     volume: u8,
-    /// Taken when the next range starts.
+    // next range, picked up when the current one ends
     latch: Option<SampleRange>,
-    /// `None` while DMA is off.
+    // None = dma off
     playing: Option<Playing>,
 }
 
@@ -139,9 +133,8 @@ impl Channel {
         }
     }
 
-    /// The output over the next `step` bytes (one output frame). Each byte counts for the part
-    /// of the frame it's held over, so bytes that don't line up with frames don't alias. When a
-    /// range ends the latched one starts, which is how samples loop.
+    // one output frame = `step` bytes. each byte is weighted by how long it's held in the frame,
+    // cheap box filter so it doesn't alias as badly. looping is just the latch taking over
     fn next(&mut self, step: f64) -> Option<f32> {
         let Channel {
             volume,
@@ -157,13 +150,13 @@ impl Channel {
                 break;
             }
             let index = playing.position as usize;
-            // chip memory past the sample, read as zero
+            // paula reads past the end as zero
             let byte = playing.range.sample.data.get(index).copied().unwrap_or(0);
             let next_byte = (index + 1) as f64;
             let held = (next_byte - playing.position).min(remaining);
             sum += byte as f64 * held;
             remaining -= held;
-            // snap to the next byte, so float error can't leave a sliver of this one
+            // snap, or float error leaves a sliver of the old byte
             playing.position = if held == next_byte - playing.position {
                 next_byte
             } else {
@@ -181,8 +174,8 @@ impl Channel {
     }
 }
 
-/// One channel per track. The real Paula has four, which OctaMED mixes extra tracks onto in
-/// software; that isn't emulated, so every track gets its own here.
+/// One channel per track. The real thing has 4 and OctaMED mixes 5-8 tracks in software, we
+/// don't bother with that.
 pub struct PaulaRenderer {
     sample_rate: u32,
     clock: AmigaClock,
@@ -227,10 +220,8 @@ impl Renderer for PaulaRenderer {
             let rate = self.clock.paula_clock as f64 / channel.period as f64;
             let step = rate / self.sample_rate as f64;
             for (i, frame) in out.chunks_exact_mut(channels).enumerate() {
-                // only `None` when not playing, which can't change mid-render
                 let value = channel.next(step).unwrap_or(0.0);
                 if let Some(scope) = scope {
-                    // back to an 8-bit sample, scaled by the volume
                     let level = (value / MAX_VOLUME as f32).round() as i8;
                     self.scopes.write(scope, start + i, level);
                 }
@@ -242,8 +233,7 @@ impl Renderer for PaulaRenderer {
     }
 }
 
-// Paula plays channels 0 and 3 on the left and 1 and 2 on the right; tracks past 4 repeat that.
-// Outputs past the first two get nothing.
+// amiga stereo is LRRL, extra tracks repeat it. anything past 2 output channels stays silent
 fn mix(frame: &mut [f32], channel: usize, value: f32) {
     match frame {
         [mono] => *mono += value * MONO_GAIN,
@@ -261,7 +251,7 @@ mod tests {
 
     const FULL: f32 = 127.0 * 64.0 / VOICE_FULL_SCALE * MONO_GAIN;
 
-    /// A period of 5 plays one byte per frame.
+    // period 5 = one byte per frame
     const SAMPLE_RATE: u32 = AmigaClock::PAL.paula_clock / 5;
 
     fn sample(data: Vec<i8>) -> Arc<OctamedicSample> {
@@ -276,7 +266,7 @@ mod tests {
         };
     }
 
-    /// A note on, as `OctamedicEngine::trigger` does it.
+    // same order as OctamedicEngine::trigger
     fn play(renderer: &mut PaulaRenderer, first: PaulaWrite, period: u16, then: PaulaWrite) {
         renderer.write(0, PaulaWrite::DmaOff);
         renderer.write(0, first);
@@ -306,7 +296,7 @@ mod tests {
     }
 
     #[test]
-    fn channels_0_and_3_play_left_and_1_and_2_right() {
+    fn stereo_lrrl() {
         let mut renderer = renderer();
         let data = sample(vec![127; 4]);
         for channel in 0..4 {
@@ -326,7 +316,7 @@ mod tests {
     }
 
     #[test]
-    fn a_full_side_fills_its_output() {
+    fn full_side() {
         let mut renderer = renderer();
         let data = sample(vec![127; 4]);
         for channel in [0, 3] {
@@ -341,7 +331,7 @@ mod tests {
     }
 
     #[test]
-    fn scopes_keep_each_channels_last_frames_oldest_first() {
+    fn scope_order() {
         let scopes = Arc::new(Scopes::default());
         let mut renderer = PaulaRenderer::new(SAMPLE_RATE, AmigaClock::PAL, 4, scopes.clone());
         let data = sample(vec![10, 20, 30, 40]);
@@ -354,7 +344,7 @@ mod tests {
     }
 
     #[test]
-    fn a_stopped_channel_scopes_silence() {
+    fn scope_stopped() {
         let scopes = Arc::new(Scopes::default());
         let mut renderer = PaulaRenderer::new(SAMPLE_RATE, AmigaClock::PAL, 4, scopes.clone());
         let data = sample(vec![100; 4]);
@@ -366,7 +356,7 @@ mod tests {
     }
 
     #[test]
-    fn a_one_shot_sample_falls_into_silence() {
+    fn one_shot() {
         let mut renderer = renderer();
         let data = sample(vec![127, 127]);
         play(&mut renderer, range(&data, 0, 2), 5, range(&SILENCE, 0, 2));
@@ -374,7 +364,7 @@ mod tests {
     }
 
     #[test]
-    fn a_looped_sample_wraps_into_its_loop() {
+    fn looped() {
         let mut renderer = renderer();
         let data = sample(vec![0, 127, -127]);
         play(&mut renderer, range(&data, 0, 3), 5, range(&data, 1, 2));
@@ -382,7 +372,7 @@ mod tests {
     }
 
     #[test]
-    fn double_the_period_holds_each_byte_twice_as_long() {
+    fn double_period() {
         let mut renderer = renderer();
         let data = sample(vec![0, 127]);
         play(&mut renderer, range(&data, 0, 2), 10, range(&SILENCE, 0, 2));
@@ -390,17 +380,17 @@ mod tests {
     }
 
     #[test]
-    fn a_byte_change_inside_a_frame_is_weighted_by_how_long_each_byte_is_held() {
+    fn byte_weighting() {
         let mut renderer = renderer();
         let data = sample(vec![0, 127]);
-        // 1.6 output frames per byte, so the bytes change partway through frames
+        // 1.6 frames per byte
         play(&mut renderer, range(&data, 0, 2), 8, range(&SILENCE, 0, 2));
         let out = render(&mut renderer, 5);
         assert_near(&out, &[0.0, FULL * 0.4, FULL, FULL * 0.2, 0.0]);
     }
 
     #[test]
-    fn faster_than_the_output_rate_averages_the_bytes_in_a_frame() {
+    fn averages_fast_bytes() {
         let mut renderer = renderer();
         let data = sample(vec![127, -127, 127, -127, 127]);
         // 2.5 bytes per output frame
@@ -409,7 +399,7 @@ mod tests {
     }
 
     #[test]
-    fn a_new_range_waits_until_the_playing_one_ends() {
+    fn range_latch() {
         let mut renderer = renderer();
         let first = sample(vec![127, 127, 127]);
         let second = sample(vec![-127]);
@@ -420,7 +410,7 @@ mod tests {
     }
 
     #[test]
-    fn dma_on_again_while_playing_changes_nothing() {
+    fn dma_on_twice() {
         let mut renderer = renderer();
         let data = sample(vec![0, 127, -127]);
         play(&mut renderer, range(&data, 0, 3), 5, range(&data, 0, 3));
@@ -430,7 +420,7 @@ mod tests {
     }
 
     #[test]
-    fn dma_off_silences_the_channel_and_dma_on_restarts_the_latched_range() {
+    fn dma_off_on() {
         let mut renderer = renderer();
         let data = sample(vec![127, -127]);
         play(&mut renderer, range(&data, 0, 2), 5, range(&data, 0, 2));
@@ -442,7 +432,7 @@ mod tests {
     }
 
     #[test]
-    fn a_new_period_applies_straight_away() {
+    fn period_change() {
         let mut renderer = renderer();
         let data = sample(vec![127, -127, 127, -127]);
         play(&mut renderer, range(&data, 0, 4), 5, range(&data, 0, 4));
@@ -452,7 +442,7 @@ mod tests {
     }
 
     #[test]
-    fn volume_scales_like_paula() {
+    fn volume() {
         let mut renderer = renderer();
         let data = sample(vec![127]);
         play(&mut renderer, range(&data, 0, 1), 5, range(&data, 0, 1));
@@ -463,7 +453,7 @@ mod tests {
     }
 
     #[test]
-    fn writes_to_channels_that_do_not_exist_are_ignored() {
+    fn bad_channel() {
         let mut renderer = renderer();
         renderer.write(9, PaulaWrite::DmaOn);
         assert_near(&render(&mut renderer, 1), &[0.0]);

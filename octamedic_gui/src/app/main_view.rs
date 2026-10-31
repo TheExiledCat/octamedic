@@ -68,7 +68,7 @@ impl OctamedicWidget for MainView {
     }
 
     fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
-        // global keys are checked first so no child can swallow them
+        // global keys first, or a child eats them
         let taken = self.console.handle_event(state, event)
             || self.copyright.handle_event(state, event)
             || self.dispatch(state, event)
@@ -151,7 +151,7 @@ mod tests {
     }
 
     #[test]
-    fn a_right_click_nothing_takes_shows_and_hides_the_copyright() {
+    fn right_click_copyright() {
         let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
         let mut view = MainView::new();
         assert!(right_click(&mut view, &mut state));

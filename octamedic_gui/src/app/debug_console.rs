@@ -77,7 +77,7 @@ mod tests {
     }
 
     #[test]
-    fn the_key_toggles_once_however_long_its_held() {
+    fn toggle_ignores_repeat() {
         let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
         let mut console = DebugConsole::default();
         assert!(console.handle_event(&mut state, &key(false)));

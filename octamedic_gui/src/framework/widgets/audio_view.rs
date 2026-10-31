@@ -3,8 +3,8 @@ use crate::{
     framework::{painter::Painter, rect::Rect, target::Color, widget::OctamedicWidget},
 };
 
-// a colour every two lines, top to bottom; measured from OctaMED from the fourth on, and the
-// first three carry on its steps up to red
+// one colour per two lines, top down. measured off OctaMED from the 4th on, the first three just
+// continue its steps up to red
 const VU_COLORS: [u32; 30] = [
     0xFF2211, 0xFF3311, 0xFF4411, 0xFF5511, 0xFF6622, 0xFF7722, 0xFF8822, 0xFF9922, 0xFFAA22,
     0xFFBB22, 0xFFCC22, 0xFFDD33, 0xFFEE33, 0xFFFF33, 0xEEFF33, 0xCCFF22, 0xBBFF22, 0x99FF22,
@@ -14,19 +14,18 @@ const VU_COLORS: [u32; 30] = [
 
 const VU_EDGES: [u32; 2] = [0xAAAAAA, 0xBBBBBB];
 
-// each edge is a tenth of the meter's width
+// edges are a tenth of the width
 const VU_EDGE_SHARE: i32 = 10;
 
 const MAX_LEVEL: u8 = 128;
 
-// how far a meter falls each frame; a full one empties in about two thirds of a second at 50 Hz
+// per frame, a full meter empties in about 2/3 s at 50Hz
 const VU_FALL: u8 = 4;
 
-/// an oscilloscope's samples, stretched to fill the width of the area they're laid out in
 #[derive(Clone)]
 pub struct Oscilloscope {
     sample_count: usize,
-    /// always `sample_count` long, oldest first; starts as silence
+    // oldest first, always sample_count long
     samples: Vec<i8>,
 }
 
@@ -38,7 +37,7 @@ impl Oscilloscope {
         };
     }
 
-    // evenly spaced samples from all of `window`, so a long window fits the scope
+    // evenly spaced picks so a long window still fits
     pub fn show(&mut self, window: &[i8]) {
         if window.is_empty() {
             return;
@@ -49,7 +48,7 @@ impl Oscilloscope {
             .collect();
     }
 
-    // one line high rect per run of neighbouring samples on the same row
+    // one rect per run of samples on the same row, saves fills
     pub fn runs(&self, area: Rect) -> impl Iterator<Item = Rect> + '_ {
         let count = self.samples.len();
         // spreads the remainder so the runs fill the width exactly
@@ -78,7 +77,7 @@ pub struct VuMeter {
 }
 
 impl VuMeter {
-    // a loudness up to 128; the meter jumps up to it but falls back slowly
+    // 0..=128, jumps up straight away and falls back slowly
     pub fn set(&mut self, level: u8) {
         self.level = level.min(MAX_LEVEL).max(self.level.saturating_sub(VU_FALL));
     }
@@ -88,7 +87,7 @@ impl VuMeter {
         return (self.level as i32 * area.h / MAX_LEVEL as i32).max(1);
     }
 
-    // the filled part's colour bands, merging the lines each colour covers
+    // lines of the same colour merged into one rect
     fn bands(&self, area: Rect) -> impl Iterator<Item = (Rect, Color)> {
         let bottom = area.y + area.h;
         let filled = self.filled(area);
@@ -144,14 +143,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn silence_is_one_line_across_the_middle() {
+    fn silence() {
         let scope = Oscilloscope::new(16);
         let runs: Vec<Rect> = scope.runs(Rect::new(10, 0, 64, 20)).collect();
         assert_eq!(runs, vec![Rect::new(10, 10, 64, 1)]);
     }
 
     #[test]
-    fn neighbouring_samples_on_a_row_share_a_rect() {
+    fn runs_merge() {
         let mut scope = Oscilloscope::new(5);
         scope.show(&[0, 0, 64, 64, 0]);
         let runs: Vec<Rect> = scope.runs(Rect::new(0, 0, 10, 20)).collect();
@@ -166,14 +165,14 @@ mod tests {
     }
 
     #[test]
-    fn showing_a_window_spreads_it_over_the_scope() {
+    fn show_window() {
         let mut scope = Oscilloscope::new(4);
         scope.show(&[0, 1, 2, 3, 4, 5, 6, 7]);
         assert_eq!(scope.samples, [0, 2, 4, 6]);
     }
 
     #[test]
-    fn a_full_meter_has_a_colour_every_two_lines() {
+    fn full_meter_bands() {
         let mut meter = VuMeter::default();
         meter.set(MAX_LEVEL);
         let bands: Vec<(Rect, Color)> = meter.bands(Rect::new(0, 60, 20, 60)).collect();
@@ -184,7 +183,7 @@ mod tests {
     }
 
     #[test]
-    fn a_meter_jumps_up_and_falls_back_slowly() {
+    fn meter_falloff() {
         let mut meter = VuMeter::default();
         meter.set(100);
         assert_eq!(meter.level, 100);
@@ -195,7 +194,7 @@ mod tests {
     }
 
     #[test]
-    fn a_meter_fills_from_the_bottom() {
+    fn meter_fill() {
         let mut meter = VuMeter::default();
         meter.set(64);
         let bands: Vec<(Rect, Color)> = meter.bands(Rect::new(0, 0, 20, 54)).collect();
@@ -207,7 +206,7 @@ mod tests {
     }
 
     #[test]
-    fn the_extremes_stay_inside_the_area() {
+    fn sample_extremes() {
         let area = Rect::new(0, 4, 8, 9);
         assert_eq!(sample_y(i8::MIN, area), 12);
         assert_eq!(sample_y(i8::MAX, area), 5);

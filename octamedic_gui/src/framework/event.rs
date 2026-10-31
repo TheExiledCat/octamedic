@@ -8,7 +8,7 @@ pub enum MouseButton {
     Right,
 }
 
-/// Mouse positions are in screen pixels.
+// positions are screen pixels, not window pixels
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Event {
     MouseMove {

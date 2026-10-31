@@ -506,7 +506,7 @@ mod tests {
     }
 
     #[test]
-    fn moving_through_the_sequence_stops_at_its_ends() {
+    fn sequence_clamps() {
         let mut state = state();
         let last = state.song().sequence().len().saturating_sub(1);
         state.prev_sequence();
@@ -518,7 +518,7 @@ mod tests {
     }
 
     #[test]
-    fn sequence_edits_stay_inside_the_sequence_and_reach_the_engine() {
+    fn sequence_edits() {
         let mut state = state();
         state.insert_sequence(PatternId(0));
         assert_eq!(state.song().sequence(), [PatternId(0); 2]);
@@ -534,7 +534,7 @@ mod tests {
     }
 
     #[test]
-    fn editing_the_sequence_shows_the_active_entrys_block() {
+    fn sequence_edit_selects_block() {
         let mut state = state();
         state.next_pattern();
         state.next_pattern();
@@ -548,7 +548,7 @@ mod tests {
     }
 
     #[test]
-    fn jumping_through_the_sequence_shows_each_entrys_block() {
+    fn sequence_jump_selects_block() {
         let mut state = state();
         state.next_pattern();
         state.insert_sequence(PatternId(1));
@@ -561,7 +561,7 @@ mod tests {
     }
 
     #[test]
-    fn note_keys_follow_the_current_octave() {
+    fn note_keys_octave() {
         let mut state = state();
         state.set_octave(1);
         assert_eq!(state.key_to_note('z').unwrap().value, 1);
@@ -573,7 +573,7 @@ mod tests {
     }
 
     #[test]
-    fn the_debug_console_keeps_the_newest_lines() {
+    fn debug_keeps_newest() {
         let mut state = state();
         for line in 0..MAX_DEBUG_LINES + 2 {
             state.debug(line.to_string());
@@ -587,7 +587,7 @@ mod tests {
     }
 
     #[test]
-    fn the_last_editor_is_remembered_through_other_views() {
+    fn remembers_last_editor() {
         let mut state = state();
         assert_eq!(state.last_editor(), MainMode::BlockEditor);
         state.set_modes(HeaderMode::Play, MainMode::NotationEditor);
@@ -596,7 +596,7 @@ mod tests {
     }
 
     #[test]
-    fn instruments_stay_between_1_and_63() {
+    fn instrument_range() {
         let mut state = state();
         assert_eq!(state.prev_instrument(), InstrumentId(1));
         state.active_instrument = InstrumentId(MAX_INSTRUMENT);
@@ -605,7 +605,7 @@ mod tests {
     }
 
     #[test]
-    fn entering_a_note_writes_it_with_the_active_instrument() {
+    fn enter_note() {
         let mut state = state();
         state.active_instrument = InstrumentId(5);
         state.enter_note(1, 3, OctamedicNote { value: 13 });
@@ -616,7 +616,7 @@ mod tests {
     }
 
     #[test]
-    fn entering_a_key_writes_its_note_in_the_current_octave() {
+    fn enter_key_octave() {
         let mut state = state();
         state.set_octave(3);
         assert_eq!(state.enter_key(2, 4, 'x').unwrap().value, 27);
@@ -628,7 +628,7 @@ mod tests {
     }
 
     #[test]
-    fn the_timer_only_runs_while_playing() {
+    fn timer_runs_when_playing() {
         let mut state = state();
         state.update();
         assert_eq!(state.timer(), Duration::ZERO);
@@ -644,14 +644,14 @@ mod tests {
     }
 
     #[test]
-    fn an_edit_that_changes_nothing_leaves_the_project_saved() {
+    fn noop_edit_stays_saved() {
         let mut state = state();
         assert!(!state.edit_track(0, 0, |_| {}));
         assert!(state.is_saved());
     }
 
     #[test]
-    fn moving_to_a_new_pattern_creates_it() {
+    fn new_pattern_created() {
         let mut state = state();
         state.next_pattern();
         assert_eq!(state.active_pattern, PatternId(1));

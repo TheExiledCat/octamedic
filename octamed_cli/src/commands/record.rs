@@ -148,7 +148,7 @@ mod tests {
     }
 
     #[test]
-    fn record_pattern_writes_a_wav_file() {
+    fn record_pattern() {
         let file = output("block.wav");
         run(&["pattern", "0", file.to_str().unwrap(), "-r", "8000"]).unwrap();
         let wav = std::fs::read(&file).unwrap();
@@ -159,7 +159,7 @@ mod tests {
     }
 
     #[test]
-    fn record_song_starts_from_the_given_position() {
+    fn record_song() {
         let file = output("song.wav");
         run(&[
             "song",
@@ -177,14 +177,14 @@ mod tests {
     }
 
     #[test]
-    fn a_block_that_doesnt_exist_is_an_error_and_writes_nothing() {
+    fn missing_block() {
         let file = output("missing.wav");
         assert!(run(&["pattern", "200", file.to_str().unwrap()]).is_err());
         assert!(!file.exists());
     }
 
     #[test]
-    fn volume_above_64_is_rejected() {
+    fn volume_too_high() {
         assert!(Cli::try_parse_from(["record", "song", "out.wav", "-v", "65"]).is_err());
     }
 }

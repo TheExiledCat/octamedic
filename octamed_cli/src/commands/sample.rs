@@ -9,7 +9,8 @@ use crate::commands::repl::{Command, CommandError, CommandResult};
 
 const MAX_PERCENT: u8 = 100;
 
-/// An 8-bit sample's full scale, to bring it into -1 to 1.
+// i8 full scale, for -1..1
+
 const SAMPLE_SCALE: f32 = -(i8::MIN as f32);
 
 #[derive(Args, Debug, Clone)]

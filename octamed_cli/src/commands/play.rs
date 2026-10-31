@@ -38,7 +38,8 @@ impl Command for PlayCommand {
         engine.load_song(song);
         engine.play_song(0, 0, false);
         println!("Playing... (press Ctrl+C to stop)");
-        // Give the engine a moment to pick up the play command before polling its status.
+        // engine needs a moment before status says it's playing
+
         std::thread::sleep(START_WAIT);
         let mut last_row = None;
         while engine.status().play_mode() != PlayMode::Paused {

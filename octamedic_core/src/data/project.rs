@@ -94,7 +94,7 @@ impl FromModule for OctamedicProject {
             let info = &mmd_song.samples[index];
             let name = names
                 .and_then(|names| names.get(index))
-                // the file pads names to their full length with NULs
+                // NUL padded
                 .map_or(String::new(), |info| {
                     info.name.split('\0').next().unwrap_or_default().to_owned()
                 });
@@ -166,7 +166,7 @@ mod tests {
     }
 
     #[test]
-    fn song_flags_come_from_the_module() {
+    fn song_flags() {
         let project = example("example.mmd0");
         let flags = project.get_song(SongId(0)).unwrap().flags();
         assert_eq!(
@@ -179,7 +179,7 @@ mod tests {
     }
 
     #[test]
-    fn instruments_get_their_finetune() {
+    fn finetune() {
         let project = example("example.mmd1");
         let song = project.get_song(SongId(0)).unwrap();
         let finetune = |index: usize| song.instruments[index].as_ref().unwrap().finetune;

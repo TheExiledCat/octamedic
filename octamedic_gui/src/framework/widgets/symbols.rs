@@ -4,7 +4,6 @@ use crate::framework::{
     widgets::button::{ButtonContent, ContentArea},
 };
 
-/// A row of small striped blocks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Blocks {
     pub count: i32,
@@ -35,14 +34,14 @@ impl ButtonContent for Blocks {
     }
 }
 
-/// Drawn as in OctaMED's picture button. Each carries the space around it, so a row of them is
-/// spaced as there too.
+// copied off OctaMED's picture button. each has its spacing built in so a row of them comes
+// out spaced the same
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MusicSymbol {
     Note,
     BassClef,
     Sharp,
-    /// A half note's head with a ledger line through it.
+    // half note head with a ledger line through it
     HalfNote,
     Flat,
     Natural,
@@ -105,7 +104,7 @@ impl MusicSymbol {
         };
     }
 
-    /// Blank pixels before and after.
+    // blank pixels (before, after)
     fn spacing(self) -> (i32, i32) {
         return match self {
             MusicSymbol::Note => (3, 2),
@@ -147,7 +146,6 @@ impl<const N: usize> ButtonContent for [MusicSymbol; N] {
     }
 }
 
-/// Fills the `#`s of `rows`, a line per row.
 fn draw_rows(rows: &[&str], x: i32, y: i32, pen: Pen, painter: &mut Painter) {
     for (line, row) in rows.iter().enumerate() {
         let mut start = None;
@@ -189,14 +187,14 @@ mod tests {
     ];
 
     #[test]
-    fn every_symbol_fits_a_button() {
+    fn symbols_fit() {
         for symbol in ALL {
             assert!(symbol.height() <= 8, "{symbol:?}");
         }
     }
 
     #[test]
-    fn the_picture_buttons_row_fills_its_inside() {
+    fn picture_row_width() {
         let row = [
             MusicSymbol::Note,
             MusicSymbol::BassClef,

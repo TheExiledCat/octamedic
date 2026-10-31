@@ -49,8 +49,7 @@ fn main() -> GameResult<()> {
             resizable: true,
             ..Default::default()
         })
-        // vsync queues frames, which makes the pointer trail the mouse; the app caps its own
-        // frame rate instead
+        // vsync queues frames and the pointer ends up trailing the mouse, so App paces itself
         .window_setup(WindowSetup::default().title("OctaMEDIC").vsync(false))
         .build()?;
     let app = App::new(&mut ctx, project)?;

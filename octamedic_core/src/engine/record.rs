@@ -10,17 +10,16 @@ use super::{
 };
 use crate::data::{instrument::MAX_INSTRUMENT_VOLUME, pattern::PatternId, song::OctamedicSong};
 
-// frames rendered per step; also the most silence a recording can end with
+// also the most trailing silence a recording can have
 const CHUNK_FRAMES: usize = 256;
 
 const DEFAULT_SAMPLE_RATE: u32 = 44_100;
 
-/// The longest a recording runs by default, so a song that loops forever still ends.
+// songs that loop forever still have to stop somewhere
 const DEFAULT_MAX_DURATION: Duration = Duration::from_secs(30 * 60);
 
-// a wav file: the RIFF header, then the format chunk and the data chunk
 const WAV_HEADER_SIZE: usize = 44;
-/// What the RIFF size leaves out: the "RIFF" tag and the size itself.
+// "RIFF" + the size field, not counted in the size
 const RIFF_HEADER_SIZE: usize = 8;
 const FORMAT_CHUNK_SIZE: u32 = 16;
 const PCM_FORMAT: u16 = 1;
@@ -45,11 +44,10 @@ impl Display for RecordError {
 
 impl std::error::Error for RecordError {}
 
-// renders songs and blocks offline with its own engine, without the audio device or the live engine
+// offline render, own engine, no audio device
 pub struct Recorder {
     pub sample_rate: u32,
     pub output_volume: u8,
-    // a song that never ends, like one that jumps back, is cut off here
     pub max_duration: Duration,
 }
 
@@ -64,7 +62,6 @@ impl Default for Recorder {
 }
 
 impl Recorder {
-    // the song from `sequence_start` to its end, played once
     pub fn record_song(
         &self,
         song: &OctamedicSong,
@@ -83,7 +80,6 @@ impl Recorder {
         ));
     }
 
-    // one block, played once
     pub fn record_pattern(
         &self,
         song: &OctamedicSong,
@@ -110,7 +106,6 @@ impl Recorder {
             .into_iter()
             .chain([EngineCommand::SetOutputVolume(self.output_volume), play]);
         for command in setup {
-            // the engine owns the receiver and is still alive, so this can't fail
             let _ = commands.send(command);
         }
         let max_frames = (self.max_duration.as_secs_f64() * self.sample_rate as f64) as usize;
@@ -131,7 +126,7 @@ impl Recorder {
     }
 }
 
-// mono audio in -1.0..1.0
+// mono, -1..1
 pub struct Recording {
     pub sample_rate: u32,
     pub samples: Vec<f32>,
@@ -142,7 +137,6 @@ impl Recording {
         return Duration::from_secs_f64(self.samples.len() as f64 / self.sample_rate as f64);
     }
 
-    // 16-bit signed little-endian PCM, the sample data of a wav file
     pub fn to_pcm16_bytes(&self) -> Vec<u8> {
         return self
             .samples
@@ -151,7 +145,6 @@ impl Recording {
             .collect();
     }
 
-    // a complete mono 16-bit wav file
     pub fn to_wav_bytes(&self) -> Vec<u8> {
         let data = self.to_pcm16_bytes();
         let channels: u16 = 1;
@@ -188,7 +181,7 @@ mod tests {
 
     const SAMPLE_RATE: u32 = 1000;
 
-    // 4 lines of 1 tick at 10 ticks a second: 100 frames per line at `SAMPLE_RATE`
+    // 4 lines, 1 tick each, 100 frames per line
     fn song() -> OctamedicSong {
         let mut song = OctamedicSong::new("test");
         let mut tempo = OctamedicTempo::new();
@@ -217,9 +210,9 @@ mod tests {
     }
 
     #[test]
-    fn a_block_records_its_lines_and_stops() {
+    fn record_block() {
         let recording = recorder().record_pattern(&song(), PatternId(0)).unwrap();
-        // 4 lines of 100 frames, plus at most one chunk of silence after the end
+        // plus up to a chunk of silence
         assert!(recording.samples.len() >= 400);
         assert!(recording.samples.len() < 400 + CHUNK_FRAMES);
         assert!(recording.samples[..400].iter().any(|&sample| sample != 0.0));
@@ -227,13 +220,13 @@ mod tests {
     }
 
     #[test]
-    fn a_song_records_from_the_sequence_start() {
+    fn record_song() {
         let recording = recorder().record_song(&song(), 0).unwrap();
         assert!(recording.samples.len() >= 400);
     }
 
     #[test]
-    fn missing_positions_and_blocks_are_errors() {
+    fn missing() {
         assert_eq!(
             recorder().record_song(&song(), 5).err(),
             Some(RecordError::NoSuchSequenceIndex(5))
@@ -245,9 +238,8 @@ mod tests {
     }
 
     #[test]
-    fn a_song_that_never_ends_is_cut_at_the_max_duration() {
+    fn max_duration() {
         let mut song = song();
-        // a block too long to finish within the limit
         let line = song.get_pattern(&PatternId(0)).unwrap().lines[0].clone();
         song.ensure_pattern(PatternId(0)).lines.resize(10_000, line);
         let recording = Recorder {
@@ -260,7 +252,7 @@ mod tests {
     }
 
     #[test]
-    fn the_output_volume_scales_the_recording() {
+    fn output_volume() {
         let full = recorder().record_pattern(&song(), PatternId(0)).unwrap();
         let half = Recorder {
             output_volume: 32,
@@ -278,7 +270,7 @@ mod tests {
     }
 
     #[test]
-    fn the_wav_header_matches_the_data() {
+    fn wav_header() {
         let recording = Recording {
             sample_rate: 22050,
             samples: vec![0.0, 1.0, -1.0],
@@ -293,9 +285,9 @@ mod tests {
     }
 
     #[test]
-    fn a_bpm_mode_block_plays_at_its_bpm() {
+    fn bpm_block() {
         let mut song = song();
-        // 96 BPM, 16 lines per beat, 6 ticks per line: a 16-line block is exactly one beat
+        // 96 bpm, lpb 16, 6 ticks/line, so 16 lines = 1 beat
         let mut tempo = OctamedicTempo::new();
         tempo.is_bpm_mode = true;
         tempo.primary_tempo = 96;
@@ -310,7 +302,8 @@ mod tests {
         }
         .record_pattern(&song, PatternId(0))
         .unwrap();
-        // 60 / 96 seconds, plus at most one chunk of silence after the end
+        // 60 / 96 s plus up to a chunk
+
         assert!(recording.samples.len() >= 30000);
         assert!(recording.samples.len() < 30000 + CHUNK_FRAMES);
     }

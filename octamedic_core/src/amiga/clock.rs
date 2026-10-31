@@ -1,11 +1,9 @@
-/// The clocks that differ between PAL and NTSC Amigas.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AmigaClock {
-    /// The CIA timers' clock: the CPU clock / 10.
+    /// CIA timer clock, cpu clock / 10
     pub e_clock: u32,
-    /// A Paula channel plays `paula_clock / period` bytes a second.
+    /// bytes per second = paula_clock / period
     pub paula_clock: u32,
-    /// Frames a second on the display.
     pub frame_rate: u32,
 }
 

@@ -1,4 +1,4 @@
-// OctaMED's own fonts aren't available anywhere, so they're drawn by hand in assets/fonts.
+// OctaMED's own fonts aren't around anywhere so they're redrawn by hand in assets/fonts
 
 use std::{collections::HashMap, sync::LazyLock};
 
@@ -6,29 +6,28 @@ use ab_glyph::{Font as _, FontRef, PxScale, point};
 
 use crate::framework::painter::{CHAR_HEIGHT, CHAR_WIDTH};
 
-/// Kickstart 2's Topaz, as OctaMED shows it.
+// kickstart 2 topaz, as OctaMED shows it
 const TOPAZ_TTF: &[u8] = include_bytes!("../../assets/fonts/AmigaTopazUnicodeRus.ttf");
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Font {
     #[default]
     Topaz,
-    /// Topaz with OctaMED's own `/` and bolder `⁄`.
+    // topaz with OctaMED's own slashes
     Interface,
-    /// Gadget labels.
+    // gadget labels
     Panel,
-    /// The status row's flags like `CHRD`.
+    // status row flags, CHRD etc
     Small,
-    /// The play panel's labels like `PLAY SONG`.
+    // play panel labels like PLAY SONG
     Label,
     Title,
     Author,
-    /// The block editor's 16 pixel wide characters, for blocks with few tracks. Falls back to
-    /// double-width Topaz.
+    // 16px wide block editor chars for blocks with few tracks, double width topaz otherwise
     Editor,
 }
 
-/// OctaMED's bolder slash between a position and a length, like `0001⁄0022`.
+// OctaMED's fatter slash between a position and a length, e.g. 0001/0022
 pub const POSITION_SLASH: char = '\u{2044}';
 
 const MAX_GLYPH_WIDTH: usize = u32::BITS as usize;
@@ -38,7 +37,7 @@ const LEFT_PIXEL: u32 = 1 << (u32::BITS - 1);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Glyph {
     pub width: i32,
-    /// Highest bit leftmost.
+    // msb is the leftmost pixel
     pub lines: Vec<u32>,
 }
 
@@ -65,7 +64,7 @@ impl Font {
         return text.chars().map(|c| self.advance(c)).sum();
     }
 
-    /// Blank pixels either side of `c`'s ink, bearing included; `None` when it has no ink.
+    // blank pixels left and right of the ink, bearing included
     pub fn blank_sides(self, c: char) -> Option<(i32, i32)> {
         let ink = self.glyph(c)?.lines.iter().fold(0, |all, &line| all | line);
         if ink == 0 {
@@ -76,7 +75,7 @@ impl Font {
         return Some((left, self.advance(c) - ink_end));
     }
 
-    /// `(start, length)` of each run of ink in glyph line `line` of `text`.
+    // (start, length) runs of ink on one glyph line, across the whole text
     pub fn ink(self, text: &str, line: usize) -> impl Iterator<Item = (i32, i32)> + '_ {
         let mut advance = 0;
         return text.chars().flat_map(move |c| {
@@ -103,7 +102,7 @@ impl Font {
     }
 }
 
-/// `(start, length)` of each run of set pixels in a glyph line.
+// (start, length)
 pub fn runs(line: u32) -> impl Iterator<Item = (i32, i32)> {
     let mut x = 0;
     let width = MAX_GLYPH_WIDTH as u32;
@@ -131,7 +130,7 @@ struct BitmapFont {
     glyphs: HashMap<char, Glyph>,
     height: i32,
     bearing: i32,
-    /// Used when the font has no glyph for a space.
+    // advance for missing glyphs, mostly space
     space: i32,
     capitals_only: bool,
 }
@@ -161,7 +160,7 @@ impl BitmapFont {
     }
 }
 
-/// Rasterized from the TTF so it draws without blurring.
+// rasterized from the ttf up front so it doesn't blur
 static TOPAZ: LazyLock<BitmapFont> = LazyLock::new(|| BitmapFont {
     glyphs: rasterize(TOPAZ_TTF).unwrap_or_else(|| panic!("Topaz's TTF couldn't be read")),
     height: CHAR_HEIGHT,
@@ -169,8 +168,8 @@ static TOPAZ: LazyLock<BitmapFont> = LazyLock::new(|| BitmapFont {
     ..Default::default()
 });
 
-/// Reads back the pixels of a bitmap font in TTF form. Topaz's TTF is the 8 line font at double
-/// height with smoothing half lines between, so each line takes the upper half line.
+// the topaz ttf is the 8 line bitmap font at double height with smoothing half lines in between,
+// so take the upper half of each line to get the real pixels back
 fn rasterize(ttf: &[u8]) -> Option<HashMap<char, Glyph>> {
     let font = FontRef::try_from_slice(ttf).ok()?;
     let em = font.units_per_em()?;
@@ -179,7 +178,7 @@ fn rasterize(ttf: &[u8]) -> Option<HashMap<char, Glyph>> {
     let scale = PxScale::from(font.height_unscaled() / pixel);
     let mut glyphs = HashMap::new();
     for (_, c) in font.codepoint_ids() {
-        // a character can be in more than one table; this is the one that's used
+        // chars can be in more than one cmap table, glyph_id gives the one that's used
         let id = font.glyph_id(c);
         let width = (font.h_advance_unscaled(id) / pixel).round() as i32;
         let mut lines = vec![0; CHAR_HEIGHT as usize];
@@ -266,7 +265,7 @@ static LABEL: LazyLock<BitmapFont> = LazyLock::new(|| {
     font
 });
 
-/// Matches OctaMED's spacing in `CONT. SONG`, `VOL:` and `E1`.
+// matched against CONT. SONG, VOL: and E1 on the real thing
 fn label_margins(c: char) -> (u32, u32) {
     return match c {
         '.' => (1, 0),
@@ -326,7 +325,7 @@ static INTERFACE: LazyLock<BitmapFont> = LazyLock::new(|| {
     .with_fallback(&TOPAZ, Glyph::clone)
 });
 
-/// Each glyph is its character on a line, then `height` lines of `#` and `.`, then an empty line.
+// the char on its own line, `height` lines of # and ., then a blank line
 fn parse_glyphs(text: &str, height: usize) -> Result<Vec<(char, Glyph)>, String> {
     let lines: Vec<&str> = text.lines().collect();
     let mut glyphs = Vec::new();
@@ -379,7 +378,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn glyph_rows_become_bits_from_the_left() {
+    fn glyph_bits() {
         let a = Font::Panel.glyph('a').unwrap();
         assert_eq!(a.width, 8);
         assert_eq!(a.lines[0], 0b0001_1000 << 24);
@@ -390,7 +389,7 @@ mod tests {
     }
 
     #[test]
-    fn the_font_files_parse() {
+    fn font_files_parse() {
         let panel = parse_glyphs(include_str!("../../assets/fonts/panel.txt"), 6).unwrap();
         assert!(panel.len() >= 26);
         let text = include_str!("../../assets/fonts/interface.txt");
@@ -404,18 +403,18 @@ mod tests {
     }
 
     #[test]
-    fn labels_are_the_small_capitals_2_pixels_apart() {
+    fn label_spacing() {
         let l = Font::Label.glyph('l').unwrap();
         assert_eq!((l.width, l.lines[4]), (7, 0b11111 << 26));
-        // P, A and Y are 6 wide and L 5, and a space puts 6 more pixels between words
+        // P A Y are 6 wide, L 5, 2 between each
         assert_eq!(Font::Label.width("PLAY"), 6 + 5 + 6 + 6 + 4 * 2);
         assert_eq!(Font::Label.width(" "), 6);
-        // further from a letter before a digit, as in E1
+        // digits sit further from the letter before, see E1
         assert_eq!(Font::Label.blank_sides('1'), Some((3, 1)));
     }
 
     #[test]
-    fn badly_drawn_glyphs_are_rejected() {
+    fn bad_glyphs() {
         let rows = "#.\n#.\n#.\n#.\n#.\n";
         assert!(parse_glyphs(&format!("AB\n{rows}#.\n"), 6).is_err());
         assert!(parse_glyphs(&format!("A\n{rows}#..\n"), 6).is_err());
@@ -429,7 +428,7 @@ mod tests {
     }
 
     #[test]
-    fn topaz_is_read_back_into_its_pixels() {
+    fn topaz_pixels() {
         let one = Font::Topaz.glyph('1').unwrap();
         assert_eq!(one.width, 8);
         let rows: Vec<String> = one
@@ -452,7 +451,7 @@ mod tests {
     }
 
     #[test]
-    fn the_editor_font_is_topaz_twice_as_wide_with_octameds_own_glyphs() {
+    fn editor_font() {
         let a = Font::Editor.glyph('A').unwrap();
         assert_eq!(a.width, 16);
         assert_eq!(a.lines, widened(Font::Topaz.glyph('A').unwrap()).lines);
@@ -462,7 +461,7 @@ mod tests {
     }
 
     #[test]
-    fn lines_split_into_runs() {
+    fn glyph_runs() {
         assert_eq!(
             runs(0b1100_0110 << 24).collect::<Vec<_>>(),
             [(0, 2), (5, 2)]
@@ -472,17 +471,16 @@ mod tests {
     }
 
     #[test]
-    fn panel_glyphs_are_2_pixels_apart() {
+    fn panel_spacing() {
         assert_eq!(Font::Panel.width("FI"), 10 + 6);
     }
 
     #[test]
-    fn interface_text_is_8_wide_with_a_wider_slash() {
+    fn interface_widths() {
         assert_eq!(Font::Interface.width("0001"), 32);
         assert_eq!(Font::Interface.width("/"), 10);
-        // the bolder slash between a position and a length
         assert_eq!(Font::Interface.width(&POSITION_SLASH.to_string()), 12);
-        // not in the font, so drawn in Topaz
+        // not in the font, falls back to topaz
         assert_eq!(Font::Interface.width("~ "), 16);
     }
 }

@@ -8,12 +8,12 @@ use crate::framework::{
     text::Line,
 };
 
-/// Topaz's character size.
+// topaz
 pub const CHAR_WIDTH: i32 = 8;
 
 pub const CHAR_HEIGHT: i32 = 8;
 
-/// An index into the song's palette.
+// index into the song's palette
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Pen(pub usize);
 
@@ -43,7 +43,7 @@ impl<'a> Painter<'a> {
         return Color::rgb(r, g, b);
     }
 
-    /// Skips `draw` entirely when `rect` is empty or off the screen.
+    // draw isn't called at all if rect is empty or off screen
     pub fn clipped(&mut self, rect: Rect, draw: impl FnOnce(&mut Self)) {
         let previous = self.target.get_clip();
         if self.target.set_clip(rect) {
@@ -72,8 +72,7 @@ impl<'a> Painter<'a> {
         self.text_in_font(x, y, text, pen, Font::Topaz);
     }
 
-    /// Amiga bold: the text again one pixel right. It fits the same space, since glyphs leave
-    /// their last column blank.
+    // amiga bold, same text again 1px right. fits since glyphs leave the last column blank
     pub fn text_bold(&mut self, x: i32, y: i32, text: &str, pen: Pen, font: Font) {
         self.text_in_font(x, y, text, pen, font);
         self.text_in_font(x + 1, y, text, pen, font);
@@ -110,7 +109,7 @@ impl<'a> Painter<'a> {
         self.line(x, text_y(rect, line.height()), &line, pen);
     }
 
-    /// `#` is the light pen, `f` fill, `s` shadow; anything else is transparent.
+    // # light, f fill, s shadow, anything else is see-through
     pub fn picture(&mut self, rows: &[&str], x: i32, y: i32) {
         for (line, row) in rows.iter().enumerate() {
             for (column, pixel) in row.chars().enumerate() {
@@ -125,7 +124,7 @@ impl<'a> Painter<'a> {
         }
     }
 
-    /// A checkerboard aligned to the screen, not the rect, so neighbouring rects line up.
+    // checkerboard lines up with the screen, not the rect, so rects next to each other match
     pub fn dotted_rect(&mut self, rect: Rect, dots: Pen, gaps: Pen) {
         self.fill(rect, gaps);
         for y in rect.y..rect.bottom() {
@@ -144,14 +143,13 @@ impl<'a> Painter<'a> {
         self.fill(Rect::new(x + w - 1, y, 1, h), pen);
     }
 
-    /// OctaMED's bevel: light top and right, shadow left and bottom. The sides are twice as
-    /// wide as `thickness` for the tall pixels, and the corners meet on a slant as in OctaMED.
-    /// Returns the inside.
+    // OctaMED's bevel, light top/right and shadow left/bottom. sides are 2x thickness for the tall
+    // pixels, corners meet on a slant like the original. returns the inside
     pub fn frame(&mut self, rect: Rect, thickness: i32) -> Rect {
         return self.bevel(rect, thickness, Pen::LIGHT, Pen::SHADOW);
     }
 
-    /// Used around the status row's gauge boxes.
+    // status row gauge boxes
     pub fn frame_inverted(&mut self, rect: Rect, thickness: i32) -> Rect {
         return self.bevel(rect, thickness, Pen::SHADOW, Pen::LIGHT);
     }
@@ -198,7 +196,7 @@ impl<'a> Painter<'a> {
         self.shape(rect, &shape::ellipse(rect.w, rect.h), fill, border);
     }
 
-    /// Rounds to whole pixels so glyphs stay sharp at any scale.
+    // rounds to whole pixels so scaled text stays sharp
     fn glyphs(&mut self, x: i32, y: i32, text: &str, pen: Pen, font: Font, scale: [f32; 2]) {
         let scaled = |pixels: i32, axis: usize| (pixels as f32 * scale[axis]).round() as i32;
         let mut advance = 0;
@@ -273,7 +271,7 @@ pub fn inside_frame(rect: Rect, thickness: i32) -> Rect {
     return rect.inset(2 * thickness, thickness);
 }
 
-/// Twice as wide as `thickness` at the sides, for the tall pixels.
+// sides are drawn 2x thickness wide because of the tall pixels
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Border {
     pub pen: Pen,
@@ -288,12 +286,12 @@ pub enum Align {
     Right,
 }
 
-/// Pinned to the top when taller than `rect`, as fonts leave their bottom line blank.
+// pinned to the top when it doesn't fit, fonts leave the bottom line blank anyway
 pub fn text_y(rect: Rect, height: i32) -> i32 {
     return rect.y + ((rect.h - height) / 2).max(0);
 }
 
-/// Centring goes by the ink, not the blank pixels fonts leave around it, which can be uneven.
+// centres the ink, the blank pixels fonts leave either side can be uneven
 pub fn line_x(rect: Rect, line: &Line, align: Align) -> i32 {
     if align != Align::Center {
         return aligned_text_x(rect, line.width(), align);
@@ -316,7 +314,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn text_lines_up_with_the_rect() {
+    fn text_alignment() {
         let rect = Rect::new(10, 0, 37, 8);
         assert_eq!(aligned_text_x(rect, 16, Align::Left), 10);
         assert_eq!(aligned_text_x(rect, 16, Align::Center), 20);

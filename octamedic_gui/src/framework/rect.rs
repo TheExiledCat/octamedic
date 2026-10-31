@@ -21,7 +21,6 @@ impl Rect {
         return self.y + self.h;
     }
 
-    /// Excludes the right and bottom edges.
     pub fn contains(self, point: Point) -> bool {
         let [x, y] = point;
         return x >= self.x && x < self.right() && y >= self.y && y < self.bottom();
@@ -65,17 +64,16 @@ impl Rect {
             .collect();
     }
 
-    /// Leftover pixels widen the first columns.
+    // leftover pixels go to the first columns
     pub fn split_columns(self, count: i32) -> Vec<Self> {
         return self.columns(&even_sizes(self.w, count));
     }
 
-    /// Leftover lines go to the first rows.
     pub fn split_rows(self, count: i32) -> Vec<Self> {
         return self.rows(&even_sizes(self.h, count));
     }
 
-    /// Swaps width and height.
+    // swaps w and h, keeps x and y
     pub fn rotate(self) -> Self {
         return Self::new(self.x, self.y, self.h, self.w);
     }
@@ -84,7 +82,7 @@ impl Rect {
         return Self::new(self.y, self.x, self.w, self.h);
     }
 
-    /// Treats this rect as relative to `area`'s top left.
+    // self is relative to area's top left
     pub fn within(self, area: Self) -> Self {
         return Self::new(area.x + self.x, area.y + self.y, self.w, self.h);
     }
@@ -122,7 +120,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn rects_do_not_contain_their_far_edges() {
+    fn contains_edges() {
         let rect = Rect::new(10, 10, 20, 10);
         assert!(rect.contains([10, 10]));
         assert!(rect.contains([29, 19]));
@@ -131,7 +129,7 @@ mod tests {
     }
 
     #[test]
-    fn splitting_shares_the_area_between_the_parts() {
+    fn split_top_left() {
         let rect = Rect::new(0, 10, 100, 50);
         assert_eq!(
             rect.split_top(20),
@@ -145,7 +143,7 @@ mod tests {
     }
 
     #[test]
-    fn splitting_evenly_fills_the_rect() {
+    fn split_evenly() {
         let rect = Rect::new(10, 20, 22, 7);
         let widths: Vec<i32> = rect
             .split_columns(5)
@@ -166,21 +164,21 @@ mod tests {
     }
 
     #[test]
-    fn rotating_swaps_the_width_and_height() {
+    fn rotate() {
         let rect = Rect::new(10, 20, 160, 8);
         assert_eq!(rect.rotate(), Rect::new(10, 20, 8, 160));
         assert_eq!(rect.rotate().rotate(), rect);
     }
 
     #[test]
-    fn swapping_x_and_y_keeps_the_size() {
+    fn swap_xy() {
         let rect = Rect::new(10, 20, 160, 8);
         assert_eq!(rect.swap_xy(), Rect::new(20, 10, 160, 8));
         assert_eq!(rect.swap_xy().rotate(), Rect::new(20, 10, 8, 160));
     }
 
     #[test]
-    fn a_rect_within_an_area_moves_by_its_top_left() {
+    fn within() {
         let area = Rect::new(10, 18, 448, 45);
         assert_eq!(
             Rect::new(182, 0, 146, 45).within(area),
@@ -189,7 +187,7 @@ mod tests {
     }
 
     #[test]
-    fn an_intersection_is_the_overlap_or_nothing() {
+    fn intersection() {
         let screen = Rect::new(0, 0, 640, 256);
         assert_eq!(
             Rect::new(-10, 250, 30, 20).intersection(screen),
@@ -200,7 +198,7 @@ mod tests {
     }
 
     #[test]
-    fn columns_follow_each_other() {
+    fn columns() {
         let columns = Rect::new(3, 65, 100, 11).columns(&[84, 14]);
         assert_eq!(
             columns,
@@ -209,7 +207,7 @@ mod tests {
     }
 
     #[test]
-    fn rows_follow_each_other() {
+    fn rows() {
         let rows = Rect::new(3, 20, 32, 41).rows(&[1, 8, 8]);
         assert_eq!(
             rows,

@@ -2,7 +2,6 @@ use octamed::mmd::module::{OctamedMMD0Color, OctamedMMD0ColorPalette, PALETTE_CO
 
 pub const PALETTE_SIZE: usize = PALETTE_COLORS;
 
-/// A channel's brightest level; each has 16.
 pub const CHANNEL_MAX: u8 = 15;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -24,14 +23,14 @@ impl Channel {
     }
 }
 
-/// The screen's colours, as the Amiga's 12-bit `0RGB` values.
+/// Screen colours as 12-bit `0RGB`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct OctamedColorPalette {
     colors: [u16; PALETTE_SIZE],
 }
 
 impl OctamedColorPalette {
-    /// OctaMED v4's own colours.
+    // v4's default colours
     pub const DEFAULT: Self = Self {
         colors: [0x000, 0xCCC, 0x667, 0x99A, 0xF00, 0xF88, 0xFAA, 0xFCC],
     };
@@ -78,7 +77,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn channels_are_read_and_set_alone() {
+    fn set_channel() {
         let mut palette = OctamedColorPalette::DEFAULT;
         // pen 2 is 0x667
         assert_eq!(palette.channel(2, Channel::Blue), 7);
@@ -89,7 +88,7 @@ mod tests {
     }
 
     #[test]
-    fn levels_spread_over_the_full_range() {
+    fn rgb_range() {
         let palette = OctamedColorPalette::DEFAULT;
         assert_eq!(palette.rgb(0), [0, 0, 0]);
         assert_eq!(palette.rgb(3), [0x99, 0x99, 0xAA]);
@@ -97,7 +96,7 @@ mod tests {
     }
 
     #[test]
-    fn colours_keep_to_12_bits() {
+    fn twelve_bits() {
         let mut palette = OctamedColorPalette::DEFAULT;
         palette.set(1, 0xF123);
         assert_eq!(palette.get(1), 0x123);

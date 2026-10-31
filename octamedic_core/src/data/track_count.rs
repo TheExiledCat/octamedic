@@ -1,4 +1,3 @@
-/// How many tracks a block has, as OctaMED offers them.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TrackCount {
     #[default]
@@ -25,7 +24,7 @@ impl TrackCount {
         };
     }
 
-    /// The fewest that hold `tracks`; `Sixteen` for more than that.
+    // smallest that fits, Sixteen if nothing does
     pub fn holding(tracks: usize) -> Self {
         return Self::ALL
             .into_iter()
@@ -39,7 +38,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn blocks_round_up_to_a_count() {
+    fn rounds_up() {
         assert_eq!(TrackCount::holding(4), TrackCount::Four);
         assert_eq!(TrackCount::holding(1), TrackCount::Four);
         assert_eq!(TrackCount::holding(9), TrackCount::Twelve);

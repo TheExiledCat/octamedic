@@ -7,9 +7,9 @@ pub struct Span<'a> {
     pub text: Cow<'a, str>,
     pub font: Font,
     pub bold: bool,
-    /// Drawn over fill and shadow copies offset down and right, like the title.
+    // fill and shadow copies underneath, offset down and right, like the title
     pub shadowed: bool,
-    /// `None` uses the line's pen, so it inverts with a button.
+    // None takes the line's pen so it inverts with the button
     pub pen: Option<Pen>,
 }
 
@@ -79,8 +79,7 @@ impl<'a> Line<'a> {
         return self.0.iter().map(Span::width).sum();
     }
 
-    /// Blank pixels before the first ink and after the last, ignoring bold: OctaMED centres
-    /// bold text as if it were plain.
+    // ignores bold, OctaMED centres bold text as if it was plain
     pub fn blank_sides(&self) -> (i32, i32) {
         let mut x = 0;
         let mut first = None;
@@ -110,8 +109,7 @@ impl<'a> Line<'a> {
             .unwrap_or(0);
     }
 
-    /// Whole characters that fit in `width`. The last may hang a pixel past it, since glyphs
-    /// leave their last column blank.
+    // whole chars only. the last one can hang a pixel over, glyphs leave their last column blank
     pub fn fit(&self, width: i32) -> Line<'_> {
         let mut used = 0;
         let mut spans = Vec::new();
@@ -182,12 +180,12 @@ mod tests {
     }
 
     #[test]
-    fn a_line_is_as_wide_as_its_spans() {
+    fn line_width() {
         assert_eq!(mixed().width(), 16 + 16);
     }
 
     #[test]
-    fn fitting_cuts_across_spans() {
+    fn fit_across_spans() {
         assert_eq!(mixed().fit(32), mixed());
         let line = mixed();
         let cut = line.fit(24);
@@ -198,7 +196,7 @@ mod tests {
     }
 
     #[test]
-    fn a_character_may_hang_a_pixel_past_the_end() {
+    fn fit_overhang() {
         let topaz = Line::from("Speed/Beat");
         assert_eq!(topaz.fit(40).0[0].text, "Speed");
         assert_eq!(Line::from("Speed").fit(39).0[0].text, "Speed");
@@ -207,7 +205,7 @@ mod tests {
     }
 
     #[test]
-    fn indexes_count_across_spans() {
+    fn index_across_spans() {
         assert_eq!(mixed().index_at(0), Some(0));
         assert_eq!(mixed().index_at(10), Some(1));
         assert_eq!(mixed().index_at(16), Some(2));

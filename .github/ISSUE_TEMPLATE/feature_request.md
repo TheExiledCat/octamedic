@@ -1,35 +1,17 @@
 ---
 name: Feature request
-about: Suggest a new capability or improvement
+about: Suggest something to add or change
 labels: enhancement
 ---
 
-## Summary
+What do you want added or changed?
 
-<!-- One sentence: what do you want added or changed? -->
+Why would it be useful?
 
-## Motivation
+How should it work? (sketches, CLI examples, screenshots of the original OctaMED all welcome)
 
-<!-- Why is this useful? What problem does it solve? -->
+Which part is it about: file format (`octamed`), engine (`octamedic_core`), CLI or GUI?
 
-## Proposed behaviour
-
-<!-- Describe how it should work. Code sketches or CLI examples are welcome. -->
-
-## Affected crate(s)
-
-- [ ] `octamed` (file format / parser)
-- [ ] `octamedic_core` (engine / data model)
-- [ ] `octamed_cli` (CLI / REPL)
-- [ ] `octamedic_gui` (GUI)
-
-## Is this in scope for the current milestone?
-
-The current goal is **CLI playback of existing MMD modules with no effect commands**. Features that belong to a later milestone (GUI, MIDI, effects, synth instruments) are welcome as issues but will not be prioritised immediately.
-
-- [ ] Yes — this is needed for basic CLI playback
-- [ ] No — this is a future milestone item
-
-## Alternatives considered
-
-<!-- Any other approaches you thought about? -->
+<!-- Right now I'm working on playback of existing MMD modules, without effect commands. Ideas for
+later stuff (MIDI, effects, synth instruments) are welcome, they just won't get picked up right
+away. -->

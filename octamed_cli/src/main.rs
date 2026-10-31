@@ -12,7 +12,8 @@ use crate::commands::{
 fn main() {
     let args: Vec<String> = env::args().collect();
     let path = PathBuf::from(&args[1]);
-    // --rewrite: parse, write, exit — no TTY needed
+    // --rewrite parses and writes it straight back, no repl
+
     if args.get(2).map(|s| s.as_str()) == Some("--rewrite") {
         println!("Parsing file {}", path.to_string_lossy());
         let mut mmd = match OctamedMMDParser::new().parse_file(&path) {

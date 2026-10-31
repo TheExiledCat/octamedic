@@ -65,7 +65,7 @@ mod tests {
     }
 
     #[test]
-    fn lines_wrap_around_the_block() {
+    fn lines_wrap() {
         let mut cursor = at(0, 0, 0);
         cursor.move_lines(-1, 64);
         assert_eq!(cursor.line, 63);
@@ -74,7 +74,7 @@ mod tests {
     }
 
     #[test]
-    fn columns_move_into_the_next_track_and_wrap() {
+    fn columns_wrap() {
         let mut cursor = at(0, 0, TRACK_COLUMNS - 1);
         cursor.move_columns(1, 4);
         assert_eq!(cursor, at(0, 1, 0));
@@ -84,7 +84,7 @@ mod tests {
     }
 
     #[test]
-    fn tracks_keep_the_column() {
+    fn tracks_keep_column() {
         let mut cursor = at(0, 3, 2);
         cursor.move_tracks(1, 4);
         assert_eq!(cursor, at(0, 0, 2));
@@ -95,14 +95,14 @@ mod tests {
     }
 
     #[test]
-    fn lines_set_past_the_end_stop_on_the_last_line() {
+    fn line_past_end() {
         let mut cursor = at(0, 0, 0);
         cursor.set_line(100, 64);
         assert_eq!(cursor.line, 63);
     }
 
     #[test]
-    fn an_empty_block_leaves_the_cursor_alone() {
+    fn empty_block() {
         let mut cursor = at(3, 1, 2);
         cursor.move_lines(1, 0);
         cursor.move_columns(1, 0);

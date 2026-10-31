@@ -18,7 +18,7 @@ fn header(id: &[u8; 4]) -> Vec<u8> {
 }
 
 #[test]
-fn an_unknown_id_is_not_a_module() {
+fn unknown_id() {
     assert!(matches!(
         parse(header(b"RIFF")),
         Err(MmdError::UnknownFormat(_))
@@ -26,7 +26,7 @@ fn an_unknown_id_is_not_a_module() {
 }
 
 #[test]
-fn a_header_without_a_song_is_missing_a_pointer() {
+fn no_song_pointer() {
     assert!(matches!(
         parse(header(b"MMD0")),
         Err(MmdError::MissingPointer("song"))
@@ -34,6 +34,6 @@ fn a_header_without_a_song_is_missing_a_pointer() {
 }
 
 #[test]
-fn a_truncated_file_is_an_io_error() {
+fn truncated_file() {
     assert!(matches!(parse(b"MMD0".to_vec()), Err(MmdError::Io(_))));
 }

@@ -29,13 +29,12 @@ impl Sides {
     };
 }
 
-/// A row's `left..right`, from the shape's left edge.
+// left..right of a row, from the shape's left edge
 pub type Span = (i32, i32);
 
 pub type Spans = Vec<Option<Span>>;
 
-/// The edges step evenly when `w` is a multiple of `h` (Up, Down) or of `(h + 1) / 2`
-/// (Left, Right).
+// edges only step evenly if w is a multiple of h for up/down, or of (h + 1) / 2 for left/right
 pub fn triangle(w: i32, h: i32, direction: Direction) -> Spans {
     let half_rows = (h + 1) / 2;
     return (0..h)
@@ -59,7 +58,7 @@ pub fn triangle(w: i32, h: i32, direction: Direction) -> Spans {
         .collect();
 }
 
-/// A circle on screen when `w` is twice `h`, because of the tall pixels.
+// round on screen when w = 2 * h, tall pixels
 pub fn ellipse(w: i32, h: i32) -> Spans {
     let w_f = w as f32;
     return (0..h)
@@ -71,7 +70,7 @@ pub fn ellipse(w: i32, h: i32) -> Spans {
         .collect();
 }
 
-/// The shape inside a `Border` of `thickness`. Only correct for convex shapes.
+// what's left inside a Border of this thickness. only right for convex shapes
 pub fn inside(spans: &Spans, thickness: i32) -> Spans {
     let rows = spans.len() as i32;
     let side = 2 * thickness;
@@ -93,7 +92,7 @@ fn span(left: f32, right: f32) -> Option<Span> {
     return (span.0 < span.1).then_some(span);
 }
 
-/// 0 at the middle row, 1 at the top and bottom edges.
+// 0 in the middle row, 1 at top and bottom
 fn from_middle(y: i32, h: i32) -> f32 {
     let half = h as f32 / 2.0;
     return ((y as f32 + 0.5 - half) / half).abs();
@@ -118,7 +117,7 @@ mod tests {
     }
 
     #[test]
-    fn triangles_point_where_they_are_told() {
+    fn triangle_directions() {
         assert_eq!(
             draw(&triangle(8, 4, Direction::Up), 8),
             ["...##...", "..####..", ".######.", "########"]
@@ -138,7 +137,7 @@ mod tests {
     }
 
     #[test]
-    fn an_ellipse_is_round_and_fills_its_middle() {
+    fn ellipse_rows() {
         assert_eq!(
             draw(&ellipse(12, 6), 12),
             [
@@ -153,7 +152,7 @@ mod tests {
     }
 
     #[test]
-    fn the_inside_is_inset_twice_as_far_across_as_down() {
+    fn inside_inset() {
         let spans = vec![Some((0, 10)); 4];
         assert_eq!(
             draw(&inside(&spans, 1), 10),
@@ -162,7 +161,7 @@ mod tests {
     }
 
     #[test]
-    fn a_shape_too_small_for_its_border_has_no_inside() {
+    fn too_small_inside() {
         let spans = vec![Some((0, 4)); 3];
         assert!(inside(&spans, 1).iter().all(Option::is_none));
     }

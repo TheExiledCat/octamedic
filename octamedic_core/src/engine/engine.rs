@@ -17,7 +17,6 @@ use crate::{
     },
 };
 
-/// Anything higher is not a note.
 const MAX_NOTE: u8 = 0x7F;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -42,12 +41,11 @@ impl PlayMode {
     }
 }
 
-/// Runs inside the audio callback, which drives it through `process`.
+/// Lives on the audio thread, the callback calls `process`.
 pub struct OctamedicEngine {
     commands: Receiver<EngineCommand>,
     status: Arc<EngineStatus>,
     sample_rate: u32,
-    /// PAL or NTSC timing.
     machine: AmigaClock,
 
     patterns: Vec<Arc<OctamedicPattern>>,
@@ -57,14 +55,14 @@ pub struct OctamedicEngine {
     track_volumes: [u8; MAX_TRACKS],
     master_volume: u8,
     global_transpose: i8,
-    // the listener's volume, not part of the song
+    // listener's volume, not saved with the song
     output_volume: u8,
 
     mode: PlayMode,
     position: Position,
     clock: Option<Clock>,
     renderer: Box<dyn Renderer>,
-    /// For notes without an instrument number.
+    // last instrument per track, for notes with no instrument number
     track_instruments: [Option<InstrumentId>; MAX_TRACKS],
 }
 
@@ -79,7 +77,6 @@ impl OctamedicEngine {
         return Self::with_renderer(commands, status, sample_rate, Box::new(renderer));
     }
 
-    /// Plays through `renderer` instead of Paula.
     pub fn with_renderer(
         commands: Receiver<EngineCommand>,
         status: Arc<EngineStatus>,
@@ -111,8 +108,7 @@ impl OctamedicEngine {
         };
     }
 
-    /// Fills `out` (interleaved, `channels` per frame). UI commands run first, then each tick
-    /// on the frame it falls on.
+    /// Fills `out`, interleaved. Ticks land on the exact frame they're due.
     pub fn process(&mut self, out: &mut [f32], channels: usize) {
         out.fill(0.0);
         while let Ok(command) = self.commands.try_recv() {
@@ -190,7 +186,6 @@ impl OctamedicEngine {
         self.patterns[id.0 as usize] = pattern;
     }
 
-    /// `None` clears the slot.
     fn set_instrument(&mut self, id: InstrumentId, instrument: Option<OctamedicInstrument>) {
         let Some(index) = id.index() else {
             return;
@@ -230,8 +225,7 @@ impl OctamedicEngine {
         });
     }
 
-    /// The first row plays on the next tick, which is due straight away. A row past the block's
-    /// end starts at its last line.
+    // first tick is due immediately. rows past the end clamp to the last line
     fn start(&mut self, mode: PlayMode) {
         let Some(lines) = self.current_pattern().map(OctamedicPattern::line_count) else {
             self.stop();
@@ -277,11 +271,11 @@ impl OctamedicEngine {
         return self.sample_rate as f64 * self.tempo.tick_seconds(self.machine);
     }
 
-    /// Plays the row on its first tick and moves on after its last.
     fn tick(&mut self) {
         let frames_per_tick = self.frames_per_tick();
         let ticks_per_line = self.ticks_per_line();
-        // the previous row ends when this tick starts, so the last row of a song gets its last tick
+        // advance at the start of the next tick, not the end of this one, or the last row of a
+        // song loses its last tick
         if self
             .clock
             .as_ref()
@@ -301,7 +295,7 @@ impl OctamedicEngine {
         if tick == 0 {
             self.play_row();
         }
-        // todo effects: run the tick's effects here.
+        // todo effects
     }
 
     fn advance_row(&mut self) {
@@ -311,7 +305,6 @@ impl OctamedicEngine {
         }
     }
 
-    /// `None` when the song ends.
     fn next_position(&self, position: &Position) -> Option<Position> {
         let mut next = *position;
         next.row += 1;
@@ -377,7 +370,6 @@ impl OctamedicEngine {
         }
     }
 
-    /// Uses the track's last instrument when `instrument` is `None`.
     fn note_on(&mut self, track: usize, note: OctamedicNote, instrument: Option<InstrumentId>) {
         if track >= MAX_TRACKS || note.value == 0 || note.value > MAX_NOTE {
             return;
@@ -405,8 +397,8 @@ impl OctamedicEngine {
         self.trigger(track, sample, period, volume as u8);
     }
 
-    /// Like an Amiga player: DMA off, first range, period, volume, DMA on, then the range to
-    /// repeat after the first, which is the loop or silence.
+    // same order the 68k player does it: dma off, sample, period, volume, dma on, then the
+    // repeat range, which is the loop or silence
     fn trigger(&mut self, channel: usize, sample: Arc<OctamedicSample>, period: u16, volume: u8) {
         let (first, repeat) = match sample.repeat {
             Some((start, end)) => (
@@ -461,11 +453,9 @@ struct Position {
     row: usize,
 }
 
-/// Counted in output frames, so ticks land on the right sample.
 struct Clock {
-    /// The tick within the row; its notes play on tick 0.
     tick: u32,
-    /// Keeps the fraction, so the tempo doesn't drift.
+    // keep the fraction or the tempo drifts
     frames_until_tick: f64,
 }
 
@@ -487,7 +477,7 @@ mod tests {
         return (engine, sender, status);
     }
 
-    /// About 10 ticks a second: 99.997 frames per tick at `SAMPLE_RATE`.
+    // ~10 ticks/s, 99.997 frames per tick
     fn tempo(ticks_per_line: u8) -> OctamedicTempo {
         let mut tempo = OctamedicTempo::new();
         tempo.primary_tempo = 25;
@@ -523,7 +513,7 @@ mod tests {
     }
 
     #[test]
-    fn playing_starts_from_the_line_given_or_the_last_one_past_the_end() {
+    fn start_row() {
         let (mut engine, commands, status) = engine();
         commands.send(EngineCommand::SetTempo(tempo(3))).unwrap();
         commands
@@ -546,7 +536,7 @@ mod tests {
     }
 
     #[test]
-    fn rows_advance_after_ticks_per_line_ticks() {
+    fn row_advance() {
         let (mut engine, commands, status) = engine();
         commands.send(EngineCommand::SetTempo(tempo(3))).unwrap();
         commands
@@ -571,7 +561,7 @@ mod tests {
     }
 
     #[test]
-    fn notes_start_on_the_frame_their_row_starts() {
+    fn note_timing() {
         let (mut engine, commands, _) = engine();
         commands.send(EngineCommand::SetTempo(tempo(2))).unwrap();
         commands
@@ -599,7 +589,7 @@ mod tests {
     }
 
     #[test]
-    fn song_stops_after_the_last_sequence_entry() {
+    fn song_end() {
         let (mut engine, commands, status) = engine();
         commands.send(EngineCommand::SetTempo(tempo(1))).unwrap();
         for id in 0..2 {
@@ -632,7 +622,6 @@ mod tests {
         assert_eq!(status.play_mode(), PlayMode::Paused);
     }
 
-    /// Records every Paula write.
     #[derive(Clone, Default)]
     struct Recorder {
         writes: Arc<Mutex<Vec<(usize, PaulaWrite)>>>,
@@ -655,7 +644,7 @@ mod tests {
         return (engine, sender, recorder);
     }
 
-    /// Plays a note on track 0 and returns that channel's writes.
+    // note on track 0, returns channel 0's writes
     fn note_writes(instrument: OctamedicInstrument, note: u8) -> Vec<PaulaWrite> {
         let (mut engine, commands, recorder) = recording_engine();
         commands
@@ -683,7 +672,7 @@ mod tests {
     }
 
     #[test]
-    fn a_note_starts_its_sample_like_an_amiga_player() {
+    fn note_writes_order() {
         let instrument = instrument();
         let sample = instrument.sample.clone().unwrap();
         let writes = note_writes(instrument, 13);
@@ -709,7 +698,7 @@ mod tests {
     }
 
     #[test]
-    fn notes_play_at_their_period() {
+    fn note_periods() {
         let period = |note| {
             note_writes(instrument(), note)
                 .into_iter()
@@ -724,7 +713,7 @@ mod tests {
     }
 
     #[test]
-    fn a_one_shot_sample_repeats_silence_once_it_ends() {
+    fn one_shot() {
         let mut instrument = instrument();
         instrument.sample = Some(Arc::new(OctamedicSample {
             data: vec![127; 6],
@@ -750,7 +739,7 @@ mod tests {
     }
 
     #[test]
-    fn a_looped_sample_plays_up_to_its_loop_end_then_repeats_the_loop() {
+    fn looped() {
         let mut instrument = instrument();
         let sample = Arc::new(OctamedicSample {
             data: vec![127; 10],
@@ -777,7 +766,7 @@ mod tests {
     }
 
     #[test]
-    fn the_instruments_finetune_picks_the_period() {
+    fn finetune() {
         let mut tuned = instrument();
         tuned.finetune = -8;
         let periods: Vec<u16> = note_writes(tuned, 13)
@@ -791,7 +780,7 @@ mod tests {
     }
 
     #[test]
-    fn output_volume_scales_the_whole_mix_right_away() {
+    fn output_volume() {
         let (mut engine, commands, _) = engine();
         commands
             .send(EngineCommand::SetInstrument {
@@ -807,7 +796,7 @@ mod tests {
             })
             .unwrap();
         let full = run(&mut engine, 1)[0];
-        // a note that is already playing gets quieter too
+        // already playing note should drop too
         commands.send(EngineCommand::SetOutputVolume(16)).unwrap();
         let quarter = run(&mut engine, 1)[0];
         assert!(full > 0.0);
@@ -815,7 +804,7 @@ mod tests {
     }
 
     #[test]
-    fn loading_a_song_keeps_the_output_volume() {
+    fn output_volume_kept() {
         let (mut engine, commands, _) = engine();
         commands.send(EngineCommand::SetOutputVolume(10)).unwrap();
         commands.send(EngineCommand::SetMasterVolume(64)).unwrap();

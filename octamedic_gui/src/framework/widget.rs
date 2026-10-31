@@ -7,7 +7,7 @@ use crate::{
 pub trait OctamedicWidget {
     fn update(&mut self, state: &mut AppState) {}
 
-    /// True if the event was taken, so no other widget gets it.
+    // true means taken, nobody else sees it
     fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
         return false;
     }

@@ -6,12 +6,9 @@ use crate::framework::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Click {
     Ignored,
-    /// The release of a press that clicked.
+    // the release after a click
     Handled,
-    Clicked {
-        button: MouseButton,
-        pos: Point,
-    },
+    Clicked { button: MouseButton, pos: Point },
 }
 
 impl Click {
@@ -20,8 +17,8 @@ impl Click {
     }
 }
 
-/// Clicks on press, like OctaMED's gadgets. The release is taken too, wherever it lands, so
-/// nothing under the pointer sees half a click.
+// clicks on press like OctaMED's gadgets. the release gets eaten wherever it lands so whatever's
+// under the pointer doesn't see half a click
 #[derive(Clone, Debug, Default)]
 pub struct Clickable {
     area: Rect,
@@ -40,7 +37,7 @@ impl Clickable {
         return self.hovered && self.pressed.is_some();
     }
 
-    // Mouse moves are never taken, so every clickable sees them.
+    // moves are never taken, every clickable needs them for hover
     pub fn handle(&mut self, event: &Event) -> Click {
         match *event {
             Event::MouseMove { pos } => {
@@ -95,7 +92,7 @@ mod tests {
     }
 
     #[test]
-    fn pressing_clicks_at_once() {
+    fn press_clicks() {
         let mut clickable = clickable();
         assert_eq!(
             clickable.handle(&down(15, 15)),
@@ -110,14 +107,14 @@ mod tests {
     }
 
     #[test]
-    fn the_release_is_taken_wherever_it_is() {
+    fn release_anywhere() {
         let mut clickable = clickable();
         clickable.handle(&down(15, 15));
         assert_eq!(clickable.handle(&up(100, 100)), Click::Handled);
     }
 
     #[test]
-    fn it_only_looks_pressed_while_the_pointer_is_over_it() {
+    fn pressed_while_hovered() {
         let mut clickable = clickable();
         clickable.handle(&down(15, 15));
         clickable.handle(&Event::MouseMove { pos: [100, 0] });
@@ -127,7 +124,7 @@ mod tests {
     }
 
     #[test]
-    fn a_press_whose_release_was_missed_still_clicks_next_time() {
+    fn missed_release() {
         let mut clickable = clickable();
         clickable.handle(&down(15, 15));
         assert!(clickable.handle(&down(15, 15)) != Click::Ignored);
@@ -139,7 +136,7 @@ mod tests {
     }
 
     #[test]
-    fn presses_and_releases_elsewhere_are_ignored() {
+    fn outside_ignored() {
         let mut clickable = clickable();
         assert_eq!(clickable.handle(&down(100, 100)), Click::Ignored);
         assert_eq!(clickable.handle(&up(15, 15)), Click::Ignored);

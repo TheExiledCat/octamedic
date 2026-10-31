@@ -16,7 +16,7 @@ use crate::{
     },
 };
 
-// Positions are measured from an OctaMED screenshot, from the panel's top left.
+// screenshot measurements, panel's top left
 const COLOR_SECTION: Rect = Rect::new(0, 2, 182, 42);
 const SLIDERS: Rect = Rect::new(0, 2, 160, 30);
 const COLOR_BOXES: Rect = Rect::new(0, 32, 160, 12);

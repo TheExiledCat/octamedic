@@ -19,7 +19,7 @@ use crate::{
 // left to right; they leave the row's last pixel empty
 const WIDTHS: [i32; 12] = [84, 68, 22, 14, 22, 35, 56, 20, 237, 13, 13, 49];
 
-// the boxes, by position in `WIDTHS`
+// indexes into `WIDTHS`
 const SONG_POSITION: usize = 0;
 const BLOCK: usize = 1;
 const EDIT: usize = 3;
@@ -32,7 +32,7 @@ const PREVIOUS_SONG: usize = 9;
 const NEXT_SONG: usize = 10;
 const SONG: usize = 11;
 
-// one small box per track; the gauge starts a line above the rest of the row
+// one small box per track, gauge sits a line higher than the rest of the row
 const GAUGE_COLUMNS: usize = 8;
 const GAUGE_ROWS: usize = 2;
 

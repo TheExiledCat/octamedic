@@ -15,7 +15,7 @@ fn example(name: &str) -> PathBuf {
 }
 
 #[test]
-fn every_example_module_parses() {
+fn parse_examples() {
     for name in ["example.mmd0", "example.mmd1"] {
         let result = OctamedMMDParser::new().parse_file(&example(name));
         assert!(result.is_ok(), "{name}: {:?}", result.err());
@@ -34,7 +34,7 @@ fn instrument_extensions(module: &OctamedMMD) -> Vec<(u8, u8, i8, usize)> {
 }
 
 #[test]
-fn instrument_extensions_survive_a_rewrite() {
+fn instr_ext_rewrite() {
     for name in ["example.mmd0", "example.mmd1"] {
         let module = OctamedMMDParser::new()
             .parse_file(&example(name))
@@ -53,7 +53,7 @@ fn instrument_extensions_survive_a_rewrite() {
 }
 
 #[test]
-fn finetunes_are_read_from_the_instrument_extensions() {
+fn finetunes() {
     let module = OctamedMMDParser::new()
         .parse_file(&example("example.mmd1"))
         .unwrap()

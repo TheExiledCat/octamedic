@@ -8,13 +8,12 @@ use crate::utility::{
     octamed_tempo::OctamedTempo,
 };
 
-/// Instrument slots in a module.
 pub const MAX_INSTRUMENTS: usize = 63;
 
-/// Tracks the song keeps a volume and notation settings for.
+// the song only has volume/notation slots for 16 tracks
 pub const SONG_TRACKS: usize = 16;
 
-/// Most tracks an MMD1 block can have.
+// per MMD1 block
 pub const MAX_TRACKS: usize = 64;
 
 pub const MMD0_ID: u32 = u32::from_be_bytes(*b"MMD0");
@@ -28,7 +27,7 @@ pub const PALETTE_COLORS: usize = 8;
 
 pub const AMIGA_CHANNELS: usize = 4;
 
-/// How long an instrument's name usually is, without its closing NUL.
+// without the NUL
 pub const INSTRUMENT_NAME_LENGTH: usize = 40;
 
 // unused space in the structures, kept so they're written back the same
@@ -122,7 +121,7 @@ pub struct OctamedMMD {
 }
 
 impl OctamedMMD {
-    /// `None` for a module built in memory with an unknown id; parsed modules always have one.
+    /// Only `None` for a module built in memory with a bad id.
     pub fn get_type(&self) -> Option<OctamedMMDType> {
         return match self.header.id.0 {
             MMD0_ID => Some(OctamedMMDType::MMD0),
@@ -198,7 +197,7 @@ pub struct OctamedMMD0Sample {
 }
 
 impl OctamedMMD0Sample {
-    /// Bytes in the file: repeat and repeat length, MIDI channel and preset, volume, transpose.
+    /// Bytes in the file. repeat, replen, midi ch, preset, vol, transpose
     pub const SIZE: usize = 8;
 
     pub fn new() -> Self {
@@ -251,8 +250,7 @@ pub struct OctamedMMDTrackLine {
 }
 
 impl OctamedMMDTrackLine {
-    /// Bytes a track takes on a line: note, instrument and command packed in 3 in MMD0, and a
-    /// byte each in MMD1.
+    // bytes per track per line, MMD0 packs note/instr/cmd into 3
     pub const MMD0_SIZE: usize = 3;
 
     pub const MMD1_SIZE: usize = 4;
@@ -265,11 +263,10 @@ impl OctamedMMDTrackLine {
 
     pub const BLOCK_LINE_NOTE_NUMBER_MASK_MMD1: u8 = 0x7f;
 
-    /// In MMD0, the note takes byte 1's low 6 bits, and the instrument's high bits the rest:
-    /// bit 7 is the instrument's bit 4 and bit 6 its bit 5.
+    // MMD0 byte 1: note in the low 6 bits, then bit 7 = instr bit 4 and bit 6 = instr bit 5 (yes, that way round)
     pub const MMD0_NOTE_BITS: u32 = 6;
 
-    /// In MMD0, the instrument's low bits take byte 2's high 4.
+    // MMD0 byte 2: instr low 4 bits on top, command below
     pub const MMD0_INSTRUMENT_LOW_BITS: u32 = 4;
 
     pub fn from_bytes_mmd0(byte1: UByte, byte2: UByte, byte3: UByte) -> Self {
@@ -288,7 +285,7 @@ impl OctamedMMDTrackLine {
         };
     }
 
-    /// Byte 1's top two bits for `instrument`, the inverse of `from_bytes_mmd0`.
+    /// Top two bits of MMD0 byte 1 for `instrument`.
     pub fn instrument_high_bits_mmd0(instrument: u8) -> u8 {
         return (((instrument >> 4) & 1) << 7) | (((instrument >> 5) & 1) << 6);
     }
@@ -478,8 +475,7 @@ pub struct OctamedMMD0ExpansionHeader {
     pub tag_end: ULong,
 }
 
-/// An `InstrExt` entry. v4 writes only these four fields; later versions add more, which are kept
-/// as they are in `rest`.
+/// `InstrExt` entry. v4 only writes these four, anything newer versions add goes in `rest`.
 pub struct OctamedMMD0ExternalInstrument {
     pub hold: UByte,
     pub decay: UByte,
@@ -528,7 +524,7 @@ pub struct OctamedMMD0Color {
 }
 
 impl OctamedMMD0Color {
-    /// The bits a colour uses: 4 each for red, green and blue.
+    // 0x0RGB
     pub const MASK: u16 = 0x0fff;
 
     const R_SHIFT: u32 = 8;
@@ -539,8 +535,7 @@ impl OctamedMMD0Color {
 
     const CHANNEL_MAX: u16 = 0xf;
 
-    /// An Amiga colour word as 8-bit red, green and blue, with each 4-bit channel stretched
-    /// to the full range.
+    /// 0x0RGB to 8 bits a channel, so 0xF comes out as 0xFF.
     pub fn rgb(color: u16) -> [u8; 3] {
         let channel = |shift: u32| {
             let level = (color >> shift) & Self::CHANNEL_MAX;
@@ -706,7 +701,7 @@ trait AsInstrumentString {
 }
 
 impl AsInstrumentString for UByte {
-    /// Two base-32 digits with a space for a leading zero, as OctaMED shows instruments.
+    // base 32, space instead of a leading zero, like the editor
     fn as_inst_string(&self) -> String {
         if self.0 as usize > MAX_INSTRUMENTS {
             return "??".to_owned();
@@ -720,7 +715,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mmd0_instrument_bit_7_is_bit_4_and_bit_6_is_bit_5() {
+    fn mmd0_instrument_bits() {
         let instrument = |byte1: u8, byte2: u8| {
             let line = OctamedMMDTrackLine::from_bytes_mmd0(UByte(byte1), UByte(byte2), UByte(0));
             return line.instrument_number.0;
@@ -735,7 +730,7 @@ mod tests {
     }
 
     #[test]
-    fn bpm_beat_length_is_one_more_than_the_stored_bits() {
+    fn beat_length() {
         let flags = |flags2: u8| OctamedMMD0SongFlags::from_bytes(UByte(0), UByte(flags2));
         assert_eq!(flags(0x00).bpm_beat_length(), UByte(1));
         assert_eq!(flags(0x23).bpm_beat_length(), UByte(4));

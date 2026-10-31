@@ -19,7 +19,7 @@ use crate::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ButtonClick {
     pub button: MouseButton,
-    /// For a label, the index of the character clicked.
+    // which char of a label was clicked
     pub char_index: Option<usize>,
 }
 
@@ -34,7 +34,7 @@ pub struct ContentArea {
     pub align: Align,
     pub font: Font,
     pub bold: bool,
-    /// For content that draws its own background.
+    // for content that paints its own background
     pub fill: Pen,
 }
 
@@ -98,7 +98,7 @@ pub struct Triangle {
     pub direction: Direction,
     pub width: i32,
     pub height: i32,
-    /// A bar across the point, as on the jump to start/end buttons.
+    // bar across the tip, like the jump to start/end buttons
     pub bar: bool,
 }
 
@@ -124,7 +124,7 @@ impl Triangle {
     const ARROW_WIDTH: i32 = 6;
     const ARROW_HEIGHT: i32 = 5;
 
-    // Across a left or right triangle the bar is two pixels wide, like `Border`.
+    // 2px on left/right triangles, tall pixels
     const BAR_LINES: i32 = 1;
     const BAR_PIXELS: i32 = 2;
 
@@ -138,7 +138,7 @@ impl Triangle {
         };
     }
 
-    /// Centred inside the frame, rounding right and down.
+    // centred, rounding right and down
     fn area(&self, inside: Rect) -> Rect {
         let [width, height] = self.size();
         return Rect::new(
@@ -149,7 +149,7 @@ impl Triangle {
         );
     }
 
-    /// Returns (bar, triangle).
+    // (bar, triangle)
     fn split_bar(&self, area: Rect) -> (Rect, Rect) {
         return match self.direction {
             Direction::Up => area.split_top(Self::BAR_LINES),
@@ -178,7 +178,7 @@ impl ButtonContent for Triangle {
     }
 }
 
-/// A label followed by a down arrow, like the play sequence's INS.
+// label then a down arrow, like INS in the play sequence
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ArrowLabel {
     pub label: &'static str,
@@ -189,17 +189,17 @@ impl ArrowLabel {
         return Self { label };
     }
 
-    /// On top of the blank pixel the font leaves after the last letter.
+    // on top of the blank column the font already leaves
     const GAP: i32 = 1;
-    /// [width, height]; two pixels wide, like `Border`.
+    // [w, h]
     const STEM: [i32; 2] = [2, 4];
     const HEAD: [i32; 2] = [6, 3];
     const ARROW: [i32; 2] = [Self::HEAD[0], Self::STEM[1] + Self::HEAD[1]];
 
-    /// Centred together, rounding right as OctaMED does here. When they don't fit, the arrow
-    /// stays inside the frame and the label overflows to the left.
+    // centred together, rounding right like OctaMED. if it doesn't fit the arrow stays in the
+    // frame and the label spills out to the left
     fn place(&self, line: &Line, inside: Rect) -> (i32, Rect) {
-        // from the label's first letter, as `line_x` centres it
+        // from the first ink, same as line_x
         let (blank, _) = line.blank_sides();
         let [arrow_width, arrow_height] = Self::ARROW;
         let width = line.width() - blank + Self::GAP + arrow_width;
@@ -243,7 +243,7 @@ impl IncDec {
         };
     }
 
-    /// Centred rounding right and up, as OctaMED's sit.
+    // rounds right and up, that's where OctaMED's sit
     fn lines(&self, inside: Rect) -> (Rect, Option<Rect>) {
         let x = inside.x + (inside.w - self.width + 1) / 2;
         let y = inside.y + (inside.h - self.height) / 2;
@@ -274,21 +274,21 @@ impl ButtonContent for IncDec {
     }
 }
 
-/// A clone shares the original's content and handler.
+// clones share the content and handler
 #[derive(Clone)]
 pub struct Button {
     content: Rc<dyn ButtonContent>,
     clickable: Clickable,
     on_click: Option<Rc<dyn ButtonHandler>>,
-    /// Drawn inverted, like OctaMED's switched-on buttons.
+    // drawn inverted like OctaMED's switched on buttons
     toggled: bool,
     border: i32,
-    /// [sides, top and bottom].
+    // [x, y]
     padding: [i32; 2],
     align: Align,
     font: Font,
     bold: bool,
-    /// Where it was last rendered.
+    // from the last render
     area: Rect,
     click: Option<ButtonClick>,
 }
@@ -310,7 +310,7 @@ impl Button {
         };
     }
 
-    /// Takes the last click, for owners that poll instead of setting a handler.
+    // for owners that poll instead of setting a handler
     pub fn clicked(&mut self) -> Option<ButtonClick> {
         return self.click.take();
     }
@@ -386,8 +386,8 @@ impl Button {
         };
     }
 
-    /// (fill, content), swapped while toggled. Holding it down doesn't change how it looks; a
-    /// button that should show that does it through its toggle.
+    // (fill, content), swapped when toggled. holding it down doesn't change the look, buttons
+    // that want that use the toggle
     fn pens(&self) -> (Pen, Pen) {
         let (fill, content) = (Pen::FILL, Pen::BLACK);
         return if self.toggled {
@@ -423,8 +423,7 @@ impl OctamedicWidget for Button {
     }
 }
 
-/// The fitted line and its x. A label too long for the padding moves into it, as OctaMED does
-/// with `CHRD`.
+// a label too long for the padding moves into it, OctaMED does that with CHRD
 fn place_line<'a>(line: &'a Line, area: ContentArea) -> (Line<'a>, i32) {
     let line = line.fit(area.inside.w);
     let width = line.width();
@@ -458,7 +457,7 @@ mod tests {
         button.handle_event(state, &Event::MouseUp { pos, button: mouse });
     }
 
-    /// "NEXT" centred in 40 pixels starts at x 4.
+    // NEXT centred in 40px starts at x 4
     fn next_button(handler: impl ButtonHandler) -> Button {
         let mut button = Button::new("NEXT").on_click(handler);
         button.area = Rect::new(0, 0, 40, 10);
@@ -467,7 +466,7 @@ mod tests {
     }
 
     #[test]
-    fn a_bar_goes_across_the_point() {
+    fn triangle_bar() {
         let inside = Rect::new(50, 20, 16, 9);
         let up = Triangle::new(Direction::Up, 12, 6).with_bar();
         let area = up.area(inside);
@@ -480,8 +479,8 @@ mod tests {
     }
 
     #[test]
-    fn the_arrow_after_ins_stays_inside_the_frame() {
-        // the play sequence's INS with an arrow, 36 pixels wide
+    fn ins_arrow() {
+        // play sequence INS, 36 wide
         let button = Button::new("").font(Font::Label);
         let area = button.content_area(Rect::new(56, 32, 36, 11));
         let ins = ArrowLabel::new("INS");
@@ -493,7 +492,7 @@ mod tests {
     }
 
     #[test]
-    fn a_plus_crosses_in_the_middle_and_a_minus_is_only_the_line_across() {
+    fn plus_minus() {
         let inside = Rect::new(10, 20, 16, 8);
         let (across, down) = IncDec::new(true, 8, 6, 1).lines(inside);
         assert_eq!(across, Rect::new(14, 24, 8, 1));
@@ -503,7 +502,7 @@ mod tests {
     }
 
     #[test]
-    fn only_toggling_inverts_the_button() {
+    fn toggle_inverts() {
         let normal = (Pen::FILL, Pen::BLACK);
         let inverted = (Pen::BLACK, Pen::FILL);
         let mut button = next_button(|_, _| {});
@@ -521,7 +520,7 @@ mod tests {
     }
 
     #[test]
-    fn labels_too_long_for_the_padding_move_into_it() {
+    fn long_label_padding() {
         // the status row's CHRD and < boxes
         let place = |button: Button, rect, text: &'static str| {
             let line = Line::from(text);
@@ -538,7 +537,7 @@ mod tests {
     }
 
     #[test]
-    fn a_click_is_kept_until_it_is_taken() {
+    fn click_kept() {
         let mut button = next_button(|_, _| {});
         assert_eq!(button.clicked(), None);
         click(&mut button, &mut state(), [5, 5]);
@@ -549,7 +548,7 @@ mod tests {
     }
 
     #[test]
-    fn a_clone_runs_the_same_handler() {
+    fn clone_shares_handler() {
         let mut state = state();
         let template = next_button(|state, _| state.next_pattern());
         let mut copy = template.clone();
@@ -558,7 +557,7 @@ mod tests {
     }
 
     #[test]
-    fn arrows_sit_where_octamed_has_them() {
+    fn arrow_position() {
         let inside = inside_frame(Rect::new(561, 65, 13, 11), 1);
         assert_eq!(
             Triangle::arrow(Direction::Left).area(inside),
@@ -567,7 +566,7 @@ mod tests {
     }
 
     #[test]
-    fn the_label_sits_inside_the_frame_and_padding() {
+    fn content_padding() {
         let area = Rect::new(3, 65, 84, 11);
         assert_eq!(
             Button::new("").content_area(area).padded,
@@ -580,7 +579,7 @@ mod tests {
     }
 
     #[test]
-    fn a_click_runs_the_handler_on_the_state() {
+    fn click_runs_handler() {
         let mut state = state();
         let mut button = next_button(|state, _| state.next_pattern());
         click(&mut button, &mut state, [5, 5]);
@@ -588,7 +587,7 @@ mod tests {
     }
 
     #[test]
-    fn a_click_says_which_character_of_the_label_it_was_on() {
+    fn click_char_index() {
         let clicked = Rc::new(Cell::new(None));
         let seen = clicked.clone();
         let mut button = next_button(move |_, click| seen.set(Some(click.char_index)));

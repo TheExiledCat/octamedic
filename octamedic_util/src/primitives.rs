@@ -1,6 +1,5 @@
 pub trait Flip {
-    /// Not `toggle`, so it can't clash with `bool::toggle`, which arrived after the Rust version
-    /// this builds with.
+    // not `toggle`, newer rust has bool::toggle and it'd clash
     fn flip(&mut self);
 }
 
@@ -15,7 +14,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn flipping_twice_gets_back_where_it_started() {
+    fn flip_twice() {
         let mut value = false;
         value.flip();
         assert!(value);

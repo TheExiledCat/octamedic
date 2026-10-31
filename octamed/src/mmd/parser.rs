@@ -81,7 +81,8 @@ impl OctamedMMDParser {
                 .as_ref()
                 .map_or(Offset(0), |e| e.header.next_module_ptr);
             modules.push(module);
-            // each module points at the next; a pointer back would loop forever
+            // a pointer backwards would loop forever
+
             if next.is_null() || next.0 <= offset.0 {
                 return Ok(modules);
             }
@@ -331,7 +332,7 @@ impl OctamedMMDParser {
                         line_count,
                     };
                     let mut block = OctamedMMD0Block { lines: vec![] };
-                    // stored as lines - 1; u32 so 255 + 1 doesn't overflow
+                    // stored as lines - 1, u32 so 255 + 1 doesn't overflow
                     for _i in 0..(line_count.0 as u32) + 1 {
                         let mut block_line = OctamedMMD0BlockLine { tracks: vec![] };
                         for _track in 0..track_count.0 {
@@ -368,7 +369,7 @@ impl OctamedMMDParser {
                         lines: vec![],
                         info,
                     };
-                    // stored as lines - 1; u32 so 65535 + 1 doesn't overflow
+                    // same, 65535 + 1
                     for _i in 0..(line_count.0 as u32) + 1 {
                         let mut block_line = OctamedMMD0BlockLine { tracks: vec![] };
                         for _track in 0..track_count.0 {
@@ -418,7 +419,7 @@ impl OctamedMMDParser {
             page_table_ptr,
             reserved,
         };
-        // block_name is at the pointed address, not sequential after the header struct
+        // the name is wherever the pointer says, not right after the header
         stream.seek(header.block_name_string_ptr.into())?;
         let mut block_name =
             String::with_capacity(header.block_name_length.0.saturating_sub(1) as usize);
@@ -539,7 +540,7 @@ impl OctamedMMDParser {
         }));
     }
 
-    /// The `InstrExt` entries. Entries shorter than v4's leave the missing fields at 0.
+    // entries shorter than v4's get the missing fields as 0
     fn parse_external_instruments<R: Read + Seek>(
         stream: &mut R,
         header: &OctamedMMD0ExpansionHeader,

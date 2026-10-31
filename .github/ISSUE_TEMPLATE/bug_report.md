@@ -1,39 +1,23 @@
 ---
 name: Bug report
-about: Something crashes, produces wrong output, or behaves unexpectedly
+about: Something crashes, sounds wrong or doesn't work right
 labels: bug
 ---
 
-## What happened
+What happened:
 
-<!-- A clear description of the bug. -->
+How to reproduce it (which file, which command):
 
-## Steps to reproduce
+What you expected instead:
 
-1. Load file `...`
-2. Run command `...`
-3. See error / wrong output
+OS, `rustc --version`, and CLI or GUI:
 
-## Expected behaviour
-
-<!-- What should have happened instead. -->
-
-## Environment
-
-- OS: <!-- e.g. Ubuntu 24.04, Windows 11, macOS 14 -->
-- Rust version: <!-- `rustc --version` -->
-- Crate / binary: <!-- e.g. octamed_cli, octamedic_core -->
-
-## Relevant output or panic message
+Output or panic message:
 
 ```
 paste here
 ```
 
-## MMD file
-
-<!-- If the bug is reproducible with a specific file, attach it or describe its contents (format, track count, instrument types). Do not attach files with copyrighted samples. -->
-
-## Additional context
-
-<!-- Anything else that might help — e.g. only happens with MMD1 not MMD0, only on certain sample rates, etc. -->
+<!-- If it happens with a specific module, attach it if you can (or say what it is: MMD0/MMD1,
+how many tracks, etc). Please no modules with copyrighted samples. Anything else that helps, like
+"only on MMD1" or "only at 48 kHz", goes here too. -->

@@ -13,16 +13,14 @@ const DEFAULT_TICKS_PER_LINE: u8 = 6;
 
 const SECONDS_PER_MINUTE: f32 = 60.0;
 
-/// Divided by the primary tempo for the timer count, on PAL and NTSC alike.
+// count = 470000 / tempo, same on NTSC, so NTSC plays tempo mode a bit faster
 const TEMPO_TIMER_CONSTANT: u32 = 470_000;
 
-/// Timer counts for primary tempos 1-10, which play like SoundTracker speeds. As in the original,
-/// including the dip at 9.
+// tempos 1-10 play like SoundTracker speeds. straight from the player, 9 really is that low
 const COMPATIBILITY_COUNTS: [u16; 10] = [
     2417, 4833, 7250, 9666, 12083, 14500, 16916, 19332, 21436, 24163,
 ];
 
-/// BPM mode runs a tick on every 4th timer interrupt.
 const BPM_INTERRUPTS_PER_TICK: u32 = 4;
 
 #[derive(Clone, Copy)]
@@ -68,14 +66,14 @@ impl OctamedicTempo {
         return bpm.round().clamp(1.0, u16::MAX as f32) as u16;
     }
 
-    /// The CIA timer count OctaMED v4 uses for this tempo.
+    /// CIA timer count, same as v4.
     pub fn timer_count(&self, clock: AmigaClock) -> u16 {
         if self.is_bpm_mode {
             let divisor = self.primary_tempo as u32 * self.lines_per_beat.max(1) as u32;
-            // DIVU only takes MULU's low word
+            // MULU result gets truncated to a word before the DIVU
             return divu(bpm_timer_constant(clock), divisor as u16);
         }
-        // never stored by OctaMED; the original would read past its table
+        // OctaMED never saves 0, the original would read off the end of its table
         let tempo = self.primary_tempo.max(1);
         if tempo <= COMPATIBILITY_COUNTS.len() as u16 {
             return COMPATIBILITY_COUNTS[tempo as usize - 1];
@@ -96,7 +94,7 @@ impl OctamedicTempo {
         return clock_cycles as f64 / clock.e_clock as f64;
     }
 
-    /// On a PAL Amiga.
+    /// PAL.
     pub fn get_tick_rate(&self) -> Frequency {
         return Frequency::hertz((1.0 / self.tick_seconds(AmigaClock::PAL)) as f32);
     }
@@ -120,7 +118,7 @@ impl Default for OctamedicTempo {
     }
 }
 
-/// BPM mode divides this by BPM × lines per beat: the E-clock × 2.5, rounded down.
+// e-clock * 2.5, divided by bpm * lpb in bpm mode
 fn bpm_timer_constant(clock: AmigaClock) -> u32 {
     return clock.e_clock * 5 / 2;
 }
@@ -144,7 +142,7 @@ mod tests {
     }
 
     #[test]
-    fn tempos_1_to_10_use_the_compatibility_table() {
+    fn compat_tempos() {
         let counts: Vec<u16> = (1..=10)
             .map(|t| tempo(t).timer_count(AmigaClock::PAL))
             .collect();
@@ -152,14 +150,14 @@ mod tests {
     }
 
     #[test]
-    fn higher_tempos_divide_470000_dropping_the_remainder() {
+    fn high_tempos() {
         assert_eq!(tempo(11).timer_count(AmigaClock::PAL), 42727);
         assert_eq!(tempo(33).timer_count(AmigaClock::PAL), 14242);
         assert_eq!(tempo(240).timer_count(AmigaClock::PAL), 1958);
     }
 
     #[test]
-    fn tempo_mode_uses_the_same_count_on_ntsc() {
+    fn tempo_mode_ntsc() {
         assert_eq!(
             tempo(33).timer_count(AmigaClock::NTSC),
             tempo(33).timer_count(AmigaClock::PAL)
@@ -168,22 +166,22 @@ mod tests {
     }
 
     #[test]
-    fn a_tempo_of_0_plays_like_1() {
+    fn tempo_zero() {
         assert_eq!(tempo(0).timer_count(AmigaClock::PAL), 2417);
     }
 
     #[test]
-    fn bpm_mode_divides_the_machines_constant_by_bpm_times_lines_per_beat() {
+    fn bpm_count() {
         // 1773447 / 500 and 1789772 / 500
         assert_eq!(bpm(125, 4).timer_count(AmigaClock::PAL), 3546);
         assert_eq!(bpm(125, 4).timer_count(AmigaClock::NTSC), 3579);
     }
 
     #[test]
-    fn bpm_mode_ticks_every_fourth_interrupt() {
+    fn bpm_interrupts() {
         let tempo = bpm(60, 8);
         assert_eq!(tempo.interrupts_per_tick(), 4);
-        // 8 lines a second, a little faster since the count rounds down to 3694
+        // a hair over 8 lines/s, the count rounds down to 3694
         let lines_per_second = 1.0 / (tempo.tick_seconds(AmigaClock::PAL) * 6.0);
         assert!(
             (lines_per_second - 8.0015).abs() < 0.0001,
@@ -192,14 +190,14 @@ mod tests {
     }
 
     #[test]
-    fn very_slow_bpm_overflows_into_the_constants_low_word() {
+    fn slow_bpm_overflow() {
         assert_eq!(bpm(28, 1).timer_count(AmigaClock::PAL), 63337);
         // 1773447 is $1B0F87
         assert_eq!(bpm(27, 1).timer_count(AmigaClock::PAL), 0x0F87);
     }
 
     #[test]
-    fn the_tick_rate_follows_the_count() {
+    fn tick_rate() {
         let rate = tempo(33).get_tick_rate().as_hertz() as f64;
         assert!((rate - 709379.0 / 14242.0).abs() < 0.01, "{rate}");
     }

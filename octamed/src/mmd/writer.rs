@@ -10,7 +10,7 @@ use crate::{
             OctamedMMDTrackLine,
         },
     },
-    utility::bytes::{Offset, UByte, ULong, UWord, ValueMap}, // UByte used in MMD0 track encoding
+    utility::bytes::{Offset, UByte, ULong, UWord, ValueMap},
 };
 
 type Result<T> = MmdResult<T>;
@@ -174,7 +174,7 @@ impl OctamedMMDWriter {
             }
             self.layout.alloc(
                 Slot::Annotation,
-                (e.annotation.len() as u32) + 1, // +1 for null terminator, matches IntoBytes for String
+                (e.annotation.len() as u32) + 1, // + NUL
             );
             self.layout.alloc(
                 Slot::InstrumentInfos,
@@ -191,7 +191,7 @@ impl OctamedMMDWriter {
             }
             self.layout.alloc(
                 Slot::SongName,
-                (e.song_name.len() as u32) + 1, // +1 for null terminator, matches IntoBytes for String
+                (e.song_name.len() as u32) + 1, // + NUL
             );
             // todo: mmd_dump, info, rexx and midi are written as null pointers for now
         }
@@ -362,7 +362,7 @@ impl OctamedMMDWriter {
             if let Some(info_blk) = info {
                 let bits_per_ulong = u32::BITS as usize;
                 let line_count = header.line_count;
-                // line_count is zero-indexed; actual count is line_count.0 + 1
+                // line_count is lines - 1
                 let count = ((line_count.0 as usize) + 1).div_ceil(bits_per_ulong);
                 self.writer
                     .write_bytes(&self.layout.at(Slot::BlockHighlights(i)))?;
@@ -373,7 +373,7 @@ impl OctamedMMDWriter {
                 // the page table is MMD2+ only
                 self.writer.write_bytes(&Offset(0))?;
                 self.writer.write_bytes(&info_blk.header.reserved)?;
-                //for now highlight mask not implemented; write count ULongs of zeros
+                //no highlight mask yet, all zeros
                 self.writer.write_bytes(&vec![ULong(0); count])?;
                 self.writer.write_bytes(&info_blk.block_name)?;
             }
@@ -494,7 +494,7 @@ impl Default for OctamedMMDWriter {
     }
 }
 
-/// A part of the module file, placed by the layout before anything is written.
+// a chunk of the file, placed by the layout before anything gets written
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum Slot {
     Header,
@@ -535,7 +535,8 @@ impl AllocatorLayout {
         self.cursor += size;
     }
 
-    /// Panics if `slot` wasn't allocated, which is a bug in the writer.
+    // panics if the slot wasn't allocated, that's a writer bug
+
     fn at(&self, slot: Slot) -> Offset {
         return *self
             .positions

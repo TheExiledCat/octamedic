@@ -6,8 +6,7 @@ use crate::{
     framework::{event::Event, painter::Painter, rect::Rect, widget::OctamedicWidget},
 };
 
-/// Widgets in rows of `columns`. When the area doesn't divide evenly, the spare pixels are spread
-/// over the cells.
+// widgets in rows of `columns`, spare pixels get spread over the cells
 pub struct Grid<W> {
     columns: usize,
     rows: usize,
@@ -15,7 +14,7 @@ pub struct Grid<W> {
 }
 
 impl<W> Grid<W> {
-    /// Cells past `columns * rows` are never shown.
+    // anything past columns * rows isn't shown
     pub fn new(columns: usize, rows: usize, cells: Vec<W>) -> Self {
         return Self {
             columns,
@@ -72,7 +71,6 @@ impl<W: OctamedicWidget> OctamedicWidget for Grid<W> {
     }
 }
 
-/// Start and length of cell `index` of `count`.
 fn span(start: i32, length: i32, index: usize, count: usize) -> (i32, i32) {
     let edge = |i: usize| start + length * i as i32 / count as i32;
     let from = edge(index);
@@ -88,7 +86,7 @@ mod tests {
     }
 
     #[test]
-    fn cells_go_along_the_rows_first() {
+    fn row_major() {
         let grid = grid(2, 5);
         let area = Rect::new(10, 20, 116, 50);
         assert_eq!(grid.cell_area(area, 0), Rect::new(10, 20, 58, 10));
@@ -98,7 +96,7 @@ mod tests {
     }
 
     #[test]
-    fn the_cells_fill_an_area_that_doesnt_divide_evenly() {
+    fn uneven_area() {
         let grid = grid(8, 2);
         let area = Rect::new(0, 0, 54, 11);
         let widths: Vec<i32> = (0..8).map(|i| grid.cell_area(area, i).w).collect();
@@ -110,7 +108,7 @@ mod tests {
     }
 
     #[test]
-    fn cells_outside_the_grid_are_none() {
+    fn out_of_range() {
         let mut grid = grid(2, 2);
         assert!(grid.cell_mut(1, 1).is_some());
         assert!(grid.cell_mut(2, 0).is_none());

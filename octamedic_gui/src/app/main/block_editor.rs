@@ -27,8 +27,8 @@ use crate::{
 // odd, so there is a middle row for the cursor's line
 const ROWS: i32 = 15;
 
-// measured from OctaMED's 4-track view, in font pixels: one sample each, starting 2 into the
-// track. Scopes run from the top of the highlighted line down, meters from the editor's middle.
+// measured off OctaMED's 4-track view, in font pixels. a sample per pixel, 2 in from the track
+// edge. scopes hang off the highlighted line, meters off the middle of the editor
 const SCOPE_OFFSET: i32 = 2;
 const SCOPE_SAMPLES: usize = 42;
 
@@ -234,8 +234,8 @@ impl BlockEditor {
         });
     }
 
-    // OctaMED draws the cursor by setting the red bitplane, so its colour depends on what's
-    // under it; the text under each part is redrawn in the matching colour.
+    // OctaMED does the cursor by setting the red bitplane, so its colour depends on what's under
+    // it. faked here by redrawing the text under each part in the matching colour
     fn render_cursor(
         &self,
         pattern: &OctamedicPattern,
@@ -536,7 +536,7 @@ fn meter_area(layout: &Layout, area: Rect, index: usize) -> Rect {
     return Rect::new(x, area.y + top, METER_WIDTH * pixel, area.h - top);
 }
 
-// the cell of `track` on the screen line at `y`, if that line is in the block
+// None if `y` is above or below the block
 fn cell_at(
     pattern: &OctamedicPattern,
     cursor_line: usize,
@@ -549,8 +549,8 @@ fn cell_at(
     return pattern.lines.get(line)?.tracks.get(track);
 }
 
-// OctaMED ORs the scope's bitplanes into the screen, so where a dot crosses text's ink it turns
-// the paler pink, as the cursor does
+// OctaMED ORs the scope bitplanes into the screen, dots over text go the paler pink like the
+// cursor
 fn blend_text(text: &str, x: i32, line: usize, font: Font, run: Rect, painter: &mut Painter) {
     for (start, width) in font.ink(text, line) {
         let left = (x + start).max(run.x);
@@ -610,7 +610,7 @@ mod tests {
     }
 
     #[test]
-    fn scopes_and_meters_sit_where_octamed_draws_them() {
+    fn scope_meter_positions() {
         let area = Rect::new(0, 77, 640, 120);
         let layout = Layout::new(area, 4);
         // two pixels a sample, starting 4 pixels into the track, from the highlighted line down
@@ -620,7 +620,7 @@ mod tests {
     }
 
     #[test]
-    fn silent_meters_still_show_their_bottom_line() {
+    fn silent_meter_bottom() {
         let (mut editor, state) = (BlockEditor::new(), state());
         let area = Rect::new(0, 77, 640, 120);
         let layout = Layout::new(area, 4);
@@ -637,7 +637,7 @@ mod tests {
     }
 
     #[test]
-    fn scope_dots_turn_paler_where_they_cross_text() {
+    fn scope_blends_with_text() {
         let mut fills = Fills::default();
         let palette = OctamedicProject::new().palette();
         let mut painter = Painter::new(&mut fills, &palette);
@@ -668,7 +668,7 @@ mod tests {
     }
 
     #[test]
-    fn function_keys_jump_through_the_block() {
+    fn fkeys_jump() {
         let (mut editor, mut state) = (BlockEditor::new(), state());
         // the default block has 64 lines
         let keys = [
@@ -685,7 +685,7 @@ mod tests {
     }
 
     #[test]
-    fn function_keys_set_the_octave() {
+    fn fkeys_octave() {
         let (mut editor, mut state) = (BlockEditor::new(), state());
         let keys = [
             KeyCode::F1,
@@ -701,7 +701,7 @@ mod tests {
     }
 
     #[test]
-    fn note_keys_write_notes_only_in_edit_mode() {
+    fn notes_need_edit_mode() {
         let (mut editor, mut state) = (BlockEditor::new(), state());
         assert!(editor.handle_event(&mut state, &Event::text('z')));
         assert!(state.is_saved());
@@ -716,7 +716,7 @@ mod tests {
     }
 
     #[test]
-    fn held_or_modified_note_keys_write_nothing() {
+    fn held_keys() {
         let (mut editor, mut state) = (BlockEditor::new(), state());
         state.cursor.edit_mode = true;
         let held = Event::Text {
@@ -738,7 +738,7 @@ mod tests {
     }
 
     #[test]
-    fn arrows_move_the_cursor_and_wrap() {
+    fn arrows_wrap() {
         let (mut editor, mut state) = (BlockEditor::new(), state());
         press(&mut editor, &mut state, KeyCode::Up, KeyMods::NONE);
         assert_eq!(state.cursor.line, 63);
@@ -752,7 +752,7 @@ mod tests {
     }
 
     #[test]
-    fn esc_switches_edit_mode() {
+    fn esc_toggles_edit() {
         let (mut editor, mut state) = (BlockEditor::new(), state());
         press(&mut editor, &mut state, KeyCode::Escape, KeyMods::NONE);
         assert!(state.cursor.edit_mode);
@@ -761,7 +761,7 @@ mod tests {
     }
 
     #[test]
-    fn block_keys_stop_at_the_first_and_last_block() {
+    fn block_keys_clamp() {
         let (mut editor, mut state) = (BlockEditor::new(), state());
         state.next_pattern();
         state.next_pattern();
@@ -779,7 +779,7 @@ mod tests {
     }
 
     #[test]
-    fn the_view_scrolls_to_keep_the_cursors_track_on_screen() {
+    fn view_follows_cursor() {
         let mut editor = BlockEditor::new();
         editor.scroll_to(10, 16, 8);
         assert_eq!(editor.first_track, 3);
@@ -790,7 +790,7 @@ mod tests {
     }
 
     #[test]
-    fn notes_read_like_octameds() {
+    fn note_names() {
         assert_eq!(note_text(0), "---");
         assert_eq!(note_text(1), "C-1");
         assert_eq!(note_text(14), "C#2");
@@ -798,7 +798,7 @@ mod tests {
     }
 
     #[test]
-    fn instruments_are_base_32() {
+    fn instrument_base32() {
         assert_eq!(instrument_text(0), " 0");
         assert_eq!(instrument_text(9), " 9");
         assert_eq!(instrument_text(10), " A");
@@ -808,7 +808,7 @@ mod tests {
     }
 
     #[test]
-    fn a_cell_is_nine_characters() {
+    fn cell_width() {
         let cell = OctamedicPatternTrack {
             note: OctamedicNote { value: 14 },
             instrument_id: InstrumentId(1),

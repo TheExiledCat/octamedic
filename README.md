@@ -31,9 +31,10 @@ A faithful clone of OctaMED Professional v4
 
 ## Contributing
 
-- [CONTRIBUTING.md](CONTRIBUTING.md) — setup, architecture overview, code style, and PR process
-- [docs/PLAYER.md](docs/PLAYER.md) — how the player works: Paula, DMA and the CIA timer
-- [Bug report](.github/ISSUE_TEMPLATE/bug_report.md) / [Feature request](.github/ISSUE_TEMPLATE/feature_request.md) — issue templates
+- [CONTRIBUTING.md](CONTRIBUTING.md) for building, code style and PRs
+- [docs/PLAYER.md](docs/PLAYER.md) for how the player works (Paula, DMA, the CIA timer)
+- [octamedic_gui/FRAMEWORK.md](octamedic_gui/FRAMEWORK.md) for the GUI's UI framework
+- issue templates: [bug report](.github/ISSUE_TEMPLATE/bug_report.md), [feature request](.github/ISSUE_TEMPLATE/feature_request.md)
 
 ## Documentation
 

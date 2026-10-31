@@ -7,7 +7,8 @@ use crate::utility::{
 
 pub const SEMITONES_PER_OCTAVE: u8 = 12;
 
-/// The MIDI note of A above middle C, which `BASE_FREQ` is the pitch of.
+// A4, the note BASE_FREQ is
+
 const BASE_FREQ_MIDI: i32 = 69;
 
 #[derive(Clone, Copy)]
