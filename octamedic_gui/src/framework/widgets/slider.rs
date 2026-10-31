@@ -194,15 +194,18 @@ impl OctamedicWidget for Slider {
     }
 
     /// As OctaMED draws its sliders: a dotted track in a frame, and a light handle with a shadow
-    /// along its bottom.
+    /// along its bottom and just past its right edge.
     fn render(&mut self, _state: &AppState, area: Rect, painter: &mut Painter) {
         let track = painter.frame(area, 1);
         self.area = track;
-        painter.dotted_rect(track, Pen::SHADOW, Pen::BLACK);
+        painter.dotted_rect(track, Pen::BLACK, Pen::SHADOW);
         let handle = self.handle_rect(track);
         painter.fill(handle, Pen::LIGHT);
         let bottom = Rect::new(handle.x, handle.bottom() - 1, handle.w, 1);
         painter.fill(bottom, Pen::SHADOW);
+        if handle.right() < track.right() {
+            painter.fill(Rect::new(handle.right(), handle.y, 1, handle.h), Pen::SHADOW);
+        }
     }
 }
 
