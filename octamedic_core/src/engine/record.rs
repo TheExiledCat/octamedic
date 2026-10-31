@@ -77,6 +77,7 @@ impl Recorder {
             song,
             EngineCommand::PlaySong {
                 sequence_start,
+                row: 0,
                 looping: false,
             },
         ));
@@ -95,6 +96,7 @@ impl Recorder {
             song,
             EngineCommand::PlayPattern {
                 pattern,
+                row: 0,
                 looping: false,
             },
         ));

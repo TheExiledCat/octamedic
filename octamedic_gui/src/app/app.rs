@@ -15,6 +15,7 @@ use crate::{
         painter::Painter,
         rect::Point,
         screen::{SCREEN, SCREEN_HEIGHT, SCREEN_WIDTH, ScaleMode, to_screen, viewport},
+        target::BatchedCanvas,
         widget::OctamedicWidget,
     },
 };
@@ -94,9 +95,13 @@ impl App {
     fn render_screen(&mut self, ctx: &mut Context) -> GameResult {
         let mut canvas = Canvas::from_image(ctx, self.screen.clone(), Color::BLACK);
         canvas.set_sampler(Sampler::nearest_clamp());
-        let pallete = self.state.pallete;
-        let mut painter = Painter::new(&mut canvas, &pallete);
-        self.main.render(&self.state, SCREEN, &mut painter);
+        let palette = self.state.palette;
+        {
+            let mut target = BatchedCanvas::new(&ctx.gfx, &mut canvas, SCREEN);
+            let mut painter = Painter::new(&mut target, &palette);
+            self.main.render(&self.state, SCREEN, &mut painter);
+        }
+        // after the screen's fills are drawn, so it's on top
         let [x, y] = self.pointer;
         let cursor = DrawParam::new()
             .dest([x as f32, y as f32])

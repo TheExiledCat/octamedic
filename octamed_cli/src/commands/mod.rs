@@ -3,7 +3,7 @@ pub mod clear;
 pub mod exit;
 pub mod inspect;
 pub mod instruments;
-pub mod pallete;
+pub mod palette;
 pub mod play;
 pub mod record;
 pub mod repl;

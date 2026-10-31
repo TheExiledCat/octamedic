@@ -2,7 +2,7 @@ use std::io::Write;
 
 use crate::{
     mmd::module::{
-        OctamedMMD, OctamedMMD0BlockHeader, OctamedMMD0ColorPallete, OctamedMMD0Dump,
+        OctamedMMD, OctamedMMD0BlockHeader, OctamedMMD0ColorPalette, OctamedMMD0Dump,
         OctamedMMD0ExpansionHeader, OctamedMMD0Header, OctamedMMD0Info, OctamedMMD0MidiCommands,
         OctamedMMD0NotationInfo, OctamedMMD0Rexx, OctamedMMD0SampleHeader, OctamedMMD0SampleTable,
         OctamedMMD0Song, OctamedMMD1BlockHeader, OctamedMMD1BlockInfoHeader, OctamedMMDBlockTable,
@@ -61,7 +61,7 @@ impl BinarySize for OctamedMMD0ExpansionHeader {
     }
 }
 
-impl BinarySize for OctamedMMD0ColorPallete {
+impl BinarySize for OctamedMMD0ColorPalette {
     fn get_size(&self, _mmd: &OctamedMMD) -> u32 {
         return (size_of::<UWord>() * PALETTE_COLORS) as u32;
     }

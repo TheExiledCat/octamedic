@@ -233,7 +233,7 @@ impl OctamedMMDWriter {
             );
             if !e.header.rgb_table_ptr.is_null() {
                 self.layout
-                    .alloc(Slot::Palette, e.color_pallete.get_size(mmd));
+                    .alloc(Slot::Palette, e.color_palette.get_size(mmd));
             }
             if !e.header.notation_info_ptr.is_null() {
                 self.layout
@@ -524,7 +524,7 @@ impl OctamedMMDWriter {
             self.writer.write_bytes(&info.name)?;
         }
         if !exp.header.rgb_table_ptr.is_null() {
-            self.writer.write_bytes(&exp.color_pallete)?;
+            self.writer.write_bytes(&exp.color_palette)?;
         }
         if !exp.header.notation_info_ptr.is_null() {
             let info = &exp.notation_info;

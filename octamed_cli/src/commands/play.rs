@@ -37,7 +37,7 @@ impl Command for PlayCommand {
         let engine = EngineHandle::spawn().map_err(|e| CommandError::Generic(e.to_string()))?;
         engine.set_output_volume(self.volume);
         engine.load_song(song);
-        engine.play_song(0, false);
+        engine.play_song(0, 0, false);
         println!("Playing... (press Ctrl+C to stop)");
         // Give the engine a moment to pick up the play command before polling its status.
         std::thread::sleep(START_WAIT);

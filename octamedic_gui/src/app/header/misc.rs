@@ -1,5 +1,5 @@
 use octamed::mmd::module::PALETTE_COLORS;
-use octamedic_core::data::palette::{CHANNEL_MAX, Channel, OctamedColorPallete};
+use octamedic_core::data::palette::{CHANNEL_MAX, Channel, OctamedColorPalette};
 
 use crate::{
     app::state::AppState,
@@ -37,7 +37,7 @@ const CHANNEL_LETTERS: [&str; 3] = ["R", "G", "B"];
 
 const COLOR_BOX_WIDTH: i32 = 20;
 
-/// Lines between the letters stacked on RES and UNDO.
+/// How far down each stacked letter on RES and UNDO is from the one above.
 const STACKED_LINE: i32 = 6;
 
 /// A colour box's colour, filling the inside of its frame.
@@ -79,7 +79,7 @@ pub struct Misc {
     /// Each slider's level as it was last set from the palette or written to it, so a drag
     /// shows as a change.
     levels: [u8; Channel::ALL.len()],
-    undo_palette: Option<OctamedColorPallete>,
+    undo_palette: Option<OctamedColorPalette>,
 }
 
 impl Misc {
@@ -134,12 +134,12 @@ impl Misc {
 
 impl OctamedicWidget for Misc {
     fn update(&mut self, state: &mut AppState) {
-        let undo_palette = *self.undo_palette.get_or_insert(state.pallete);
+        let undo_palette = *self.undo_palette.get_or_insert(state.palette);
         if self.res.clicked().is_some() {
-            state.pallete = OctamedColorPallete::DEFAULT;
+            state.palette = OctamedColorPalette::DEFAULT;
         }
         if self.undo.clicked().is_some() {
-            state.pallete = undo_palette;
+            state.palette = undo_palette;
         }
         for (pen, button) in self.color_buttons.iter_mut().enumerate() {
             if button.clicked().is_some() {
@@ -150,9 +150,9 @@ impl OctamedicWidget for Misc {
         for (index, channel) in Channel::ALL.into_iter().enumerate() {
             let dragged = self.sliders[index].value() as u8;
             if dragged != self.levels[index] {
-                state.pallete.set_channel(pen, channel, dragged);
+                state.palette.set_channel(pen, channel, dragged);
             }
-            let level = state.pallete.channel(pen, channel);
+            let level = state.palette.channel(pen, channel);
             self.sliders[index].set_value(level as u16);
             self.levels[index] = level;
             self.values[index].set_text(format!("{level:X}"));

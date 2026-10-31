@@ -23,12 +23,16 @@ use crate::data::{
 };
 
 pub enum EngineCommand {
+    /// From line `row` of the block.
     PlayPattern {
         pattern: PatternId,
+        row: usize,
         looping: bool,
     },
+    /// From line `row` of the block at `sequence_start`.
     PlaySong {
         sequence_start: usize,
+        row: usize,
         looping: bool,
     },
     Stop,
@@ -229,13 +233,18 @@ impl EngineHandle {
             .for_each(|command| self.send(command));
     }
 
-    pub fn play_pattern(&self, pattern: PatternId, looping: bool) {
-        self.send(EngineCommand::PlayPattern { pattern, looping });
+    pub fn play_pattern(&self, pattern: PatternId, row: usize, looping: bool) {
+        self.send(EngineCommand::PlayPattern {
+            pattern,
+            row,
+            looping,
+        });
     }
 
-    pub fn play_song(&self, sequence_start: usize, looping: bool) {
+    pub fn play_song(&self, sequence_start: usize, row: usize, looping: bool) {
         self.send(EngineCommand::PlaySong {
             sequence_start,
+            row,
             looping,
         });
     }

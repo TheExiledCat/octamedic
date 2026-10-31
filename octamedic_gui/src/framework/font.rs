@@ -1,36 +1,37 @@
-/*This file is here because OctaMED uses some unspecified font that i couldnt find in any libraries.
-so i went pixel by pixel and made a glyph renderer that can read a text file just for this purpose.
-*/
+// OctaMED's panel, title and editor fonts aren't in any font library, so they're drawn pixel by
+// pixel in assets/fonts and read here, along with Topaz from its TTF.
 
 use std::{collections::HashMap, sync::LazyLock};
 
-use ab_glyph::{Font as _, FontRef, OutlineCurve, Point};
+use ab_glyph::{Font as _, FontRef, PxScale, point};
 
 use crate::framework::painter::{CHAR_HEIGHT, CHAR_WIDTH};
 
 /// Topaz as OctaMED shows it, Kickstart 2's.
-pub const TOPAZ_TTF: &[u8] = include_bytes!("../../assets/fonts/AmigaTopazUnicodeRus.ttf");
+const TOPAZ_TTF: &[u8] = include_bytes!("../../assets/fonts/AmigaTopazUnicodeRus.ttf");
 
 /// Which font text is drawn in.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Font {
-    /// The Amiga's Topaz, for the block editor.
+    /// The Amiga's Topaz, for most text, and the block editor's for blocks too wide for `Editor`.
     #[default]
     Topaz,
     /// Topaz with OctaMED's own slashes, for numbers and names: the plain `/` between a song's
     /// number and the count, and the bolder `⁄` between a position and a length. Everything else
-    /// is drawn in Topaz.
+    /// is Topaz's.
     Interface,
     /// Square capitals, 6 lines tall at the top of the character, for gadget labels in the style
     /// of OctaMED's panels. Lowercase letters are drawn as capitals.
     Panel,
     /// Short capitals, 5 lines tall, for the status row's flags like `CHRD`.
     Small,
+    /// `Small`'s capitals 2 pixels apart, for the play panel's labels like `PLAY SONG`.
+    Label,
     /// The title bar's title, 9 lines tall, from OctaMED's title artwork.
     Title,
     /// The title bar's author, small capitals 5 lines tall, from OctaMED's title artwork.
     Author,
-    /// The block editor's 16 pixel wide characters, for blocks of up to 4 tracks: OctaMED's own
+    /// The block editor's 16 pixel wide characters, for blocks of few tracks: OctaMED's own
     /// where `editor.txt` has them, like the separate dashes of an empty note, and Topaz twice as
     /// wide for the rest.
     Editor,
@@ -46,18 +47,10 @@ const MAX_GLYPH_WIDTH: usize = u32::BITS as usize;
 /// A glyph line's leftmost pixel; the pixels go right from the highest bit.
 const LEFT_PIXEL: u32 = 1 << (u32::BITS - 1);
 
-const LEFT_TWO_PIXELS: u32 = 0b11 << (u32::BITS - 2);
-
-// the glyph files' fonts: lines tall, blank pixels each side of a glyph, and a space's width
-const PANEL_HEIGHT: usize = 6;
-const PANEL_BEARING: i32 = 1;
-const PANEL_SPACE: i32 = 4;
-const SMALL_HEIGHT: usize = 5;
-const SMALL_SPACE: i32 = 4;
-const TITLE_HEIGHT: usize = 9;
-const TITLE_SPACE: i32 = 13;
-const AUTHOR_HEIGHT: usize = 5;
-const AUTHOR_SPACE: i32 = 7;
+/// Whether pixel `x` of a glyph line is set, from the left.
+fn is_set(line: u32, x: u32) -> bool {
+    return line & (LEFT_PIXEL >> x) != 0;
+}
 
 /// A glyph: how wide it is, and its lines top to bottom, the highest bit leftmost.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -67,8 +60,11 @@ pub struct Glyph {
 }
 
 /// A font drawn pixel by pixel, from a glyph file (see `parse_glyphs`) or Topaz's TTF.
+#[derive(Default)]
 struct BitmapFont {
     glyphs: HashMap<char, Glyph>,
+    /// How many lines tall the glyphs are, from the top of the character.
+    height: i32,
     /// Blank pixels either side of every glyph.
     bearing: i32,
     /// How far a space moves the text along, if the font has no glyph for it.
@@ -78,15 +74,20 @@ struct BitmapFont {
 }
 
 impl BitmapFont {
-    fn load(name: &str, text: &str, height: usize, bearing: i32, space: i32) -> Self {
-        let glyphs = parse_glyphs(text, height)
+    /// With the glyphs of `assets/fonts/{name}`, whose text is `text`.
+    fn with_glyphs(mut self, name: &str, text: &str) -> Self {
+        let glyphs = parse_glyphs(text, self.height as usize)
             .unwrap_or_else(|error| panic!("assets/fonts/{name}: {error}"));
-        return Self {
-            glyphs: glyphs.into_iter().collect(),
-            bearing,
-            space,
-            capitals_only: false,
-        };
+        self.glyphs.extend(glyphs);
+        return self;
+    }
+
+    /// With `fallback`'s glyphs, as `convert` makes them, for the characters it doesn't have.
+    fn with_fallback(mut self, fallback: &BitmapFont, convert: fn(&Glyph) -> Glyph) -> Self {
+        for (&c, glyph) in &fallback.glyphs {
+            self.glyphs.entry(c).or_insert_with(|| convert(glyph));
+        }
+        return self;
     }
 
     fn glyph(&self, c: char) -> Option<&Glyph> {
@@ -99,169 +100,161 @@ impl BitmapFont {
     }
 }
 
-/// Topaz's TTF is a bitmap font in disguise: every pixel is a square of the outline. So it's read
-/// back into pixels once, and drawn like the glyph files, without blurring.
+/// Read back into pixels once from the TTF, and drawn like the glyph files, without blurring.
 static TOPAZ: LazyLock<BitmapFont> = LazyLock::new(|| BitmapFont {
     glyphs: rasterize(TOPAZ_TTF).unwrap_or_else(|| panic!("Topaz's TTF couldn't be read")),
-    bearing: 0,
+    height: CHAR_HEIGHT,
     space: CHAR_WIDTH,
-    capitals_only: false,
+    ..Default::default()
 });
 
-/// Every character of a font made of square pixels, `CHAR_HEIGHT` of them to the em and twice as
-/// tall as they're wide, for the hires screen. A pixel is set when its middle is inside the
-/// glyph's outline.
+/// Every character of a font that's a bitmap font in disguise, each pixel a square of the outline,
+/// `2 * CHAR_HEIGHT` of them to the em, as
+/// `CHAR_HEIGHT` lines for the hires screen, whose pixels are twice as tall as they're wide.
+/// Topaz's TTF is the 8 line font at twice the height, with half lines between them that smooth
+/// it, so each line is the upper of its two half lines. At the font's own size every pixel is
+/// either inside the outline or out of it; one is set when it's at least half covered.
 fn rasterize(ttf: &[u8]) -> Option<HashMap<char, Glyph>> {
     let font = FontRef::try_from_slice(ttf).ok()?;
     let em = font.units_per_em()?;
-    let (row, column) = (em / CHAR_HEIGHT as f32, em / (2 * CHAR_HEIGHT) as f32);
+    let pixel = em / (2 * CHAR_HEIGHT) as f32;
+    // a `PxScale` is how many pixels tall the font is from its ascent to its descent
+    let scale = PxScale::from(font.height_unscaled() / pixel);
     let mut glyphs = HashMap::new();
     for (_, c) in font.codepoint_ids() {
         // the font can map a character in more than one table; this is the one that's used
         let id = font.glyph_id(c);
-        let width = (font.h_advance_unscaled(id) / column).round() as usize;
-        let edges = font
-            .outline(id)
-            .map_or(Vec::new(), |outline| edges(&outline.curves));
-        let lines = (0..CHAR_HEIGHT)
-            .map(|y| {
-                let middle_y = em - (y as f32 + 0.5) * row;
-                (0..width.min(MAX_GLYPH_WIDTH)).fold(0u32, |line, x| {
-                    let middle = Point {
-                        x: (x as f32 + 0.5) * column,
-                        y: middle_y,
-                    };
-                    if inside(&edges, middle) {
-                        line | (LEFT_PIXEL >> x)
-                    } else {
-                        line
-                    }
-                })
-            })
-            .collect();
-        let width = width as i32;
+        let width = (font.h_advance_unscaled(id) / pixel).round() as i32;
+        let mut lines = vec![0; CHAR_HEIGHT as usize];
+        // with the baseline a whole em down, the top of the em is the top of the character
+        let glyph = id.with_scale_and_position(scale, point(0.0, em / pixel));
+        if let Some(outline) = font.outline_glyph(glyph) {
+            let corner = outline.px_bounds().min;
+            outline.draw(|x, y, coverage| {
+                let (x, y) = (corner.x as i32 + x as i32, corner.y as i32 + y as i32);
+                let shown = (0..width.min(MAX_GLYPH_WIDTH as i32)).contains(&x)
+                    && (0..2 * CHAR_HEIGHT).contains(&y)
+                    && y % 2 == 0;
+                if shown && coverage >= 0.5 {
+                    lines[(y / 2) as usize] |= LEFT_PIXEL >> x;
+                }
+            });
+        }
         glyphs.insert(c, Glyph { width, lines });
     }
     return Some(glyphs);
 }
 
-/// An outline as straight edges; curves are cut into short ones.
-fn edges(curves: &[OutlineCurve]) -> Vec<(Point, Point)> {
-    let mut edges = Vec::new();
-    for curve in curves {
-        match *curve {
-            OutlineCurve::Line(a, b) => edges.push((a, b)),
-            OutlineCurve::Quad(a, b, c) => cut(&mut edges, |t| {
-                let u = 1.0 - t;
-                weighted(&[(a, u * u), (b, 2.0 * u * t), (c, t * t)])
-            }),
-            OutlineCurve::Cubic(a, b, c, d) => cut(&mut edges, |t| {
-                let u = 1.0 - t;
-                let weights = [u * u * u, 3.0 * u * u * t, 3.0 * u * t * t, t * t * t];
-                weighted(&[
-                    (a, weights[0]),
-                    (b, weights[1]),
-                    (c, weights[2]),
-                    (d, weights[3]),
-                ])
-            }),
-        }
+/// Square capitals, 2 pixels apart.
+static PANEL: LazyLock<BitmapFont> = LazyLock::new(|| {
+    BitmapFont {
+        height: 6,
+        bearing: 1,
+        space: 4,
+        capitals_only: true,
+        ..Default::default()
     }
-    return edges;
-}
-
-/// Adds the curve through `point_at(0)` to `point_at(1)` as short straight edges.
-fn cut(edges: &mut Vec<(Point, Point)>, point_at: impl Fn(f32) -> Point) {
-    const STEPS: usize = 8;
-    let at = |step: usize| point_at(step as f32 / STEPS as f32);
-    for step in 0..STEPS {
-        edges.push((at(step), at(step + 1)));
-    }
-}
-
-fn weighted(points: &[(Point, f32)]) -> Point {
-    return points
-        .iter()
-        .fold(Point { x: 0.0, y: 0.0 }, |sum, &(point, weight)| Point {
-            x: sum.x + point.x * weight,
-            y: sum.y + point.y * weight,
-        });
-}
-
-/// Whether `point` is inside the outline, by the nonzero rule fonts are filled with: edges
-/// crossing a line from it to the right count one way going up and the other going down. Some
-/// fonts draw each contour twice, which the even-odd rule would cancel out.
-fn inside(edges: &[(Point, Point)], point: Point) -> bool {
-    let winding: i32 = edges
-        .iter()
-        .filter(|(a, b)| {
-            (a.y > point.y) != (b.y > point.y)
-                && point.x < a.x + (point.y - a.y) / (b.y - a.y) * (b.x - a.x)
-        })
-        .map(|(a, b)| if b.y > a.y { 1 } else { -1 })
-        .sum();
-    return winding != 0;
-}
-
-static PANEL: LazyLock<BitmapFont> = LazyLock::new(|| BitmapFont {
-    capitals_only: true,
-    ..BitmapFont::load(
-        "panel.txt",
-        include_str!("../../assets/fonts/panel.txt"),
-        PANEL_HEIGHT,
-        PANEL_BEARING,
-        PANEL_SPACE,
-    )
+    .with_glyphs("panel.txt", include_str!("../../assets/fonts/panel.txt"))
 });
 
-static SMALL: LazyLock<BitmapFont> = LazyLock::new(|| BitmapFont {
-    capitals_only: true,
-    ..BitmapFont::load(
-        "small.txt",
-        include_str!("../../assets/fonts/small.txt"),
-        SMALL_HEIGHT,
-        0,
-        SMALL_SPACE,
-    )
+static SMALL: LazyLock<BitmapFont> = LazyLock::new(|| {
+    BitmapFont {
+        height: 5,
+        space: 4,
+        capitals_only: true,
+        ..Default::default()
+    }
+    .with_glyphs("small.txt", include_str!("../../assets/fonts/small.txt"))
 });
 
 static TITLE: LazyLock<BitmapFont> = LazyLock::new(|| {
-    let text = include_str!("../../assets/fonts/title.txt");
-    BitmapFont::load("title.txt", text, TITLE_HEIGHT, 0, TITLE_SPACE)
+    BitmapFont {
+        height: 9,
+        space: 13,
+        ..Default::default()
+    }
+    .with_glyphs("title.txt", include_str!("../../assets/fonts/title.txt"))
 });
 
-static AUTHOR: LazyLock<BitmapFont> = LazyLock::new(|| BitmapFont {
-    capitals_only: true,
-    ..BitmapFont::load(
-        "author.txt",
-        include_str!("../../assets/fonts/author.txt"),
-        AUTHOR_HEIGHT,
-        0,
-        AUTHOR_SPACE,
-    )
+static AUTHOR: LazyLock<BitmapFont> = LazyLock::new(|| {
+    BitmapFont {
+        height: 5,
+        space: 7,
+        capitals_only: true,
+        ..Default::default()
+    }
+    .with_glyphs("author.txt", include_str!("../../assets/fonts/author.txt"))
 });
 
 static EDITOR: LazyLock<BitmapFont> = LazyLock::new(|| {
-    let text = include_str!("../../assets/fonts/editor.txt");
-    let mut font = BitmapFont::load("editor.txt", text, CHAR_HEIGHT as usize, 0, 2 * CHAR_WIDTH);
-    for (&c, glyph) in &TOPAZ.glyphs {
-        font.glyphs.entry(c).or_insert_with(|| widened(glyph));
+    BitmapFont {
+        height: CHAR_HEIGHT,
+        space: 2 * CHAR_WIDTH,
+        ..Default::default()
+    }
+    .with_glyphs("editor.txt", include_str!("../../assets/fonts/editor.txt"))
+    .with_fallback(&TOPAZ, widened)
+});
+
+/// Each pixel twice as wide.
+/// `Small` with each letter cut to its ink and given `label_margins`.
+static LABEL: LazyLock<BitmapFont> = LazyLock::new(|| {
+    let mut font = BitmapFont {
+        height: 5,
+        space: 6,
+        capitals_only: true,
+        ..Default::default()
+    };
+    for (&c, glyph) in &SMALL.glyphs {
+        let (left, right) = label_margins(c);
+        font.glyphs
+            .insert(c, with_margins(&trimmed(glyph), left, right));
     }
     font
 });
+
+/// Blank pixels before and after a label's character: one each, so letters are 2 apart, but
+/// none after a full stop or before a colon, and 3 before a digit, as OctaMED spaces
+/// `CONT. SONG`, `VOL:` and `E1`.
+fn label_margins(c: char) -> (u32, u32) {
+    return match c {
+        '.' => (1, 0),
+        ':' => (0, 1),
+        '0'..='9' => (3, 1),
+        _ => (1, 1),
+    };
+}
+
+fn with_margins(glyph: &Glyph, left: u32, right: u32) -> Glyph {
+    return Glyph {
+        width: glyph.width + (left + right) as i32,
+        lines: glyph.lines.iter().map(|&line| line >> left).collect(),
+    };
+}
+
+/// Without the blank columns at its sides.
+fn trimmed(glyph: &Glyph) -> Glyph {
+    let ink = glyph.lines.iter().fold(0, |all, &line| all | line);
+    if ink == 0 {
+        return glyph.clone();
+    }
+    let left = ink.leading_zeros();
+    return Glyph {
+        width: (u32::BITS - ink.trailing_zeros() - left) as i32,
+        lines: glyph.lines.iter().map(|&line| line << left).collect(),
+    };
+}
 
 fn widened(glyph: &Glyph) -> Glyph {
     let lines = glyph
         .lines
         .iter()
         .map(|&line| {
-            (0..u8::BITS).fold(0u32, |wide, x| {
-                if line & (LEFT_PIXEL >> x) != 0 {
-                    wide | (LEFT_TWO_PIXELS >> (2 * x))
-                } else {
-                    wide
-                }
-            })
+            let mut wide = 0;
+            for x in (0..u8::BITS).filter(|&x| is_set(line, x)) {
+                wide |= (LEFT_PIXEL >> (2 * x)) | (LEFT_PIXEL >> (2 * x + 1));
+            }
+            wide
         })
         .collect();
     return Glyph {
@@ -271,43 +264,50 @@ fn widened(glyph: &Glyph) -> Glyph {
 }
 
 static INTERFACE: LazyLock<BitmapFont> = LazyLock::new(|| {
-    let text = include_str!("../../assets/fonts/interface.txt");
-    BitmapFont::load("interface.txt", text, CHAR_HEIGHT as usize, 0, CHAR_WIDTH)
+    BitmapFont {
+        height: CHAR_HEIGHT,
+        space: CHAR_WIDTH,
+        ..Default::default()
+    }
+    .with_glyphs(
+        "interface.txt",
+        include_str!("../../assets/fonts/interface.txt"),
+    )
+    .with_fallback(&TOPAZ, Glyph::clone)
 });
 
 /// Reads glyphs written as their character on a line of its own, then `height` lines of `#`
 /// (set) and `.` (clear), all as wide as each other and no wider than `MAX_GLYPH_WIDTH`, with
 /// an empty line before the next character.
 fn parse_glyphs(text: &str, height: usize) -> Result<Vec<(char, Glyph)>, String> {
+    let lines: Vec<&str> = text.lines().collect();
     let mut glyphs = Vec::new();
-    let mut lines = text
-        .lines()
-        .map(|line| line.trim_end_matches('\r'))
-        .peekable();
-    while lines.peek().is_some() {
-        let header = lines.next().unwrap_or_default();
-        if header.is_empty() {
+    for block in lines.split(|line| line.is_empty()) {
+        let Some((header, rows)) = block.split_first() else {
             continue;
-        }
+        };
         let mut chars = header.chars();
         let (Some(c), None) = (chars.next(), chars.next()) else {
             return Err(format!("`{header}` should be a single character"));
         };
+        if rows.len() != height {
+            return Err(format!(
+                "`{c}` should be {height} lines, then an empty line"
+            ));
+        }
+        let width = rows[0].chars().count();
         let mut glyph = Glyph {
-            width: 0,
+            width: width as i32,
             lines: vec![0; height],
         };
-        for (y, line) in glyph.lines.iter_mut().enumerate() {
-            let row = lines.next().unwrap_or_default();
-            let width = row.chars().count();
-            if row.is_empty() || width > MAX_GLYPH_WIDTH || (y > 0 && width as i32 != glyph.width) {
+        for (y, (row, line)) in rows.iter().zip(&mut glyph.lines).enumerate() {
+            if width > MAX_GLYPH_WIDTH || row.chars().count() != width {
                 return Err(format!(
                     "`{c}` line {}: `{row}` should be 1 to {MAX_GLYPH_WIDTH} wide, as wide as \
                      the line above",
                     y + 1
                 ));
             }
-            glyph.width = width as i32;
             for (x, pixel) in row.chars().enumerate() {
                 match pixel {
                     '#' => *line |= LEFT_PIXEL >> x,
@@ -321,11 +321,6 @@ fn parse_glyphs(text: &str, height: usize) -> Result<Vec<(char, Glyph)>, String>
                 }
             }
         }
-        if lines.next().is_some_and(|line| !line.is_empty()) {
-            return Err(format!(
-                "`{c}` should be {height} lines, then an empty line"
-            ));
-        }
         glyphs.push((c, glyph));
     }
     return Ok(glyphs);
@@ -338,6 +333,7 @@ impl Font {
             Font::Interface => &INTERFACE,
             Font::Panel => &PANEL,
             Font::Small => &SMALL,
+            Font::Label => &LABEL,
             Font::Editor => &EDITOR,
             Font::Title => &TITLE,
             Font::Author => &AUTHOR,
@@ -346,28 +342,12 @@ impl Font {
 
     /// How many lines tall the glyphs are, from the top of the character.
     pub fn height(self) -> i32 {
-        return match self {
-            Font::Topaz | Font::Interface | Font::Editor => CHAR_HEIGHT,
-            Font::Panel => PANEL_HEIGHT as i32,
-            Font::Small => SMALL_HEIGHT as i32,
-            Font::Title => TITLE_HEIGHT as i32,
-            Font::Author => AUTHOR_HEIGHT as i32,
-        };
+        return self.bitmap().height;
     }
 
-    /// The glyph `c` is drawn with, Topaz's for the characters `Interface` doesn't have; `None`
-    /// for characters with no glyph, which are left blank.
+    /// The glyph `c` is drawn with; `None` for characters with no glyph, which are left blank.
     pub fn glyph(self, c: char) -> Option<&'static Glyph> {
-        let glyph = self.bitmap().glyph(c);
-        if glyph.is_none() && self.falls_back_to_topaz() {
-            return TOPAZ.glyph(c);
-        }
-        return glyph;
-    }
-
-    /// Whether characters the font doesn't have are drawn in Topaz, rather than left blank.
-    pub fn falls_back_to_topaz(self) -> bool {
-        return self == Font::Interface;
+        return self.bitmap().glyph(c);
     }
 
     pub fn advance(self, c: char) -> i32 {
@@ -384,24 +364,36 @@ impl Font {
     pub fn width(self, text: &str) -> i32 {
         return text.chars().map(|c| self.advance(c)).sum();
     }
+
+    /// Blank pixels before and after the ink in `c`'s character, its bearing included; `None`
+    /// when it has none, like a space.
+    pub fn blank_sides(self, c: char) -> Option<(i32, i32)> {
+        let ink = self.glyph(c)?.lines.iter().fold(0, |all, &line| all | line);
+        if ink == 0 {
+            return None;
+        }
+        let left = self.bearing() + ink.leading_zeros() as i32;
+        let ink_end = self.bearing() + (u32::BITS - ink.trailing_zeros()) as i32;
+        return Some((left, self.advance(c) - ink_end));
+    }
 }
 
 /// The runs of set pixels in a glyph's line, as where each starts and how long it is.
 pub fn runs(line: u32) -> impl Iterator<Item = (i32, i32)> {
     let mut x = 0;
-    let width = MAX_GLYPH_WIDTH as i32;
+    let width = MAX_GLYPH_WIDTH as u32;
     return std::iter::from_fn(move || {
-        while x < width && line & (LEFT_PIXEL >> x) == 0 {
+        while x < width && !is_set(line, x) {
             x += 1;
         }
         if x == width {
             return None;
         }
         let start = x;
-        while x < width && line & (LEFT_PIXEL >> x) != 0 {
+        while x < width && is_set(line, x) {
             x += 1;
         }
-        return Some((start, x - start));
+        return Some((start as i32, (x - start) as i32));
     });
 }
 
@@ -413,7 +405,7 @@ mod tests {
     fn glyph_rows_become_bits_from_the_left() {
         let a = Font::Panel.glyph('a').unwrap();
         assert_eq!(a.width, 8);
-        assert_eq!(a.lines[0], 0b0111_1110 << 24);
+        assert_eq!(a.lines[0], 0b0001_1000 << 24);
         assert_eq!(Font::Panel.glyph('I').unwrap().width, 4);
         assert!(Font::Panel.glyph('~').is_none());
         assert_eq!(Font::Interface.glyph('/').unwrap().width, 10);
@@ -427,11 +419,22 @@ mod tests {
         let text = include_str!("../../assets/fonts/interface.txt");
         assert_eq!(parse_glyphs(text, 8).unwrap().len(), 2);
         let title = include_str!("../../assets/fonts/title.txt");
-        assert!(parse_glyphs(title, TITLE_HEIGHT).is_ok());
+        assert!(parse_glyphs(title, 9).is_ok());
         let author = include_str!("../../assets/fonts/author.txt");
-        assert!(parse_glyphs(author, AUTHOR_HEIGHT).is_ok());
+        assert!(parse_glyphs(author, 5).is_ok());
         let small = include_str!("../../assets/fonts/small.txt");
-        assert_eq!(parse_glyphs(small, 5).unwrap().len(), 10);
+        assert_eq!(parse_glyphs(small, 5).unwrap().len(), 33);
+    }
+
+    #[test]
+    fn labels_are_the_small_capitals_2_pixels_apart() {
+        let l = Font::Label.glyph('l').unwrap();
+        assert_eq!((l.width, l.lines[4]), (7, 0b11111 << 26));
+        // P, A and Y are 6 wide and L 5, and a space puts 6 more pixels between words
+        assert_eq!(Font::Label.width("PLAY"), 6 + 5 + 6 + 6 + 4 * 2);
+        assert_eq!(Font::Label.width(" "), 6);
+        // further from a letter before a digit, as in E1
+        assert_eq!(Font::Label.blank_sides('1'), Some((3, 1)));
     }
 
     #[test]
@@ -457,13 +460,7 @@ mod tests {
             .iter()
             .map(|line| {
                 (0..8)
-                    .map(|x| {
-                        if line & (LEFT_PIXEL >> x) != 0 {
-                            '#'
-                        } else {
-                            '.'
-                        }
-                    })
+                    .map(|x| if is_set(*line, x) { '#' } else { '.' })
                     .collect()
             })
             .collect();

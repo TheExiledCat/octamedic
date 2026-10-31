@@ -280,6 +280,12 @@ pub trait Action: Copy + PartialEq + fmt::Debug {
     fn id(self) -> String {
         return snake_case(&format!("{self:?}"));
     }
+
+    /// Whether holding the key does it again at the key repeat rate. Toggles shouldn't, or
+    /// holding one flickers it.
+    fn repeats(self) -> bool {
+        return true;
+    }
 }
 
 pub fn snake_case(name: &str) -> String {
@@ -359,16 +365,17 @@ impl<A: Action> Keymap<A> {
         return &mut self.bindings;
     }
 
-    /// The action bound to the pressed key, if any.
+    /// The action bound to the pressed key, if any, and if it repeats when the key is held.
     pub fn lookup(&self, event: &Event) -> Option<A> {
-        let Event::Key { key, mods, .. } = *event else {
+        let Event::Key { key, mods, repeat } = *event else {
             return None;
         };
         return self
             .bindings()
             .iter()
             .find(|binding| binding.key.matches(key, mods))
-            .map(|binding| binding.action);
+            .map(|binding| binding.action)
+            .filter(|action| !repeat || action.repeats());
     }
 
     /// The first key bound to `action`, for showing it next to the thing it controls.
@@ -563,6 +570,34 @@ mod tests {
         assert_eq!(keymap.lookup(&press(KeyCode::Up, KeyMods::SHIFT)), Some(1));
         assert_eq!(keymap.lookup(&press(KeyCode::Down, KeyMods::NONE)), None);
         assert_eq!(keymap.lookup(&Event::Text('x')), None);
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    enum Toggle {
+        Flip,
+    }
+
+    impl Action for Toggle {
+        fn repeats(self) -> bool {
+            return false;
+        }
+    }
+
+    #[test]
+    fn held_keys_repeat_only_actions_that_repeat() {
+        let held = Event::Key {
+            key: KeyCode::Up,
+            mods: KeyMods::NONE,
+            repeat: true,
+        };
+        let moves = Keymap::new("test").bind(Key::plain(KeyCode::Up), 0, "Row");
+        assert_eq!(moves.lookup(&held), Some(0));
+        let toggles = Keymap::new("test").bind(Key::plain(KeyCode::Up), Toggle::Flip, "Flip");
+        assert_eq!(toggles.lookup(&held), None);
+        assert_eq!(
+            toggles.lookup(&press(KeyCode::Up, KeyMods::NONE)),
+            Some(Toggle::Flip)
+        );
     }
 
     #[test]

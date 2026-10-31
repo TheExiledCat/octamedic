@@ -3,13 +3,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-use ggez::graphics::InstanceArray;
 use octamed::utility::note::SEMITONES_PER_OCTAVE;
 use octamedic_core::{
     data::{
         instrument::{InstrumentId, MAX_INSTRUMENTS},
         note::OctamedicNote,
-        palette::OctamedColorPallete,
+        palette::OctamedColorPalette,
         pattern::{OctamedicPattern, OctamedicPatternTrack, PatternId},
         project::OctamedicProject,
         song::{OctamedicSong, SongId},
@@ -30,6 +29,9 @@ const MAX_INSTRUMENT: u8 = MAX_INSTRUMENTS as u8;
 const MAX_OCTAVE: u8 = 9;
 
 const SEMITONES: u8 = SEMITONES_PER_OCTAVE;
+
+/// The most entries OctaMED's play sequence holds.
+const MAX_SEQUENCE_ENTRIES: usize = 256;
 
 /// Older lines are dropped from the debug console past this many.
 const MAX_DEBUG_LINES: usize = 256;
@@ -61,7 +63,7 @@ pub struct AppState {
     pub recording: bool,
     pub exit_requested: bool,
     pub notification: Option<String>,
-    pub pallete: OctamedColorPallete,
+    pub palette: OctamedColorPalette,
     debug_lines: VecDeque<String>,
     notified_at: Instant,
     timer_started: Instant,
@@ -74,7 +76,7 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(project: OctamedicProject, engine: EngineHandle) -> Self {
-        let pallete = project.pallete();
+        let palette = project.palette();
         let mut state = Self {
             project,
             engine,
@@ -91,7 +93,7 @@ impl AppState {
             recording: false,
             exit_requested: false,
             notification: None,
-            pallete,
+            palette,
             debug_lines: VecDeque::new(),
             notified_at: Instant::now(),
             timer_started: Instant::now(),
@@ -116,7 +118,11 @@ impl AppState {
         }
         self.send_changes_to_engine();
         if self.is_playing() {
-            self.active_pattern = PatternId(self.engine.status().pattern() as u8);
+            let playing = self.engine.status().pattern();
+            if playing != self.active_pattern.0 as usize {
+                self.select_block(playing);
+            }
+            self.set_sequence(self.engine.status().sequence_index());
         }
     }
 
@@ -136,7 +142,7 @@ impl AppState {
             .expect("the active song should exist");
     }
 
-    fn song_mut(&mut self) -> &mut OctamedicSong {
+    pub fn song_mut(&mut self) -> &mut OctamedicSong {
         self.has_changes = true;
         let song = self.active_song;
         return self
@@ -218,15 +224,17 @@ impl AppState {
         self.exit_requested = true;
     }
 
-    pub fn play_song(&mut self, sequence_index: usize) {
+    /// Plays the song from line `row` of sequence entry `sequence_index`.
+    pub fn play_song(&mut self, sequence_index: usize, row: usize) {
         self.send_all_to_engine();
-        self.engine.play_song(sequence_index, !self.recording);
+        self.engine.play_song(sequence_index, row, !self.recording);
         self.playback_start_time = Some(Instant::now());
     }
 
-    pub fn play_pattern(&mut self, id: PatternId) {
+    /// Plays block `id` from line `row`.
+    pub fn play_pattern(&mut self, id: PatternId, row: usize) {
         self.send_all_to_engine();
-        self.engine.play_pattern(id, !self.recording);
+        self.engine.play_pattern(id, row, !self.recording);
         self.playback_start_time = Some(Instant::now());
     }
 
@@ -234,7 +242,7 @@ impl AppState {
         self.engine.stop();
     }
     pub fn set_instrument(&mut self, instrument: u8) -> InstrumentId {
-        self.active_instrument.0 = instrument.min(MAX_INSTRUMENT);
+        self.active_instrument.0 = instrument.clamp(1, MAX_INSTRUMENT);
         return self.active_instrument;
     }
 
@@ -260,17 +268,24 @@ impl AppState {
         return self.set_sequence(self.active_sequence_index.saturating_sub(1));
     }
 
-    /// Moves to entry `index` of the sequence, or the last entry past the end, and returns its
-    /// block; block 0 when the sequence is empty.
+    /// Moves to entry `index` of the sequence, or the last entry past the end, and shows its
+    /// block, which it returns; block 0 when the sequence is empty.
     pub fn set_sequence(&mut self, index: usize) -> PatternId {
-        let last = self.song().sequence().len().saturating_sub(1);
-        self.active_sequence_index = index.min(last);
-        return self
+        self.keep_sequence_index_inside(index);
+        let block = self
             .song()
             .sequence()
             .get(self.active_sequence_index)
             .copied()
             .unwrap_or(PatternId::ZERO);
+        self.select_block(block.0 as usize);
+        return block;
+    }
+
+    /// Makes entry `index` the active one, or the last entry past the end.
+    fn keep_sequence_index_inside(&mut self, index: usize) {
+        let last = self.song().sequence().len().saturating_sub(1);
+        self.active_sequence_index = index.min(last);
     }
 
     pub fn increase_line_add(&mut self) {
@@ -318,7 +333,7 @@ impl AppState {
         self.engine.set_tempo(tempo);
     }
 
-    // the bottom row of letter keys plays the current octave and the top row the one above
+    /// The bottom row of letter keys plays the current octave and the top row the one above.
     pub fn key_to_note(&self, key: char) -> Option<OctamedicNote> {
         let key = key.to_ascii_lowercase();
         let semitone = BOTTOM_OCTAVE_KEYS
@@ -344,7 +359,7 @@ impl AppState {
         self.engine.release_note(track);
     }
 
-    // returns whether the cell changed
+    /// Whether the cell changed.
     pub fn edit_track(
         &mut self,
         line: usize,
@@ -411,6 +426,57 @@ impl AppState {
             self.engine.set_sequence(song.sequence().to_vec());
         }
     }
+
+    /// Changes the sequence with `edit`, then keeps the active entry inside it and has the engine
+    /// play the changed one.
+    fn edit_sequence(&mut self, edit: impl FnOnce(&mut Vec<PatternId>)) {
+        edit(self.song_mut().sequence_mut());
+        self.keep_sequence_index_inside(self.active_sequence_index);
+        self.sequence_changed = true;
+    }
+
+    /// Plays the next block at the active entry, up to the song's last block.
+    pub fn increment_sequence_pattern(&mut self) {
+        let active = self.active_sequence_index;
+        let last = self.song().patterns().len().saturating_sub(1);
+        let last = last.min(u8::MAX as usize) as u8;
+        self.edit_sequence(|sequence| {
+            if let Some(entry) = sequence.get_mut(active) {
+                entry.0 = entry.0.saturating_add(1).min(last);
+            }
+        });
+    }
+
+    /// Plays the block before at the active entry, down to block 0.
+    pub fn decrement_sequence_pattern(&mut self) {
+        let active = self.active_sequence_index;
+        self.edit_sequence(|sequence| {
+            if let Some(entry) = sequence.get_mut(active) {
+                entry.0 = entry.0.saturating_sub(1);
+            }
+        });
+    }
+
+    /// Puts `pattern` in the sequence after the active entry and makes it the active one, unless
+    /// the sequence is full. After, so there's a way to add to the end.
+    pub fn insert_sequence(&mut self, pattern: PatternId) {
+        let index = (self.active_sequence_index + 1).min(self.song().sequence().len());
+        if self.song().sequence().len() >= MAX_SEQUENCE_ENTRIES {
+            return;
+        }
+        self.active_sequence_index = index;
+        self.edit_sequence(|sequence| sequence.insert(index, pattern));
+    }
+
+    /// Takes entry `index` out of the sequence, unless it's the only one; OctaMED's sequence
+    /// always plays something.
+    pub fn delete_sequence(&mut self, index: usize) {
+        self.edit_sequence(|sequence| {
+            if sequence.len() > 1 && index < sequence.len() {
+                sequence.remove(index);
+            }
+        });
+    }
 }
 
 #[cfg(test)]
@@ -431,6 +497,38 @@ mod tests {
         assert_eq!(state.active_sequence_index, last);
         state.next_sequence();
         assert_eq!(state.active_sequence_index, last);
+    }
+
+    #[test]
+    fn sequence_edits_stay_inside_the_sequence_and_reach_the_engine() {
+        let mut state = state();
+        // inserting goes after the active entry and moves to it, so it can add to the end
+        state.insert_sequence(PatternId(0));
+        assert_eq!(state.song().sequence(), [PatternId(0); 2]);
+        assert_eq!(state.active_sequence_index, 1);
+        assert!(state.sequence_changed);
+        // there's only block 0, so the entry can't go past it
+        state.increment_sequence_pattern();
+        assert_eq!(state.song().sequence()[1], PatternId(0));
+        // deleting the last entry moves to the one before it
+        state.delete_sequence(1);
+        assert_eq!(state.active_sequence_index, 0);
+        // the only entry stays
+        state.delete_sequence(0);
+        assert_eq!(state.song().sequence().len(), 1);
+    }
+
+    #[test]
+    fn jumping_through_the_sequence_shows_each_entrys_block() {
+        let mut state = state();
+        state.next_pattern();
+        state.insert_sequence(PatternId(1));
+        state.set_sequence(0);
+        assert_eq!(state.active_pattern, PatternId(0));
+        state.next_sequence();
+        assert_eq!(state.active_pattern, PatternId(1));
+        state.prev_sequence();
+        assert_eq!(state.active_pattern, PatternId(0));
     }
 
     #[test]
@@ -474,6 +572,7 @@ mod tests {
         assert_eq!(state.prev_instrument(), InstrumentId(1));
         state.active_instrument = InstrumentId(MAX_INSTRUMENT);
         assert_eq!(state.next_instrument(), InstrumentId(MAX_INSTRUMENT));
+        assert_eq!(state.set_instrument(0), InstrumentId(1));
     }
 
     #[test]

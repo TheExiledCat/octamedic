@@ -17,6 +17,14 @@ opt-level = "z"
 [profile.dev.package."*"]
 debug = false
 
+# wgpu-core turns on the Vulkan validation layer (VK_LAYER_KHRONOS_validation) in builds with
+# debug assertions, whenever the layer is installed, as it is with the Vulkan SDK or a distro's
+# validation layers package. It checks every Vulkan call, which took the GUI from about 46 FPS to 5
+# on a Linux machine that had it, while Windows and WSL, without it, were unaffected. Debug
+# assertions are per crate, so turning them off here only stops wgpu asking for validation.
+[profile.dev.package.wgpu-core]
+debug-assertions = false
+
 [profile.debugging]
 inherits = "dev"
 debug = true

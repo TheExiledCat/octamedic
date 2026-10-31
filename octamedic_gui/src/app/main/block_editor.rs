@@ -40,7 +40,8 @@ const QUARTERS: usize = 4;
 /// Octaves past 9 are written as letters, as base 36 digits.
 const OCTAVE_RADIX: u32 = 36;
 
-/// Note, instrument, command and its value, as in `C#1 10C20`.
+/// Note, instrument, command and its value, as in `C#1 10C20`: `C#1`, instrument ` 1`, command
+/// `0C` and value `20`.
 const TRACK_CHARS: i32 = 9;
 
 const NOTE_NAMES: [&str; SEMITONES_PER_OCTAVE as usize] = [
@@ -69,7 +70,11 @@ pub enum EditorAction {
     ToggleEdit,
 }
 
-impl Action for EditorAction {}
+impl Action for EditorAction {
+    fn repeats(self) -> bool {
+        return self != EditorAction::ToggleEdit;
+    }
+}
 
 pub struct BlockEditor {
     keys: Keymap<EditorAction>,
@@ -270,7 +275,6 @@ struct Layout {
 }
 
 impl Layout {
-    /// Up to 4 tracks are shown in double-width characters, as in OctaMED.
     fn new(area: Rect, track_count: usize) -> Self {
         let font = if track_count <= WIDE_TRACKS {
             Font::Editor
@@ -359,7 +363,12 @@ impl KeyActions for BlockEditor {
 impl OctamedicWidget for BlockEditor {
     fn update(&mut self, state: &mut AppState) {
         if state.is_playing() {
-            state.cursor.line = state.engine.status().row();
+            // the engine's line and block are read apart, so the line can be from the block before
+            let lines = state
+                .active_pattern()
+                .map_or(1, |pattern| pattern.line_count());
+            let row = state.engine.status().row();
+            state.cursor.line = row.min(lines.saturating_sub(1));
         }
     }
 

@@ -1,4 +1,4 @@
-use octamed::mmd::module::{OctamedMMD0Color, OctamedMMD0ColorPallete, PALETTE_COLORS};
+use octamed::mmd::module::{OctamedMMD0Color, OctamedMMD0ColorPalette, PALETTE_COLORS};
 
 pub const PALETTE_SIZE: usize = PALETTE_COLORS;
 
@@ -27,19 +27,19 @@ impl Channel {
 
 /// The screen's colours, as the Amiga's 12-bit `0RGB` values.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct OctamedColorPallete {
+pub struct OctamedColorPalette {
     colors: [u16; PALETTE_SIZE],
 }
 
-impl OctamedColorPallete {
+impl OctamedColorPalette {
     /// OctaMED v4's own colours.
     pub const DEFAULT: Self = Self {
         colors: [0x000, 0xCCC, 0x667, 0x99A, 0xF00, 0xF88, 0xFAA, 0xFCC],
     };
 
-    pub fn from_octamed(pallete: &OctamedMMD0ColorPallete) -> Self {
+    pub fn from_octamed(palette: &OctamedMMD0ColorPalette) -> Self {
         return Self {
-            colors: pallete
+            colors: palette
                 .colors
                 .map(|color| color.value.0 & OctamedMMD0Color::MASK),
         };
@@ -69,7 +69,7 @@ impl OctamedColorPallete {
     }
 }
 
-impl Default for OctamedColorPallete {
+impl Default for OctamedColorPalette {
     fn default() -> Self {
         return Self::DEFAULT;
     }
@@ -81,27 +81,27 @@ mod tests {
 
     #[test]
     fn channels_are_read_and_set_alone() {
-        let mut pallete = OctamedColorPallete::DEFAULT;
+        let mut palette = OctamedColorPalette::DEFAULT;
         // pen 2 is 0x667
-        assert_eq!(pallete.channel(2, Channel::Blue), 7);
-        pallete.set_channel(2, Channel::Green, 0xA);
-        assert_eq!(pallete.get(2), 0x6A7);
-        pallete.set_channel(2, Channel::Red, 99);
-        assert_eq!(pallete.get(2), 0xFA7);
+        assert_eq!(palette.channel(2, Channel::Blue), 7);
+        palette.set_channel(2, Channel::Green, 0xA);
+        assert_eq!(palette.get(2), 0x6A7);
+        palette.set_channel(2, Channel::Red, 99);
+        assert_eq!(palette.get(2), 0xFA7);
     }
 
     #[test]
     fn levels_spread_over_the_full_range() {
-        let pallete = OctamedColorPallete::DEFAULT;
-        assert_eq!(pallete.rgb(0), [0, 0, 0]);
-        assert_eq!(pallete.rgb(3), [0x99, 0x99, 0xAA]);
-        assert_eq!(pallete.rgb(4), [0xFF, 0, 0]);
+        let palette = OctamedColorPalette::DEFAULT;
+        assert_eq!(palette.rgb(0), [0, 0, 0]);
+        assert_eq!(palette.rgb(3), [0x99, 0x99, 0xAA]);
+        assert_eq!(palette.rgb(4), [0xFF, 0, 0]);
     }
 
     #[test]
     fn colours_keep_to_12_bits() {
-        let mut pallete = OctamedColorPallete::DEFAULT;
-        pallete.set(1, 0xF123);
-        assert_eq!(pallete.get(1), 0x123);
+        let mut palette = OctamedColorPalette::DEFAULT;
+        palette.set(1, 0xF123);
+        assert_eq!(palette.get(1), 0x123);
     }
 }

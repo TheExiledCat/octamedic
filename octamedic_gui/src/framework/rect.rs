@@ -101,6 +101,14 @@ impl Rect {
     pub fn inset(self, x: i32, y: i32) -> Self {
         return Self::new(self.x + x, self.y + y, self.w - 2 * x, self.h - 2 * y);
     }
+
+    /// The part of this inside `other`, with no width or height when they don't overlap.
+    pub fn intersection(self, other: Self) -> Self {
+        let (x, y) = (self.x.max(other.x), self.y.max(other.y));
+        let right = self.right().min(other.right());
+        let bottom = self.bottom().min(other.bottom());
+        return Self::new(x, y, (right - x).max(0), (bottom - y).max(0));
+    }
 }
 
 impl From<Rect> for ggez::graphics::Rect {
@@ -189,6 +197,17 @@ mod tests {
             Rect::new(182, 0, 146, 45).within(area),
             Rect::new(192, 18, 146, 45)
         );
+    }
+
+    #[test]
+    fn an_intersection_is_the_overlap_or_nothing() {
+        let screen = Rect::new(0, 0, 640, 256);
+        assert_eq!(
+            Rect::new(-10, 250, 30, 20).intersection(screen),
+            Rect::new(0, 250, 20, 6)
+        );
+        let off = Rect::new(700, 0, 10, 10).intersection(screen);
+        assert_eq!((off.w, off.h), (0, 10));
     }
 
     #[test]

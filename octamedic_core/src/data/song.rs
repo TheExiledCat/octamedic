@@ -91,6 +91,9 @@ impl OctamedicSong {
     pub fn sequence(&self) -> &[PatternId] {
         return &self.sequence;
     }
+    pub fn sequence_mut(&mut self) -> &mut Vec<PatternId> {
+        return &mut self.sequence;
+    }
 
     pub fn tempo(&self) -> OctamedicTempo {
         return self.tempo;

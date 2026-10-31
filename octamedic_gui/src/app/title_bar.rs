@@ -17,7 +17,7 @@ const VERSION: &str = "(v4.00)";
 
 const AUTHOR: &str = "By Amano Rosuko";
 
-// where things go, from the reference: x across the bar, y down from its top
+// where things go, from OctaMED's title bar: x across the bar, y down from its top
 const TIMER_LABEL: [i32; 2] = [3, 3];
 const TIMER: Rect = Rect::new(50, 0, 48, 12);
 const STAR_X: i32 = 100;

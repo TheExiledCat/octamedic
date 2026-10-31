@@ -8,8 +8,7 @@ use std::{
 
 use crate::framework::keymap::Key;
 
-/// Keys that replace an action's defaults, by action id, e.g. `main.quit`. Nothing sets them yet;
-/// they'll come from a keybinds file.
+/// Keys that replace an action's defaults, by action id, e.g. `main.quit`.
 static OVERRIDES: LazyLock<RwLock<HashMap<String, Vec<Key>>>> = LazyLock::new(Default::default);
 
 pub fn with_overrides<T>(f: impl FnOnce(&HashMap<String, Vec<Key>>) -> T) -> T {

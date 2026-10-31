@@ -1,7 +1,7 @@
 use std::{char, fmt::Display, io::SeekFrom};
 
 use crate::mmd::module::{
-    OctamedMMD0ColorPallete, OctamedMMD0HeaderFlags, OctamedMMD0InstrumentType,
+    OctamedMMD0ColorPalette, OctamedMMD0HeaderFlags, OctamedMMD0InstrumentType,
     OctamedMMD0SongFlags,
 };
 
@@ -292,7 +292,7 @@ impl IntoBytes for OctamedMMD0InstrumentType {
     }
 }
 
-impl IntoBytes for OctamedMMD0ColorPallete {
+impl IntoBytes for OctamedMMD0ColorPalette {
     fn as_bytes(&self) -> Vec<u8> {
         return self
             .colors

@@ -14,7 +14,7 @@ use crate::{
     },
 };
 
-// heights in screen lines, top to bottom; they add up to the screen's 256
+// heights in screen lines, top to bottom; the footer takes the rest of the screen
 const TITLE_HEIGHT: i32 = 13;
 const HEADER_HEIGHT: i32 = 64;
 const EDITOR_HEIGHT: i32 = 120;

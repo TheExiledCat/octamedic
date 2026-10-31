@@ -19,7 +19,7 @@ pub enum SliderDirection {
 /// What a slider's handler is told while it's dragged.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Slide {
-    /// Where the drag started.
+    /// The value when the drag started.
     pub start_value: u16,
     pub value: u16,
 }
@@ -43,8 +43,10 @@ pub struct Slider {
     direction: SliderDirection,
     /// The last step at the start of the track: the left, or the top when vertical.
     reversed: bool,
-    /// How many positions the handle has; the handle is the track split into this many.
+    /// How many positions the handle has; the handle is the track split into this many, unless
+    /// `handle` says how long it is.
     steps: u16,
+    handle: Option<i32>,
     value: u16,
     on_slide: Option<Rc<dyn SlideHandler>>,
     drag: Option<Drag>,
@@ -58,11 +60,18 @@ impl Slider {
             direction,
             reversed,
             steps: steps.max(1),
+            handle: None,
             value: 0,
             on_slide: None,
             drag: None,
             area: Rect::default(),
         };
+    }
+
+    /// A handle `length` pixels long whatever the steps, like the play panel's tempo sliders'.
+    pub fn fixed_handle(mut self, length: i32) -> Self {
+        self.handle = Some(length);
+        return self;
     }
 
     pub fn on_slide(mut self, handler: impl Fn(&mut AppState, Slide) + 'static) -> Self {
@@ -83,7 +92,7 @@ impl Slider {
         self.value = value.min(self.steps - 1);
     }
 
-    /// Along the slider and across it, as a horizontal one has them.
+    /// `area` laid flat: `w` along the slider and `h` across it, whichever way it goes.
     fn track(&self, area: Rect) -> Rect {
         return match self.direction {
             SliderDirection::Horizontal => area,
@@ -92,7 +101,10 @@ impl Slider {
     }
 
     fn handle_length(&self, track: Rect) -> i32 {
-        return (track.w / self.steps as i32).max(1);
+        return self
+            .handle
+            .unwrap_or(track.w / self.steps as i32)
+            .clamp(1, track.w.max(1));
     }
 
     /// Where the handle starts along the track for `value`.

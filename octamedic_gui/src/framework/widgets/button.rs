@@ -8,7 +8,7 @@ use crate::{
         clickable::{Click, Clickable},
         event::{Event, MouseButton},
         font::Font,
-        painter::{Align, Painter, Pen, aligned_text_x, inside_frame, text_y},
+        painter::{Align, Painter, Pen, inside_frame, line_x, text_y},
         rect::{Point, Rect},
         shape::Direction,
         text::{Line, Span},
@@ -62,7 +62,7 @@ pub trait ButtonContent {
 fn place_line<'a>(line: &'a Line, area: ContentArea) -> (Line<'a>, i32) {
     let line = line.fit(area.inside.w);
     let width = line.width();
-    let x = aligned_text_x(area.padded, width, area.align);
+    let x = line_x(area.padded, &line, area.align);
     // it may only hang a pixel over the end when it doesn't fit otherwise
     let last = area.inside.right() - width;
     return (line, x.min(last).max(area.inside.x));
@@ -144,8 +144,8 @@ impl Triangle {
     const ARROW_WIDTH: i32 = 6;
     const ARROW_HEIGHT: i32 = 5;
 
-    /// A bar is a line tall, or two pixels wide across a left or right pointing triangle, so it
-    /// looks as thick on the tall pixels.
+    /// A bar is a line tall, or two pixels wide across a left or right pointing triangle, as
+    /// `Border` is.
     const BAR_LINES: i32 = 1;
     const BAR_PIXELS: i32 = 2;
 
@@ -209,6 +209,109 @@ impl ButtonContent for Triangle {
     }
 }
 
+/// A label with a down arrow after it, like the play sequence's INS that inserts the current
+/// block: a stem over a head.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ArrowLabel {
+    pub label: &'static str,
+}
+
+impl ArrowLabel {
+    /// Pixels between the label and the arrow, besides the blank pixel the label's font leaves
+    /// after its last letter.
+    const GAP: i32 = 1;
+    /// Two pixels wide, as `Border` is, and lines tall.
+    const STEM: [i32; 2] = [2, 4];
+    /// Pixels wide and lines tall, under the stem.
+    const HEAD: [i32; 2] = [6, 3];
+    const ARROW: [i32; 2] = [Self::HEAD[0], Self::STEM[1] + Self::HEAD[1]];
+
+    pub fn new(label: &'static str) -> Self {
+        return Self { label };
+    }
+
+    /// Where `line` starts, and the arrow, together in the middle of the inside of the frame,
+    /// rounding right as OctaMED does here. When they don't fit, the arrow stays inside the frame
+    /// and the label goes past its left side.
+    fn place(&self, line: &Line, inside: Rect) -> (i32, Rect) {
+        // from the label's first letter, as `line_x` centres it
+        let (blank, _) = line.blank_sides();
+        let [arrow_width, arrow_height] = Self::ARROW;
+        let width = line.width() - blank + Self::GAP + arrow_width;
+        let centred = inside.x + (inside.w - width + 1) / 2;
+        let ink_x = centred.min(inside.right() - width);
+        let x = ink_x - blank;
+        let arrow_x = x + line.width() + Self::GAP;
+        let arrow_y = inside.y + (inside.h - arrow_height + 1) / 2;
+        return (x, Rect::new(arrow_x, arrow_y, arrow_width, arrow_height));
+    }
+}
+
+impl ButtonContent for ArrowLabel {
+    fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter) {
+        let line = label_line(self.label, area);
+        let (x, arrow) = self.place(&line, area.inside);
+        painter.line(x, text_y(area.padded, line.height()), &line, pen);
+        let [stem_width, stem_height] = Self::STEM;
+        let stem_x = arrow.x + (arrow.w - stem_width) / 2;
+        painter.fill(Rect::new(stem_x, arrow.y, stem_width, stem_height), pen);
+        let (_, head) = arrow.split_top(stem_height);
+        painter.triangle(head, Some(pen), None, Direction::Down);
+    }
+}
+
+/// A plus or a minus, `width` pixels by `height` lines, its lines `thickness` thick as `Border`
+/// is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct IncDec {
+    is_increment: bool,
+    width: i32,
+    height: i32,
+    thickness: i32,
+}
+
+impl IncDec {
+    pub fn new(increment: bool, width: i32, height: i32, thickness: i32) -> Self {
+        return Self {
+            is_increment: increment,
+            width,
+            height,
+            thickness,
+        };
+    }
+
+    /// The line across, and the one down for a plus, in the middle of the inside of the frame,
+    /// rounding right and up, as OctaMED's sit.
+    fn lines(&self, inside: Rect) -> (Rect, Option<Rect>) {
+        let x = inside.x + (inside.w - self.width + 1) / 2;
+        let y = inside.y + (inside.h - self.height) / 2;
+        let across = Rect::new(
+            x,
+            y + (self.height - self.thickness + 1) / 2,
+            self.width,
+            self.thickness,
+        );
+        let down_width = 2 * self.thickness;
+        let down = Rect::new(
+            x + (self.width - down_width + 1) / 2,
+            y,
+            down_width,
+            self.height,
+        );
+        return (across, self.is_increment.then_some(down));
+    }
+}
+
+impl ButtonContent for IncDec {
+    fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter) {
+        let (across, down) = self.lines(area.inside);
+        painter.fill(across, pen);
+        if let Some(down) = down {
+            painter.fill(down, pen);
+        }
+    }
+}
+
 /// A gadget showing a label or anything else that's `ButtonContent`, which changes the state
 /// when clicked. A clone shares the original's content and handler.
 #[derive(Clone)]
@@ -220,8 +323,7 @@ pub struct Button {
     toggled: bool,
     /// The frame's thickness, as `Painter::frame` takes it.
     border: i32,
-    /// Pixels between the frame and the content, on every side.
-    /// Across and down.
+    /// Between the frame and the content: pixels at the sides, then lines at the top and bottom.
     padding: [i32; 2],
     align: Align,
     font: Font,
@@ -404,6 +506,29 @@ mod tests {
     }
 
     #[test]
+    fn the_arrow_after_ins_stays_inside_the_frame() {
+        // the play sequence's INS with an arrow, 36 pixels wide
+        let button = Button::new("").font(Font::Label);
+        let area = button.content_area(Rect::new(56, 32, 36, 11));
+        let ins = ArrowLabel::new("INS");
+        let line = label_line(ins.label, area);
+        let (x, arrow) = ins.place(&line, area.inside);
+        assert_eq!((arrow.w, arrow.h), (6, 7));
+        assert!(arrow.right() <= area.inside.right());
+        assert!(x + line.width() < arrow.x);
+    }
+
+    #[test]
+    fn a_plus_crosses_in_the_middle_and_a_minus_is_only_the_line_across() {
+        let inside = Rect::new(10, 20, 16, 8);
+        let (across, down) = IncDec::new(true, 8, 6, 1).lines(inside);
+        assert_eq!(across, Rect::new(14, 24, 8, 1));
+        assert_eq!(down, Some(Rect::new(17, 21, 2, 6)));
+        let (minus, none) = IncDec::new(false, 8, 6, 1).lines(inside);
+        assert_eq!((minus, none), (across, None));
+    }
+
+    #[test]
     fn only_toggling_inverts_the_button() {
         let normal = (Pen::FILL, Pen::BLACK);
         let inverted = (Pen::BLACK, Pen::FILL);
@@ -432,7 +557,7 @@ mod tests {
         let chord = place(Button::new(""), Rect::new(216, 65, 35, 11), "CHRD");
         assert_eq!(chord, ("CHRD".to_string(), 218));
         let arrow = place(Button::new(""), Rect::new(560, 65, 13, 11), "<");
-        assert_eq!(arrow, ("<".to_string(), 563));
+        assert_eq!(arrow, ("<".to_string(), 562));
         let left = Button::new("").align(Align::Left);
         let name = place(left, Rect::new(0, 0, 40, 11), "BreakBeat");
         assert_eq!(name, ("Brea".to_string(), 3));

@@ -1,4 +1,4 @@
-use octamedic_core::data::palette::OctamedColorPallete;
+use octamedic_core::data::palette::OctamedColorPalette;
 
 use crate::framework::{
     font::{self, Font},
@@ -31,16 +31,16 @@ impl Pen {
 /// Draws onto a target in screen pixels, with the palette's pens.
 pub struct Painter<'a> {
     target: &'a mut dyn RenderTarget,
-    pallete: &'a OctamedColorPallete,
+    palette: &'a OctamedColorPalette,
 }
 
 impl<'a> Painter<'a> {
-    pub fn new(target: &'a mut dyn RenderTarget, pallete: &'a OctamedColorPallete) -> Self {
-        return Self { target, pallete };
+    pub fn new(target: &'a mut dyn RenderTarget, palette: &'a OctamedColorPalette) -> Self {
+        return Self { target, palette };
     }
 
     pub fn color(&self, pen: Pen) -> Color {
-        let [r, g, b] = self.pallete.rgb(pen.0);
+        let [r, g, b] = self.palette.rgb(pen.0);
         return Color::rgb(r, g, b);
     }
 
@@ -77,7 +77,7 @@ impl<'a> Painter<'a> {
         self.text_in_font(x + 1, y, text, pen, font);
     }
 
-    /// Each span after the last, in its own pen or else `pen`.
+    /// The spans side by side from `x`, each in its own pen or else `pen`.
     pub fn line(&mut self, x: i32, y: i32, line: &Line, pen: Pen) {
         let mut span_x = x;
         for span in &line.0 {
@@ -127,11 +127,10 @@ impl<'a> Painter<'a> {
         self.glyphs(x, y, text, pen, Font::Topaz, scale);
     }
 
-    /// `line` across `rect`, cut to the characters that fit, in the middle of it down. Centring
-    /// rounds down to whole pixels, and text taller than `rect` starts at its top.
+    /// `line` across `rect`, cut to the characters that fit, and down it as `text_y` puts it.
     pub fn line_in(&mut self, rect: Rect, line: &Line, pen: Pen, align: Align) {
         let line = line.fit(rect.w);
-        let x = aligned_text_x(rect, line.width(), align);
+        let x = line_x(rect, &line, align);
         self.line(x, text_y(rect, line.height()), &line, pen);
     }
 
@@ -181,7 +180,7 @@ impl<'a> Painter<'a> {
         return self.bevel(rect, thickness, Pen::LIGHT, Pen::SHADOW);
     }
 
-    /// `frame` with the light and shadow swapped, as around the mute boxes.
+    /// `frame` with the light and shadow swapped, as around the status row's gauge boxes.
     pub fn frame_inverted(&mut self, rect: Rect, thickness: i32) -> Rect {
         return self.bevel(rect, thickness, Pen::SHADOW, Pen::LIGHT);
     }
@@ -240,8 +239,7 @@ impl<'a> Painter<'a> {
         );
     }
 
-    /// An ellipse filling `rect`. On the tall pixels it's round when `rect` is twice as wide as
-    /// it's tall.
+    /// `shape::ellipse` filling `rect`.
     pub fn circle(&mut self, rect: Rect, fill: Option<Pen>, border: Option<Border>) {
         self.shape(rect, &shape::ellipse(rect.w, rect.h), fill, border);
     }
@@ -288,7 +286,8 @@ pub fn inside_frame(rect: Rect, thickness: i32) -> Rect {
     return rect.inset(2 * thickness, thickness);
 }
 
-/// The edge of a shape: `thickness` lines tall, and twice as many pixels wide.
+/// The edge of a shape: `thickness` lines tall, and twice as many pixels wide, so it looks as
+/// thick on the tall pixels.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Border {
     pub pen: Pen,
@@ -308,6 +307,16 @@ pub enum Align {
 /// taller than `rect`, as fonts leave their bottom line blank.
 pub fn text_y(rect: Rect, height: i32) -> i32 {
     return rect.y + ((rect.h - height) / 2).max(0);
+}
+
+/// Where `line` starts across `rect`. Centred, it's the letters that are in the middle, not the
+/// blank pixels fonts leave around them, which some leave more of on one side.
+pub fn line_x(rect: Rect, line: &Line, align: Align) -> i32 {
+    if align != Align::Center {
+        return aligned_text_x(rect, line.width(), align);
+    }
+    let (left, right) = line.blank_sides();
+    return aligned_text_x(rect, line.width() - left - right, align) - left;
 }
 
 /// Where text `width` pixels wide starts across `rect`; it's assumed to fit.

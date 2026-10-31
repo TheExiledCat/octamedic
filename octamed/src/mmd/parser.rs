@@ -11,7 +11,7 @@ use crate::{
             AMIGA_CHANNELS, BLOCK_INFO_RESERVED, EXPANSION_RESERVED, HEADER_RESERVED,
             INSTRUMENT_NAME_LENGTH, MAX_INSTRUMENTS, MMD0_ID, MMD1_ID, MMD2_ID, MMD3_ID,
             OctamedMMD, OctamedMMD0Block, OctamedMMD0BlockHeader, OctamedMMD0BlockLine,
-            OctamedMMD0ColorPallete, OctamedMMD0Dump, OctamedMMD0Expansion,
+            OctamedMMD0ColorPalette, OctamedMMD0Dump, OctamedMMD0Expansion,
             OctamedMMD0ExpansionHeader, OctamedMMD0ExternalInstrument, OctamedMMD0Header,
             OctamedMMD0Info, OctamedMMD0InstrumentInfo, OctamedMMD0InstrumentType,
             OctamedMMD0MidiCommands, OctamedMMD0NotationInfo, OctamedMMD0Rexx, OctamedMMD0Sample,
@@ -492,15 +492,15 @@ impl OctamedMMDParser {
                 text
             }
         };
-        let color_pallete = if header.rgb_table_ptr.is_null() {
-            OctamedMMD0ColorPallete::from_bytes([UWord(0); PALETTE_COLORS])
+        let color_palette = if header.rgb_table_ptr.is_null() {
+            OctamedMMD0ColorPalette::from_bytes([UWord(0); PALETTE_COLORS])
         } else {
             stream.seek(header.rgb_table_ptr.into())?;
-            let mut pallete = [UWord(0); PALETTE_COLORS];
-            for i in 0..pallete.len() {
-                pallete[i] = Self::parse_uword(stream)?;
+            let mut palette = [UWord(0); PALETTE_COLORS];
+            for i in 0..palette.len() {
+                palette[i] = Self::parse_uword(stream)?;
             }
-            OctamedMMD0ColorPallete::from_bytes(pallete)
+            OctamedMMD0ColorPalette::from_bytes(palette)
         };
         let external_instruments = Self::parse_external_instruments(stream, &header)?;
         let instrument_infos = {
@@ -545,7 +545,7 @@ impl OctamedMMDParser {
         return Ok(Some(OctamedMMD0Expansion {
             header,
             annotation,
-            color_pallete,
+            color_palette,
             external_instruments,
             instrument_infos,
             mmd_dump,

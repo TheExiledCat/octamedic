@@ -48,8 +48,9 @@ fn from_middle(y: i32, h: i32) -> f32 {
     return ((y as f32 + 0.5 - half) / half).abs();
 }
 
-/// A triangle filling `w` by `h`, pointing at the middle of one side from the far side. It
-/// widens by the same whole number of pixels every row, so its edges step evenly.
+/// A triangle filling `w` by `h`, pointing at the middle of one side from the far side. When `w`
+/// is a multiple of `h` it widens by the same whole number of pixels every row, so its edges
+/// step evenly.
 pub fn triangle(w: i32, h: i32, direction: Direction) -> Spans {
     // pointing sideways, the rows widen from the top and bottom edges in to the middle
     let half_rows = (h + 1) / 2;
@@ -86,7 +87,7 @@ pub fn ellipse(w: i32, h: i32) -> Spans {
         .collect();
 }
 
-/// What's left of a shape inside a border `thickness` lines tall and twice as many pixels wide:
+/// What's left of a shape inside a border `thickness` thick, as `Border` is:
 /// the pixels with the whole shape around them that far in every direction. Only right for
 /// shapes without dents, which all of these are.
 pub fn inside(spans: &Spans, thickness: i32) -> Spans {

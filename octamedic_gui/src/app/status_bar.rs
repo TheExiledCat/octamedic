@@ -16,7 +16,7 @@ use crate::{
     },
 };
 
-/// The boxes from left to right, in pixels; they fill the row.
+/// The boxes from left to right, in pixels; they fill the row but for its last pixel.
 const WIDTHS: [i32; 12] = [84, 68, 22, 14, 22, 35, 56, 20, 237, 13, 13, 49];
 
 // the boxes, by position in `WIDTHS`
@@ -61,6 +61,7 @@ impl StatusBar {
             let reset_out_of_bounds = |before: usize, after: usize| {
                 if after >= song_length { before } else { after }
             };
+            // the position's last two digits step it by 10 and by 1
             state.set_sequence(match click.char_index.as_ref().map(|i| *i).unwrap_or(0) {
                 2 => reset_out_of_bounds(
                     position,
@@ -125,7 +126,7 @@ impl StatusBar {
                                 .0
                                 .saturating_add_signed(base32::BASE as i8 * delta),
                         );
-                    } //todo jump to instrument base32
+                    }
                     Some(1) => {
                         if advance {
                             state.next_instrument();

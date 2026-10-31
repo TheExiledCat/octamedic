@@ -18,7 +18,7 @@ const HEIGHT: i32 = 11;
 
 const TEXT_OFFSET: [i32; 2] = [5, 1];
 
-/// The gadget at the right end, 1 pixel in from its bevel. In OctaMED it sends the screen behind
+/// How wide the gadget at the right end is, bevel included. In OctaMED it sends the screen behind
 /// Workbench; here it quits.
 const GADGET_WIDTH: i32 = 23;
 

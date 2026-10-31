@@ -448,7 +448,7 @@ pub struct OctamedMMD0Expansion {
     pub external_instruments: Vec<OctamedMMD0ExternalInstrument>,
     pub annotation: String,
     pub instrument_infos: Vec<OctamedMMD0InstrumentInfo>,
-    pub color_pallete: OctamedMMD0ColorPallete,
+    pub color_palette: OctamedMMD0ColorPalette,
     pub notation_info: OctamedMMD0NotationInfo,
     pub song_name: String,
     pub mmd_dump: OctamedMMD0Dump,
@@ -516,11 +516,11 @@ pub struct OctamedMMD0InstrumentInfo {
     pub name: String,
 }
 
-pub struct OctamedMMD0ColorPallete {
+pub struct OctamedMMD0ColorPalette {
     pub colors: [OctamedMMD0Color; PALETTE_COLORS],
 }
 
-impl OctamedMMD0ColorPallete {
+impl OctamedMMD0ColorPalette {
     pub fn from_bytes(bytes: [UWord; PALETTE_COLORS]) -> Self {
         let mut colors = [OctamedMMD0Color { value: UWord(0) }; PALETTE_COLORS];
         for i in 0..bytes.len() {

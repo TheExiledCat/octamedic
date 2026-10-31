@@ -82,6 +82,29 @@ impl<'a> Line<'a> {
         return self.0.iter().map(Span::width).sum();
     }
 
+    /// Blank pixels before the first ink and after the last, as if it were drawn plain: OctaMED
+    /// centres bold text as plain text, and the bold pixel hangs past it. None for a line
+    /// without any ink.
+    pub fn blank_sides(&self) -> (i32, i32) {
+        let mut x = 0;
+        let mut first = None;
+        let mut end = 0;
+        for span in &self.0 {
+            for c in span.text.chars() {
+                let advance = span.font.advance(c);
+                if let Some((left, right)) = span.font.blank_sides(c) {
+                    first.get_or_insert(x + left);
+                    end = x + advance - right;
+                }
+                x += advance;
+            }
+        }
+        let Some(first) = first else {
+            return (0, 0);
+        };
+        return (first, (x - end).max(0));
+    }
+
     pub fn height(&self) -> i32 {
         return self
             .0

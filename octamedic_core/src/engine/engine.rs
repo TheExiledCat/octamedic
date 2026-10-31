@@ -164,11 +164,16 @@ impl OctamedicEngine {
 
     fn apply(&mut self, command: EngineCommand) {
         match command {
-            EngineCommand::PlayPattern { pattern, looping } => self.play_pattern(pattern, looping),
+            EngineCommand::PlayPattern {
+                pattern,
+                row,
+                looping,
+            } => self.play_pattern(pattern, row, looping),
             EngineCommand::PlaySong {
                 sequence_start,
+                row,
                 looping,
-            } => self.play_song(sequence_start, looping),
+            } => self.play_song(sequence_start, row, looping),
             EngineCommand::Stop => self.stop(),
             EngineCommand::SetPattern { id, pattern } => self.set_pattern(id, pattern),
             EngineCommand::SetSequence { sequence } => self.sequence = sequence,
@@ -214,11 +219,11 @@ impl OctamedicEngine {
         self.instruments[index] = instrument;
     }
 
-    fn play_pattern(&mut self, id: PatternId, looping: bool) {
+    fn play_pattern(&mut self, id: PatternId, row: usize, looping: bool) {
         self.position = Position {
             sequence_index: 0,
             pattern: id,
-            row: 0,
+            row,
         };
         self.start(if looping {
             PlayMode::PatternLoop
@@ -227,14 +232,14 @@ impl OctamedicEngine {
         });
     }
 
-    fn play_song(&mut self, sequence_index: usize, looping: bool) {
+    fn play_song(&mut self, sequence_index: usize, row: usize, looping: bool) {
         let Some(&pattern) = self.sequence.get(sequence_index) else {
             return;
         };
         self.position = Position {
             sequence_index,
             pattern,
-            row: 0,
+            row,
         };
         self.start(if looping {
             PlayMode::SongLoop
@@ -244,11 +249,13 @@ impl OctamedicEngine {
     }
 
     /// The first row plays on the next tick, which is due straight away.
+    /// Plays from the position, starting at the block's last line when it's past the end.
     fn start(&mut self, mode: PlayMode) {
-        if self.current_pattern().is_none() {
+        let Some(lines) = self.current_pattern().map(OctamedicPattern::line_count) else {
             self.stop();
             return;
-        }
+        };
+        self.position.row = self.position.row.min(lines.saturating_sub(1));
         self.release_all();
         self.track_instruments = [None; MAX_TRACKS];
         self.clock = Some(Clock {
@@ -519,6 +526,29 @@ mod tests {
     }
 
     #[test]
+    fn playing_starts_from_the_line_given_or_the_last_one_past_the_end() {
+        let (mut engine, commands, status) = engine();
+        commands.send(EngineCommand::SetTempo(tempo(3))).unwrap();
+        commands
+            .send(EngineCommand::SetPattern {
+                id: PatternId(0),
+                pattern: Arc::new(pattern(4, &[])),
+            })
+            .unwrap();
+        for (row, starts_at) in [(2, 2), (10, 3)] {
+            commands
+                .send(EngineCommand::PlayPattern {
+                    pattern: PatternId(0),
+                    row,
+                    looping: false,
+                })
+                .unwrap();
+            run(&mut engine, 1);
+            assert_eq!(status.row(), starts_at, "from line {row}");
+        }
+    }
+
+    #[test]
     fn rows_advance_after_ticks_per_line_ticks() {
         let (mut engine, commands, status) = engine();
         commands.send(EngineCommand::SetTempo(tempo(3))).unwrap();
@@ -531,6 +561,7 @@ mod tests {
         commands
             .send(EngineCommand::PlayPattern {
                 pattern: PatternId(0),
+                row: 0,
                 looping: false,
             })
             .unwrap();
@@ -561,6 +592,7 @@ mod tests {
         commands
             .send(EngineCommand::PlayPattern {
                 pattern: PatternId(0),
+                row: 0,
                 looping: true,
             })
             .unwrap();
@@ -589,6 +621,7 @@ mod tests {
         commands
             .send(EngineCommand::PlaySong {
                 sequence_start: 0,
+                row: 0,
                 looping: false,
             })
             .unwrap();
