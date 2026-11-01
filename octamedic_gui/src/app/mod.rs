@@ -11,6 +11,7 @@ pub mod fonts;
 pub mod footer;
 pub mod header;
 pub mod keybinds;
+pub mod load_instrument;
 pub mod main;
 pub mod main_view;
 pub mod mode;

@@ -19,7 +19,10 @@ use rustuition::{
 
 use crate::{
     app::{DEFAULT_VIDEO, main_view::MainView, screen, state::AppState},
-    framework::event::{self, Event},
+    framework::{
+        dialog_stack::DialogStack,
+        event::{self, Event},
+    },
 };
 
 const CURSOR: &[u8] = include_bytes!("../../assets/cursor.png");
@@ -30,6 +33,7 @@ const CURSOR_SCALE: [f32; 2] = [2.0, 1.0];
 pub struct App {
     state: AppState,
     main: MainView,
+    dialogs: DialogStack,
     // native res, scaled up into the window
     screen: Image,
     video: VideoStandard,
@@ -49,6 +53,7 @@ impl App {
         let mut app = Self {
             state: Self::state_with_engine(project),
             main: MainView::new(),
+            dialogs: DialogStack::default(),
             screen: screen_image(ctx, DEFAULT_VIDEO),
             video: DEFAULT_VIDEO,
             cursor: Image::from_bytes(ctx, CURSOR)?,
@@ -100,7 +105,8 @@ impl App {
     }
 
     fn dispatch(&mut self, event: Event) -> bool {
-        return self.main.handle_event(&mut self.state, &event);
+        return self.dialogs.handle_event(&mut self.state, &event)
+            || self.main.handle_event(&mut self.state, &event);
     }
 
     fn mouse_event(&mut self, x: f32, y: f32, event: impl FnOnce(Point) -> Event) {
@@ -116,6 +122,7 @@ impl App {
             let mut target = BatchedCanvas::new(&ctx.gfx, &mut canvas, area);
             let mut painter = Painter::new(&mut target, &self.state.palette);
             self.main.render(&self.state, area, &mut painter);
+            self.dialogs.render(&self.state, area, &mut painter);
         }
         // after the batched fills are flushed, so it's on top
         let [x, y] = self.pointer;
@@ -133,6 +140,7 @@ impl EventHandler for App {
             .set_window_title(&format!("OctaMEDIC ({:.02} FPS) ", ctx.time.fps()));
         self.state.update();
         self.main.update(&mut self.state);
+        self.dialogs.update(&mut self.state);
         self.follow_video(ctx);
         if self.state.exit_requested {
             ctx.request_quit();

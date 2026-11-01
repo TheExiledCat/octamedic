@@ -3,36 +3,30 @@ use std::{fmt::Display, fs, io, path::Path};
 use crate::data::instrument::OctamedicInstrument;
 
 /// Reads one audio file format into an instrument. Each format gets its own, and
-/// [`load_instrument`] picks one by the file's extension.
+/// [`load_instrument`] picks one by looking at the file's header, since plenty of files,
+/// especially old Amiga ones, have no extension.
 pub trait InstrumentLoader {
-    /// Lowercase, without the dot.
-    fn extensions(&self) -> &[&str];
+    /// Whether the file's bytes start the way this format does.
+    fn recognizes(&self, bytes: &[u8]) -> bool;
 
     /// `name` is what the instrument gets called, usually the file name.
     fn load(&self, name: &str, bytes: &[u8]) -> Result<OctamedicInstrument, InstrumentLoadError>;
-
-    fn can_load(&self, path: &Path) -> bool {
-        let Some(extension) = path.extension().and_then(|extension| extension.to_str()) else {
-            return false;
-        };
-        let extension = extension.to_lowercase();
-        return self.extensions().contains(&extension.as_str());
-    }
 }
 
 #[derive(Debug)]
 pub enum InstrumentLoadError {
     Unreadable(io::Error),
     UnknownFormat,
-    /// What's wrong with it, for the user.
+    /// What's wrong with it, for the user. Keep it short.
     Malformed(String),
 }
 
+// short, it's shown in a notification or a dialog
 impl Display for InstrumentLoadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         return match self {
-            InstrumentLoadError::Unreadable(error) => write!(f, "{error}"),
-            InstrumentLoadError::UnknownFormat => write!(f, "not a format that can be loaded"),
+            InstrumentLoadError::Unreadable(_) => write!(f, "Can't read file"),
+            InstrumentLoadError::UnknownFormat => write!(f, "Not a sample"),
             InstrumentLoadError::Malformed(problem) => write!(f, "{problem}"),
         };
     }
@@ -40,19 +34,20 @@ impl Display for InstrumentLoadError {
 
 impl std::error::Error for InstrumentLoadError {}
 
-/// Loads `path` with the first of `loaders` that reads its extension, named after the file.
+/// Loads `path` with the first of `loaders` that recognizes it, named after the file.
 pub fn load_instrument(
     path: &Path,
     loaders: &[&dyn InstrumentLoader],
 ) -> Result<OctamedicInstrument, InstrumentLoadError> {
+    let bytes = fs::read(path).map_err(InstrumentLoadError::Unreadable)?;
     let loader = loaders
         .iter()
-        .find(|loader| loader.can_load(path))
+        .find(|loader| loader.recognizes(&bytes))
         .ok_or(InstrumentLoadError::UnknownFormat)?;
-    let bytes = fs::read(path).map_err(InstrumentLoadError::Unreadable)?;
+    // the whole name: a dot in an Amiga file name doesn't mean an extension
     let name = path
-        .file_stem()
-        .map(|stem| stem.to_string_lossy().into_owned())
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_default();
     return loader.load(&name, &bytes);
 }
@@ -64,12 +59,14 @@ mod tests {
     use super::*;
     use crate::data::instrument::OctamedicSample;
 
-    // signed 8-bit samples with nothing around them
+    const RAW_HEADER: &[u8] = b"RAW!";
+
+    // made up for the tests: "RAW!" then signed 8-bit samples
     struct RawLoader;
 
     impl InstrumentLoader for RawLoader {
-        fn extensions(&self) -> &[&str] {
-            return &["raw", "smp"];
+        fn recognizes(&self, bytes: &[u8]) -> bool {
+            return bytes.starts_with(RAW_HEADER);
         }
 
         fn load(
@@ -77,12 +74,13 @@ mod tests {
             name: &str,
             bytes: &[u8],
         ) -> Result<OctamedicInstrument, InstrumentLoadError> {
-            if bytes.is_empty() {
-                return Err(InstrumentLoadError::Malformed("it's empty".to_owned()));
+            let samples = &bytes[RAW_HEADER.len()..];
+            if samples.is_empty() {
+                return Err(InstrumentLoadError::Malformed("No sound in it".to_owned()));
             }
             let mut instrument = OctamedicInstrument::new(name);
             instrument.sample = Some(Arc::new(OctamedicSample {
-                data: bytes.iter().map(|&byte| byte as i8).collect(),
+                data: samples.iter().map(|&byte| byte as i8).collect(),
                 repeat: None,
             }));
             return Ok(instrument);
@@ -90,45 +88,53 @@ mod tests {
     }
 
     fn temp_file(name: &str, bytes: &[u8]) -> PathBuf {
-        let path = std::env::temp_dir().join(format!("octamedic-{}-{name}", std::process::id()));
+        let folder = std::env::temp_dir().join(format!("octamedic-loader-{}", std::process::id()));
+        fs::create_dir_all(&folder).unwrap();
+        let path = folder.join(name);
         fs::write(&path, bytes).unwrap();
         return path;
     }
 
-    #[test]
-    fn reads_by_extension() {
-        assert!(RawLoader.can_load(Path::new("kick.raw")));
-        assert!(RawLoader.can_load(Path::new("KICK.SMP")));
-        assert!(!RawLoader.can_load(Path::new("kick.wav")));
-        assert!(!RawLoader.can_load(Path::new("kick")));
+    fn raw(samples: &[u8]) -> Vec<u8> {
+        return [RAW_HEADER, samples].concat();
     }
 
     #[test]
-    fn loads_with_the_matching_loader() {
-        let path = temp_file("bass.raw", &[0, 127, 128]);
+    fn picked_by_header_not_name() {
+        let path = temp_file("BassDrum", &raw(&[0, 127, 128]));
         let instrument = load_instrument(&path, &[&RawLoader]);
         let _ = fs::remove_file(&path);
         let instrument = instrument.unwrap();
-        assert!(instrument.name.ends_with("bass"), "{}", instrument.name);
+        assert_eq!(instrument.name, "BassDrum");
         assert_eq!(instrument.sample.unwrap().data, [0, 127, -128]);
     }
 
     #[test]
-    fn unknown_extension() {
-        let result = load_instrument(Path::new("song.mp3"), &[&RawLoader]);
+    fn keeps_the_whole_name() {
+        let path = temp_file("st-01.bass", &raw(&[1]));
+        let instrument = load_instrument(&path, &[&RawLoader]);
+        let _ = fs::remove_file(&path);
+        assert_eq!(instrument.unwrap().name, "st-01.bass");
+    }
+
+    #[test]
+    fn misleading_extension_doesnt_matter() {
+        let path = temp_file("looks-like.raw", b"but isn't");
+        let result = load_instrument(&path, &[&RawLoader]);
+        let _ = fs::remove_file(&path);
         assert!(matches!(result, Err(InstrumentLoadError::UnknownFormat)));
     }
 
     #[test]
     fn missing_file() {
-        let path = std::env::temp_dir().join("octamedic-no-such-sample.raw");
+        let path = std::env::temp_dir().join("octamedic-no-such-sample");
         let result = load_instrument(&path, &[&RawLoader]);
         assert!(matches!(result, Err(InstrumentLoadError::Unreadable(_))));
     }
 
     #[test]
     fn loader_errors_come_through() {
-        let path = temp_file("empty.raw", &[]);
+        let path = temp_file("empty", RAW_HEADER);
         let result = load_instrument(&path, &[&RawLoader]);
         let _ = fs::remove_file(&path);
         assert!(matches!(result, Err(InstrumentLoadError::Malformed(_))));

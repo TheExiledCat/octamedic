@@ -9,10 +9,10 @@ use rustuition::{
 };
 
 use crate::{
-    app::{fonts, pens, state::AppState},
+    app::{files::load_module, fonts, pens, state::AppState},
     framework::{
         event::Event,
-        widgets::{Button, Textbox},
+        widgets::{Button, Dialog, Textbox},
     },
 };
 
@@ -113,6 +113,10 @@ impl Gadget<AppState, Event> for Files {
         if load_song.clicked().is_some() {
             load_selected_song(state);
         }
+        let [load_instrument, _] = &mut self.instr;
+        if load_instrument.clicked().is_some() {
+            crate::app::load_instrument::load_selected_instrument(state);
+        }
         if !self.dir.is_focused() {
             self.dir.set_text(state.browser.path().to_string_lossy());
         }
@@ -168,9 +172,25 @@ fn load_selected_song(state: &mut AppState) {
         return;
     };
     let path = state.browser.path().join(name);
-    match crate::app::files::load_module(&path) {
+    if state.is_saved() {
+        load_song(state, &path);
+        return;
+    }
+    let dialog = Dialog::confirm("Load song", "The song has unsaved changes.\nLoad anyway?")
+        .submit_button("Load")
+        .cancel_button("Cancel")
+        .on_submit_checked(move |state, _| {
+            let project = load_module(&path).map_err(|error| error.to_string())?;
+            state.load_project(project);
+            return Ok(());
+        });
+    state.open_dialog(dialog);
+}
+
+fn load_song(state: &mut AppState, path: &std::path::Path) {
+    match load_module(path) {
         Ok(project) => state.load_project(project),
-        Err(error) => state.notify(format!("Can't load {}: {error}", path.display())),
+        Err(error) => state.notify(error.to_string()),
     }
 }
 
@@ -293,7 +313,11 @@ mod tests {
     #[test]
     fn unloadable_song_keeps_the_old_one() {
         let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
-        state.set_song_name("kept");
+        let mut kept = OctamedicProject::new();
+        kept.get_song_mut(octamedic_core::data::song::SongId(0))
+            .unwrap()
+            .set_name("kept");
+        state.load_project(kept);
         let temp = std::env::temp_dir().join(format!("octamedic-load-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&temp);
         std::fs::create_dir_all(&temp).unwrap();
@@ -304,7 +328,18 @@ mod tests {
         click_load_song(&mut files, &mut state);
         let _ = std::fs::remove_dir_all(&temp);
         assert_eq!(state.song().name(), "kept");
-        assert!(state.notification.unwrap().starts_with("Can't load"));
+        assert_eq!(state.notification.as_deref(), Some("Not a song"));
+    }
+
+    #[test]
+    fn unsaved_changes_ask_first() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        state.set_song_name("edited");
+        state.browser.select_file(Some("anything.mmd0".to_owned()));
+        let mut files = Files::new();
+        click_load_song(&mut files, &mut state);
+        assert_eq!(state.take_pending_dialogs().len(), 1);
+        assert_eq!(state.song().name(), "edited");
     }
 
     #[test]

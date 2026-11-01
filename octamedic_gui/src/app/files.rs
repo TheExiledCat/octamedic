@@ -180,12 +180,26 @@ pub enum ModuleLoadError {
     NoModule,
 }
 
+// short, it's shown in a notification or a dialog
 impl Display for ModuleLoadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        return match self {
-            ModuleLoadError::Unreadable(error) => write!(f, "{error}"),
-            ModuleLoadError::NoModule => write!(f, "there's no module in it"),
+        let message = match self {
+            // too short to be a module
+            ModuleLoadError::Unreadable(MmdError::Io(error))
+                if error.kind() == io::ErrorKind::UnexpectedEof =>
+            {
+                "Not a song"
+            }
+            ModuleLoadError::Unreadable(MmdError::Io(_)) => "Can't read file",
+            ModuleLoadError::Unreadable(MmdError::UnknownFormat(_)) | ModuleLoadError::NoModule => {
+                "Not a song"
+            }
+            ModuleLoadError::Unreadable(MmdError::Unsupported(_)) => "Song type not supported",
+            ModuleLoadError::Unreadable(
+                MmdError::MissingPointer(_) | MmdError::UnknownInstrumentType(_),
+            ) => "Song is damaged",
         };
+        return write!(f, "{message}");
     }
 }
 
@@ -229,7 +243,16 @@ mod tests {
         let path = temp_file("not-a-module", b"just some text, not a module at all");
         let result = load_module(&path);
         let _ = fs::remove_file(&path);
-        assert!(result.is_err());
+        assert_eq!(result.err().unwrap().to_string(), "Not a song");
+    }
+
+    #[test]
+    fn missing_file_message() {
+        let path = std::env::temp_dir().join("octamedic-no-such-module.mmd0");
+        assert_eq!(
+            load_module(&path).err().unwrap().to_string(),
+            "Can't read file"
+        );
     }
 
     #[test]

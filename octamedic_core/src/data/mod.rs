@@ -9,3 +9,4 @@ pub mod song;
 pub mod tempo;
 pub mod track_count;
 pub mod volume;
+pub mod wav_loader;

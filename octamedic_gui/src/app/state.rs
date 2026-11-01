@@ -7,7 +7,7 @@ use octamed::{mmd::module::SONG_TRACKS, utility::note::SEMITONES_PER_OCTAVE};
 use octamedic_core::{
     amiga::clock::VideoStandard,
     data::{
-        instrument::{InstrumentId, MAX_INSTRUMENTS},
+        instrument::{InstrumentId, MAX_INSTRUMENTS, OctamedicInstrument},
         note::OctamedicNote,
         palette::{OctamedColorPalette, PALETTE_SIZE},
         pattern::{OctamedicPattern, OctamedicPatternTrack, PatternId},
@@ -19,11 +19,14 @@ use octamedic_core::{
 };
 use rustuition::palette::{Color, IntuitionColorPalette};
 
-use crate::app::{
-    DEFAULT_VIDEO,
-    browser::Browser,
-    cursor::EditCursor,
-    mode::{HeaderMode, MainMode},
+use crate::{
+    app::{
+        DEFAULT_VIDEO,
+        browser::Browser,
+        cursor::EditCursor,
+        mode::{HeaderMode, MainMode},
+    },
+    framework::widgets::Dialog,
 };
 
 const NOTIFICATION_DURATION: Duration = Duration::from_secs(2);
@@ -91,6 +94,8 @@ pub struct AppState {
     pub play_on_note: bool,
     pub meters: Meters,
     pub browser: Browser,
+    // opened since the dialog stack last looked
+    pending_dialogs: Vec<Dialog>,
     // right click: the title bar shows and the meters and scrolling stop
     pub displays_off: bool,
     video: VideoStandard,
@@ -141,6 +146,7 @@ impl AppState {
             play_on_note: false,
             meters: Meters::default(),
             browser: Browser::new(),
+            pending_dialogs: Vec::new(),
             displays_off: false,
             video: DEFAULT_VIDEO,
             queued_sequence_index: None,
@@ -188,6 +194,15 @@ impl AppState {
             }
             self.select_block(block);
         }
+    }
+
+    /// Shown on top of everything, and takes all input until it's closed.
+    pub fn open_dialog(&mut self, dialog: Dialog) {
+        self.pending_dialogs.push(dialog);
+    }
+
+    pub fn take_pending_dialogs(&mut self) -> Vec<Dialog> {
+        return std::mem::take(&mut self.pending_dialogs);
     }
 
     pub fn project(&self) -> &OctamedicProject {
@@ -371,6 +386,17 @@ impl AppState {
         self.engine.stop();
         self.started = None;
         self.queued_sequence_index = None;
+    }
+
+    pub fn replace_instrument(&mut self, id: InstrumentId, instrument: OctamedicInstrument) {
+        let Some(index) = id.index() else {
+            return;
+        };
+        let Some(slot) = self.song_mut().instruments.get_mut(index) else {
+            return;
+        };
+        *slot = Some(instrument.clone());
+        self.engine.set_instrument(id, Some(instrument));
     }
 
     pub fn set_instrument(&mut self, instrument: u8) -> InstrumentId {

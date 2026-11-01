@@ -8,6 +8,7 @@ rust-version.workspace = true
 octamedic_util = {path="../octamedic_util"}
 cpal = "0.17.3"
 octamed = {path="../octamed"}
+hound = "3.5.1"
 
 [lints]
 workspace = true

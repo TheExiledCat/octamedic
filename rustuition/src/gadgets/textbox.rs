@@ -121,6 +121,11 @@ impl<S, E> Textbox<S, E> {
     }
 
     /// Whether typing goes into it.
+    pub fn cursor_to_end(&mut self) {
+        self.cursor = self.len();
+        self.anchor = None;
+    }
+
     pub fn is_focused(&self) -> bool {
         return self.focused;
     }

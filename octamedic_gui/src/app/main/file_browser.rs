@@ -254,7 +254,7 @@ impl ClickTarget {
 
 fn open_or_notify(state: &mut AppState, path: &Path) {
     if state.browser.open(path).is_err() {
-        state.notify(format!("Can't open {}", path.display()));
+        state.notify("Can't open folder");
     }
 }
 

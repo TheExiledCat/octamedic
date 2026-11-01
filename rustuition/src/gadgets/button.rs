@@ -333,6 +333,11 @@ impl<S, E> Button<S, E> {
         };
     }
 
+    /// Where it was last drawn.
+    pub fn area(&self) -> Rect {
+        return self.area;
+    }
+
     /// Takes the last click, for owners that poll instead of setting a handler.
     pub fn clicked(&mut self) -> Option<ButtonClick> {
         return self.click.take();
