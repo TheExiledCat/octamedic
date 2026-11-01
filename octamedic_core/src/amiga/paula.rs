@@ -6,7 +6,10 @@ use std::{
     },
 };
 
-use crate::{amiga::clock::AmigaClock, data::instrument::OctamedicSample};
+use crate::{
+    amiga::{clock::AmigaClock, filter::LedFilter},
+    data::instrument::OctamedicSample,
+};
 
 // 4 tracks at full volume = full scale
 const MONO_GAIN: f32 = 0.25;
@@ -82,6 +85,9 @@ pub trait Renderer: Send {
 
     #[allow(unused_variables)]
     fn set_clock(&mut self, clock: AmigaClock) {}
+
+    #[allow(unused_variables)]
+    fn set_filter(&mut self, on: bool) {}
 
     /// Adds to `out`, interleaved.
     fn render(&mut self, out: &mut [f32], channels: usize);
@@ -184,6 +190,9 @@ pub struct PaulaRenderer {
     clock: AmigaClock,
     channels: Vec<Channel>,
     scopes: Arc<Scopes>,
+    filter: LedFilter,
+    // the filter goes over the whole mix, not each channel
+    mix: Vec<f32>,
 }
 
 impl PaulaRenderer {
@@ -198,6 +207,8 @@ impl PaulaRenderer {
             clock,
             channels: (0..channel_count).map(|_| Channel::default()).collect(),
             scopes,
+            filter: LedFilter::new(sample_rate),
+            mix: Vec::new(),
         };
     }
 }
@@ -207,6 +218,10 @@ impl Renderer for PaulaRenderer {
         self.clock = clock;
     }
 
+    fn set_filter(&mut self, on: bool) {
+        self.filter.set_on(on);
+    }
+
     fn write(&mut self, channel: usize, write: PaulaWrite) {
         if let Some(channel) = self.channels.get_mut(channel) {
             channel.write(write);
@@ -214,7 +229,20 @@ impl Renderer for PaulaRenderer {
     }
 
     fn render(&mut self, out: &mut [f32], channels: usize) {
-        let frames = out.len() / channels;
+        self.mix.clear();
+        self.mix.resize(out.len(), 0.0);
+        self.render_channels(channels);
+        self.filter.process(&mut self.mix, channels);
+        out.iter_mut()
+            .zip(&self.mix)
+            .for_each(|(out, mix)| *out += mix);
+    }
+}
+
+impl PaulaRenderer {
+    // into `mix`
+    fn render_channels(&mut self, channels: usize) {
+        let frames = self.mix.len() / channels;
         let start = self.scopes.next.load(Ordering::Relaxed);
         for (index, channel) in self.channels.iter_mut().enumerate() {
             let scope = (index < SCOPE_CHANNELS).then_some(index);
@@ -226,7 +254,7 @@ impl Renderer for PaulaRenderer {
             }
             let rate = self.clock.paula_clock as f64 / channel.period as f64;
             let step = rate / self.sample_rate as f64;
-            for (i, frame) in out.chunks_exact_mut(channels).enumerate() {
+            for (i, frame) in self.mix.chunks_exact_mut(channels).enumerate() {
                 let value = channel.next(step).unwrap_or(0.0);
                 if let Some(scope) = scope {
                     let level = (value / MAX_VOLUME as f32).round() as i8;
@@ -457,6 +485,20 @@ mod tests {
         assert_near(&render(&mut renderer, 1), &[FULL / 2.0]);
         renderer.write(0, PaulaWrite::Volume(200));
         assert_near(&render(&mut renderer, 1), &[FULL]);
+    }
+
+    // nyquist rate square, the filter should take nearly all of it out
+    #[test]
+    fn filter_toggle() {
+        let mut renderer = renderer();
+        let data = sample(vec![127, -127]);
+        play(&mut renderer, range(&data, 0, 2), 5, range(&data, 0, 2));
+        let peak = |out: Vec<f32>| out[1000..].iter().fold(0.0f32, |p, s| p.max(s.abs()));
+        assert_near(&[peak(render(&mut renderer, 2000))], &[FULL]);
+        renderer.set_filter(true);
+        assert!(peak(render(&mut renderer, 2000)) < FULL * 0.001);
+        renderer.set_filter(false);
+        assert_near(&[peak(render(&mut renderer, 2000))], &[FULL]);
     }
 
     #[test]

@@ -529,9 +529,16 @@ impl Playback {
         self.dec.set_toggled(!hex);
     }
 
+    fn update_filter(&mut self, state: &mut AppState) {
+        if left_clicked(&mut self.filter) {
+            state.set_filter(!state.song().flags.filter_on);
+        }
+        self.filter.set_toggled(state.song().flags.filter_on);
+    }
+
     // these don't affect playback yet
     fn update_switches(&mut self) {
-        let switches = [&mut self.filter, &mut self.sts, &mut self.hq];
+        let switches = [&mut self.sts, &mut self.hq];
         for button in switches {
             if left_clicked(button) {
                 button.toggle();
@@ -569,6 +576,7 @@ impl Gadget<AppState, Event> for Playback {
     fn update(&mut self, state: &mut AppState) {
         self.update_tempo(state);
         self.update_volume_base(state);
+        self.update_filter(state);
         self.update_meters(state);
         self.update_switches();
         self.update_playing(state);
@@ -660,5 +668,32 @@ mod tests {
         assert!(state.song().flags.volumes_hex);
         assert!(!state.is_saved());
         assert!(playback.hex.is_toggled() && !playback.dec.is_toggled());
+    }
+
+    #[test]
+    fn filter_follows_song() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        let mut playback = Playback::new();
+        let mut screen = Framebuffer::new(460, 50);
+        playback.update(&mut state);
+        playback.render(
+            &state,
+            screen.bounds(),
+            &mut Painter::new(&mut screen, &state.palette),
+        );
+        assert!(!playback.filter.is_toggled());
+        let press = Event::MouseDown {
+            pos: [FILTER.x + 2, FILTER.y + 2],
+            button: MouseButton::Left,
+        };
+        playback.handle_event(&mut state, &press);
+        playback.update(&mut state);
+        assert!(state.song().flags.filter_on);
+        assert!(!state.is_saved());
+        assert!(playback.filter.is_toggled());
+        playback.handle_event(&mut state, &press);
+        playback.update(&mut state);
+        assert!(!state.song().flags.filter_on);
+        assert!(!playback.filter.is_toggled());
     }
 }

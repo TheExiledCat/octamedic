@@ -467,6 +467,13 @@ impl AppState {
         }
     }
 
+    pub fn set_filter(&mut self, on: bool) {
+        if self.song().flags.filter_on != on {
+            self.song_mut().flags.filter_on = on;
+        }
+        self.engine.set_filter(on);
+    }
+
     pub fn key_to_note(&self, key: char) -> Option<OctamedicNote> {
         let key = key.to_ascii_lowercase();
         let semitone = BOTTOM_OCTAVE_KEYS
