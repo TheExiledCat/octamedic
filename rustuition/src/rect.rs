@@ -99,6 +99,7 @@ impl Rect {
     }
 }
 
+#[cfg(feature = "ggez")]
 impl From<Rect> for ggez::graphics::Rect {
     fn from(rect: Rect) -> Self {
         return Self::new(rect.x as f32, rect.y as f32, rect.w as f32, rect.h as f32);

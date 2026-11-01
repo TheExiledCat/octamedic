@@ -2028,6 +2028,7 @@ dependencies = [
  "octamed",
  "octamedic_core",
  "octamedic_util",
+ "rustuition",
 ]
 
 [[package]]
@@ -2443,6 +2444,13 @@ dependencies = [
  "libc",
  "linux-raw-sys",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "rustuition"
+version = "0.1.0"
+dependencies = [
+ "ggez",
 ]
 
 [[package]]

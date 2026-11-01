@@ -8,6 +8,7 @@ rust-version.workspace = true
 octamedic_util = {path="../octamedic_util"}
 octamed = {path="../octamed"}
 octamedic_core = {path="../octamedic_core"}
+rustuition = { path = "../rustuition", features = ["ggez"] }
 ggez = { version = "0.9.3", default-features = false }
 dirs = "6.0.0"
 ab_glyph = "0.2.32"
