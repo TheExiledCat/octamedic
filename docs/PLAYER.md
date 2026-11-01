@@ -102,6 +102,12 @@ range ends, DMA off silences the channel. The output runs at the sound card's ra
 so each output frame is the average of the bytes played during it, weighted by how long each was
 held. You keep the held-byte sound without extra aliasing from the resampling.
 
+The "LED" filter (`amiga/filter.rs`) goes over the whole mix. On the real thing it's a 2-pole
+Sallen-Key low-pass that the power LED bit switches; from the board's component values it comes out
+at about 3.1kHz with a Q of 0.66, so close to Butterworth but not quite. It's a biquad here, made
+with the bilinear transform. `EngineCommand::SetFilter` switches it, and `load_song` sets it from
+the song's filter flag. It keeps running while off, so switching it doesn't click.
+
 16-bit and stereo samples become 8-bit mono at load time, since that's all Paula plays.
 
 ## Not done yet
@@ -109,7 +115,8 @@ held. You keep the held-byte sound without extra aliasing from the resampling.
 - Effects (the command column). `tick` has a spot for them.
 - 5 to 8 channel songs, where OctaMED mixes two tracks into each Paula channel in software. That
   will be its own renderer.
-- The low-pass filter (the song's filter flag), and stereo. Paula puts channels 0 and 3 left and
-  1 and 2 right; the renderer puts everything in the middle.
+- Stereo. Paula puts channels 0 and 3 left and 1 and 2 right; the renderer puts everything in the
+  middle.
+- The A500's fixed RC low-pass (about 4.4kHz, always on, unlike the LED filter).
 - Paula can't fetch faster than a period of about 124 allows, the renderer doesn't limit that.
 - MIDI and synth instruments.

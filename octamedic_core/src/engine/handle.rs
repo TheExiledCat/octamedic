@@ -51,6 +51,7 @@ pub enum EngineCommand {
     },
     SetTempo(OctamedicTempo),
     SetMachine(AmigaClock),
+    SetFilter(bool),
     SetTrackVolume {
         track: usize,
         volume: u8,
@@ -78,6 +79,7 @@ impl EngineCommand {
             EngineCommand::SetTempo(song.tempo()),
             EngineCommand::SetMasterVolume(song.master_volume.get()),
             EngineCommand::SetGlobalTranspose(song.global_transpose),
+            EngineCommand::SetFilter(song.flags.filter_on),
         ];
         for (track, volume) in song.track_volumes.iter().enumerate() {
             commands.push(EngineCommand::SetTrackVolume {
@@ -327,6 +329,10 @@ impl EngineHandle {
 
     pub fn set_machine(&self, machine: AmigaClock) {
         self.send(EngineCommand::SetMachine(machine));
+    }
+
+    pub fn set_filter(&self, on: bool) {
+        self.send(EngineCommand::SetFilter(on));
     }
 
     pub fn set_tempo(&self, tempo: OctamedicTempo) {

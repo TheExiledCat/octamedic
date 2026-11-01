@@ -171,6 +171,7 @@ impl OctamedicEngine {
                 self.machine = machine;
                 self.renderer.set_clock(machine);
             }
+            EngineCommand::SetFilter(on) => self.renderer.set_filter(on),
             EngineCommand::SetTrackVolume { track, volume } => {
                 if let Some(track_volume) = self.track_volumes.get_mut(track) {
                     *track_volume = volume.min(MAX_INSTRUMENT_VOLUME);
