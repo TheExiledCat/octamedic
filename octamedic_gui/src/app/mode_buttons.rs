@@ -1,18 +1,21 @@
+use rustuition::{
+    gadget::Gadget,
+    gadgets::grid::Grid,
+    painter::{Align, Painter},
+    rect::Rect,
+};
+
 use crate::{
     app::{
+        fonts,
         mode::{HeaderMode, MainMode},
         state::AppState,
     },
     framework::{
         event::Event,
-        font::Font,
-        painter::{Align, Painter},
-        rect::Rect,
-        widget::OctamedicWidget,
         widgets::{
-            button::Button,
-            grid::Grid,
-            symbols::{Blocks, MusicSymbol},
+            Button,
+            symbols::{Blocks, MusicSymbol, MusicSymbols},
         },
     },
 };
@@ -66,13 +69,13 @@ impl ModeButtons {
                     ModeBinding::Main(MainMode::BlockEditor) => {
                         Button::new(Blocks::new(PICTURE_BLOCKS))
                     }
-                    ModeBinding::Main(MainMode::NotationEditor) => Button::new([
+                    ModeBinding::Main(MainMode::NotationEditor) => Button::new(MusicSymbols([
                         MusicSymbol::Note,
                         MusicSymbol::BassClef,
                         MusicSymbol::Sharp,
                         MusicSymbol::HalfNote,
-                    ]),
-                    _ => Button::new(label).align(Align::Left).font(Font::Panel),
+                    ])),
+                    _ => Button::new(label).align(Align::Left).font(fonts::PANEL),
                 };
                 button.on_click(move |state, _| {
                     let (header, main) = match binding {
@@ -91,7 +94,7 @@ impl ModeButtons {
     }
 }
 
-impl OctamedicWidget for ModeButtons {
+impl Gadget<AppState, Event> for ModeButtons {
     fn update(&mut self, state: &mut AppState) {
         for (button, (_, binding)) in self.grid.cells_mut().iter_mut().zip(BUTTONS) {
             let showing = match binding {

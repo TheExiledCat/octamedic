@@ -1,34 +1,34 @@
-use std::rc::Rc;
+use std::{marker::PhantomData, rc::Rc};
 
 use crate::{
-    app::state::AppState,
-    framework::{
-        event::{Event, MouseButton},
-        painter::{Painter, Pen},
-        rect::{Point, Rect},
-        widget::OctamedicWidget,
-    },
+    event::{MouseButton, MouseEvent, PointerEvent},
+    gadget::Gadget,
+    painter::{Painter, Pen},
+    rect::{Point, Rect},
 };
 
+/// Which way a [`Slider`] moves.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SliderDirection {
     Horizontal,
     Vertical,
 }
 
+/// A slider being dragged, passed to its handler.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Slide {
     pub start_value: u16,
     pub value: u16,
 }
 
-pub trait SlideHandler: Fn(&mut AppState, Slide) + 'static {}
+/// What a slider calls when it's dragged to a new value.
+pub trait SlideHandler<S>: Fn(&mut S, Slide) + 'static {}
 
-impl<F: Fn(&mut AppState, Slide) + 'static> SlideHandler for F {}
+impl<S, F: Fn(&mut S, Slide) + 'static> SlideHandler<S> for F {}
 
-// clones share the handler
-#[derive(Clone)]
-pub struct Slider {
+/// A proportional gadget: a handle dragged along a dotted track to one of `steps` values.
+// clones share the handler. `S` is the app's state, `E` the events it's sent
+pub struct Slider<S, E = MouseEvent> {
     direction: SliderDirection,
     // last step on the left, or top when vertical
     reversed: bool,
@@ -36,13 +36,15 @@ pub struct Slider {
     steps: u16,
     handle: Option<i32>,
     value: u16,
-    on_slide: Option<Rc<dyn SlideHandler>>,
+    on_slide: Option<Rc<dyn SlideHandler<S>>>,
     drag: Option<Drag>,
     // from the last render
     area: Rect,
+    events: PhantomData<fn(&E)>,
 }
 
-impl Slider {
+impl<S, E> Slider<S, E> {
+    /// A slider with `steps` values, starting left or at the top, or the other end if `reversed`.
     pub fn new(direction: SliderDirection, reversed: bool, steps: u16) -> Self {
         return Self {
             direction,
@@ -53,27 +55,33 @@ impl Slider {
             on_slide: None,
             drag: None,
             area: Rect::default(),
+            events: PhantomData,
         };
     }
 
+    /// Makes the handle `length` pixels long, rather than the track split by the steps.
     pub fn fixed_handle(mut self, length: i32) -> Self {
         self.handle = Some(length);
         return self;
     }
 
-    pub fn on_slide(mut self, handler: impl Fn(&mut AppState, Slide) + 'static) -> Self {
+    /// Sets what's called when it's dragged.
+    pub fn on_slide(mut self, handler: impl Fn(&mut S, Slide) + 'static) -> Self {
         self.set_on_slide(handler);
         return self;
     }
 
-    pub fn set_on_slide(&mut self, handler: impl Fn(&mut AppState, Slide) + 'static) {
+    /// Changes what's called when it's dragged.
+    pub fn set_on_slide(&mut self, handler: impl Fn(&mut S, Slide) + 'static) {
         self.on_slide = Some(Rc::new(handler));
     }
 
+    /// The value it's at.
     pub fn value(&self) -> u16 {
         return self.value;
     }
 
+    /// Moves it to `value`, kept below the number of steps.
     pub fn set_value(&mut self, value: u16) {
         self.value = value.min(self.steps - 1);
     }
@@ -135,7 +143,7 @@ impl Slider {
         };
     }
 
-    fn drag_to(&mut self, state: &mut AppState, pos: Point, drag: Drag) {
+    fn drag_to(&mut self, state: &mut S, pos: Point, drag: Drag) {
         let track = self.track(self.area);
         let value = self.value_at(self.along(pos, self.area) - drag.grab, track);
         if value == self.value {
@@ -152,10 +160,23 @@ impl Slider {
     }
 }
 
-impl OctamedicWidget for Slider {
-    fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
-        match *event {
-            Event::MouseDown {
+// derive would want S: Clone
+impl<S, E> Clone for Slider<S, E> {
+    fn clone(&self) -> Self {
+        return Self {
+            on_slide: self.on_slide.clone(),
+            ..*self
+        };
+    }
+}
+
+impl<S, E: PointerEvent> Gadget<S, E> for Slider<S, E> {
+    fn handle_event(&mut self, state: &mut S, event: &E) -> bool {
+        let Some(event) = event.mouse() else {
+            return false;
+        };
+        match event {
+            MouseEvent::Down {
                 pos,
                 button: MouseButton::Left,
             } if self.area.contains(pos) => {
@@ -176,13 +197,13 @@ impl OctamedicWidget for Slider {
                 self.drag_to(state, pos, drag);
                 return true;
             }
-            Event::MouseMove { pos } => {
+            MouseEvent::Move { pos } => {
                 if let Some(drag) = self.drag {
                     self.drag_to(state, pos, drag);
                 }
                 return false;
             }
-            Event::MouseUp {
+            MouseEvent::Up {
                 button: MouseButton::Left,
                 ..
             } => return self.drag.take().is_some(),
@@ -191,12 +212,12 @@ impl OctamedicWidget for Slider {
     }
 
     // like OctaMED, handle shadow along the bottom and one pixel past the right edge
-    fn render(&mut self, _state: &AppState, area: Rect, painter: &mut Painter) {
+    fn render(&mut self, _state: &S, area: Rect, painter: &mut Painter) {
         let track = painter.frame(area, 1);
         self.area = track;
-        painter.dotted_rect(track, Pen::BLACK, Pen::SHADOW);
+        painter.dotted_rect(track, Pen::BACKGROUND, Pen::SHADOW);
         let handle = self.handle_rect(track);
-        painter.fill(handle, Pen::LIGHT);
+        painter.fill(handle, Pen::SHINE);
         let bottom = Rect::new(handle.x, handle.bottom() - 1, handle.w, 1);
         painter.fill(bottom, Pen::SHADOW);
         if handle.right() < track.right() {
@@ -219,15 +240,9 @@ struct Drag {
 mod tests {
     use std::cell::Cell;
 
-    use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
-
     use super::*;
 
-    fn state() -> AppState {
-        return AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
-    }
-
-    fn slider(direction: SliderDirection, reversed: bool) -> Slider {
+    fn slider(direction: SliderDirection, reversed: bool) -> Slider<()> {
         let mut slider = Slider::new(direction, reversed, 16);
         slider.area = match direction {
             SliderDirection::Horizontal => Rect::new(10, 20, 128, 8),
@@ -260,16 +275,16 @@ mod tests {
         let told = seen.clone();
         let mut slider = slider(SliderDirection::Horizontal, false)
             .on_slide(move |_, slide| told.set(Some(slide)));
-        let mut state = state();
+        let mut state = ();
         let left = MouseButton::Left;
         // grabbing the handle where it is doesn't move it
-        let press = Event::MouseDown {
+        let press = MouseEvent::Down {
             pos: [12, 22],
             button: left,
         };
         assert!(slider.handle_event(&mut state, &press));
         assert_eq!(seen.get(), None);
-        let moved = Event::MouseMove {
+        let moved = MouseEvent::Move {
             pos: [12 + 8 * 4, 22],
         };
         slider.handle_event(&mut state, &moved);
@@ -280,23 +295,23 @@ mod tests {
                 value: 4
             })
         );
-        let release = Event::MouseUp {
+        let release = MouseEvent::Up {
             pos: [44, 22],
             button: left,
         };
         assert!(slider.handle_event(&mut state, &release));
-        slider.handle_event(&mut state, &Event::MouseMove { pos: [130, 22] });
+        slider.handle_event(&mut state, &MouseEvent::Move { pos: [130, 22] });
         assert_eq!(slider.value(), 4);
     }
 
     #[test]
     fn track_click_jumps() {
         let mut slider = slider(SliderDirection::Horizontal, false);
-        let press = Event::MouseDown {
+        let press = MouseEvent::Down {
             pos: [10 + 64, 22],
             button: MouseButton::Left,
         };
-        slider.handle_event(&mut state(), &press);
+        slider.handle_event(&mut (), &press);
         assert_eq!(slider.value(), 8);
     }
 }

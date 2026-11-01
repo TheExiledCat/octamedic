@@ -8,7 +8,7 @@ use octamedic_core::{
     data::{
         instrument::{InstrumentId, MAX_INSTRUMENTS},
         note::OctamedicNote,
-        palette::OctamedColorPalette,
+        palette::{OctamedColorPalette, PALETTE_SIZE},
         pattern::{OctamedicPattern, OctamedicPatternTrack, PatternId},
         project::OctamedicProject,
         song::{OctamedicSong, SongId},
@@ -16,6 +16,7 @@ use octamedic_core::{
     },
     engine::{engine::PlayMode, handle::EngineHandle},
 };
+use rustuition::palette::{Color, IntuitionColorPalette};
 
 use crate::app::{
     cursor::EditCursor,
@@ -56,7 +57,7 @@ pub struct AppState {
     pub recording: bool,
     pub exit_requested: bool,
     pub notification: Option<String>,
-    pub palette: OctamedColorPalette,
+    pub palette: IntuitionColorPalette,
     project: OctamedicProject,
     header_mode: HeaderMode,
     main_mode: MainMode,
@@ -74,9 +75,17 @@ pub struct AppState {
     sequence_changed: bool,
 }
 
+// the song's colours, as the screen shows them
+pub fn screen_palette(palette: &OctamedColorPalette) -> IntuitionColorPalette {
+    let colors: Vec<Color> = (0..PALETTE_SIZE)
+        .map(|pen| Color(palette.get(pen)))
+        .collect();
+    return IntuitionColorPalette::new(colors);
+}
+
 impl AppState {
     pub fn new(project: OctamedicProject, engine: EngineHandle) -> Self {
-        let palette = project.palette();
+        let palette = screen_palette(&project.palette());
         let mut state = Self {
             engine,
             active_song: SongId(0),

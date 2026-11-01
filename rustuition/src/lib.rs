@@ -1,2 +1,12 @@
+pub mod clickable;
+pub mod event;
+pub mod font;
+pub mod gadget;
+pub mod gadgets;
+pub mod painter;
+pub mod palette;
 pub mod rect;
+pub mod screen;
 pub mod shape;
+pub mod target;
+pub mod text;

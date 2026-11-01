@@ -1,3 +1,4 @@
+/// Which way something points.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Direction {
     Up,
@@ -6,6 +7,7 @@ pub enum Direction {
     Right,
 }
 
+/// Which sides of a rect get a border.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Sides {
     pub top: bool,
@@ -15,12 +17,14 @@ pub struct Sides {
 }
 
 impl Sides {
+    /// Every side.
     pub const ALL: Sides = Sides {
         top: true,
         right: true,
         bottom: true,
         left: true,
     };
+    /// No sides.
     pub const NONE: Sides = Sides {
         top: false,
         right: false,
@@ -29,11 +33,13 @@ impl Sides {
     };
 }
 
-// left..right of a row, from the shape's left edge
+/// Left to right of one row, from the shape's left edge.
 pub type Span = (i32, i32);
 
+/// A shape as the span of each row, `None` for empty rows.
 pub type Spans = Vec<Option<Span>>;
 
+/// A triangle `w` by `h` pointing `direction`.
 // edges only step evenly if w is a multiple of h for up/down, or of (h + 1) / 2 for left/right
 pub fn triangle(w: i32, h: i32, direction: Direction) -> Spans {
     let half_rows = (h + 1) / 2;
@@ -58,6 +64,7 @@ pub fn triangle(w: i32, h: i32, direction: Direction) -> Spans {
         .collect();
 }
 
+/// An ellipse filling `w` by `h`.
 // round on screen when w = 2 * h, tall pixels
 pub fn ellipse(w: i32, h: i32) -> Spans {
     let w_f = w as f32;
@@ -70,7 +77,7 @@ pub fn ellipse(w: i32, h: i32) -> Spans {
         .collect();
 }
 
-// what's left inside a Border of this thickness. only right for convex shapes
+/// What's left inside a border of `thickness`. Only right for convex shapes.
 pub fn inside(spans: &Spans, thickness: i32) -> Spans {
     let rows = spans.len() as i32;
     let side = 2 * thickness;

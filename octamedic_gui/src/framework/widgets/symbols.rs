@@ -1,7 +1,7 @@
-use crate::framework::{
+use rustuition::{
+    gadgets::button::{ButtonContent, ContentArea},
     painter::{Align, Painter, Pen, aligned_text_x},
     rect::Rect,
-    widgets::button::{ButtonContent, ContentArea},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -140,9 +140,13 @@ impl ButtonContent for MusicSymbol {
     }
 }
 
-impl<const N: usize> ButtonContent for [MusicSymbol; N] {
+// a row of them in one button
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MusicSymbols<const N: usize>(pub [MusicSymbol; N]);
+
+impl<const N: usize> ButtonContent for MusicSymbols<N> {
     fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter) {
-        render_symbols(self, area, pen, painter);
+        render_symbols(&self.0, area, pen, painter);
     }
 }
 

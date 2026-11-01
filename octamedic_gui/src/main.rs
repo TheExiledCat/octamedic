@@ -8,10 +8,7 @@ use ggez::{
 use octamed::mmd::{conversion::FromModule, parser::OctamedMMDParser};
 use octamedic_core::data::project::OctamedicProject;
 
-use crate::{
-    app::{app::App, files},
-    framework::screen::{PIXEL_ASPECT, SCREEN_HEIGHT, SCREEN_WIDTH},
-};
+use crate::app::{SCREEN, app::App, files};
 
 mod app;
 mod framework;
@@ -31,21 +28,22 @@ fn load_project() -> OctamedicProject {
 }
 
 // window pixels per screen pixel across; screen pixels are twice as tall
-const WINDOW_SCALE: i32 = 2;
+const WINDOW_SCALE: f32 = 2.0;
 
 fn main() -> GameResult<()> {
     if let Err(error) = files::initialize() {
         eprintln!("Couldn't create OctaMEDIC's folders: {error}");
     }
     let project = load_project();
+    let [width, height] = SCREEN.window_size(WINDOW_SCALE);
     let (mut ctx, event_loop) = ContextBuilder::new("OctaMEDIC", "Amano Rosuko")
         .backend(ggez::conf::Backend::Vulkan)
         .window_mode(WindowMode {
             maximized: false,
             fullscreen_type: ggez::conf::FullscreenType::Windowed,
             borderless: false,
-            width: (SCREEN_WIDTH * WINDOW_SCALE) as f32,
-            height: SCREEN_HEIGHT as f32 * PIXEL_ASPECT * WINDOW_SCALE as f32,
+            width,
+            height,
             resizable: true,
             ..Default::default()
         })

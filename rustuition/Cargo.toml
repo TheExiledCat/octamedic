@@ -9,6 +9,7 @@ rust-version.workspace = true
 ggez = ["dep:ggez"]
 
 [dependencies]
+ab_glyph = "0.2.32"
 ggez = { version = "0.9.3", default-features = false, optional = true }
 
 [lints]

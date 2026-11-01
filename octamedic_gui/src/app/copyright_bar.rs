@@ -1,15 +1,14 @@
 use octamedic_util::primitives::Flip;
+use rustuition::{
+    clickable::{Click, Clickable},
+    gadget::Gadget,
+    painter::{Painter, Pen},
+    rect::Rect,
+};
 
 use crate::{
-    app::state::AppState,
-    framework::{
-        clickable::{Click, Clickable},
-        event::{Event, MouseButton},
-        font::Font,
-        painter::{Painter, Pen},
-        rect::Rect,
-        widget::OctamedicWidget,
-    },
+    app::{fonts, state::AppState},
+    framework::event::{Event, MouseButton},
 };
 
 const COPYRIGHT: &str = "OctaMEDIC Professional © 2026 Amano Rosuko.";
@@ -50,7 +49,7 @@ impl CopyrightBar {
     }
 }
 
-impl OctamedicWidget for CopyrightBar {
+impl Gadget<AppState, Event> for CopyrightBar {
     fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
         if !self.visible {
             return false;
@@ -73,20 +72,26 @@ impl OctamedicWidget for CopyrightBar {
             return;
         }
         let bar = Rect::new(area.x, area.y, area.w, HEIGHT);
-        painter.fill(bar, Pen::LIGHT);
+        painter.fill(bar, Pen::SHINE);
         let [x, y] = TEXT_OFFSET;
-        painter.text_in_font(bar.x + x, bar.y + y, COPYRIGHT, Pen::BLACK, Font::Interface);
+        painter.text_in_font(
+            bar.x + x,
+            bar.y + y,
+            COPYRIGHT,
+            Pen::BACKGROUND,
+            fonts::INTERFACE,
+        );
         let gadget = Rect::new(bar.right() - GADGET_WIDTH, bar.y, GADGET_WIDTH, HEIGHT);
         self.gadget.set_area(gadget);
         // bevel: light top and left, shadow bottom and right
         painter.fill(gadget, Pen::SHADOW);
         painter.fill(
             Rect::new(gadget.x, gadget.y, gadget.w - 1, gadget.h - 1),
-            Pen::LIGHT,
+            Pen::SHINE,
         );
-        painter.fill(Rect::new(gadget.x, gadget.y, gadget.w, 1), Pen::LIGHT);
+        painter.fill(Rect::new(gadget.x, gadget.y, gadget.w, 1), Pen::SHINE);
         let inside = Rect::new(gadget.x + 1, gadget.y + 1, gadget.w - 2, gadget.h - 2);
-        painter.fill(inside, Pen::BLACK);
+        painter.fill(inside, Pen::BACKGROUND);
         painter.picture(&GADGET_PICTURE, inside.x, inside.y);
     }
 }

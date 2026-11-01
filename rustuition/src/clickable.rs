@@ -1,8 +1,9 @@
-use crate::framework::{
-    event::{Event, MouseButton},
+use crate::{
+    event::{MouseButton, MouseEvent, PointerEvent},
     rect::{Point, Rect},
 };
 
+/// What a [`Clickable`] made of an event.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Click {
     Ignored,
@@ -12,13 +13,15 @@ pub enum Click {
 }
 
 impl Click {
+    /// Whether the event was used, so nothing else should get it.
     pub fn handled(self) -> bool {
         return self != Click::Ignored;
     }
 }
 
-// clicks on press like OctaMED's gadgets. the release gets eaten wherever it lands so whatever's
-// under the pointer doesn't see half a click
+/// Tracks presses on one area and turns them into clicks.
+// clicks on press like Intuition's GACT_IMMEDIATE gadgets. the release gets eaten wherever it lands
+// so whatever's under the pointer doesn't see half a click
 #[derive(Clone, Debug, Default)]
 pub struct Clickable {
     area: Rect,
@@ -27,24 +30,28 @@ pub struct Clickable {
 }
 
 impl Clickable {
+    /// Sets the area clicks land in, call it from `render`.
     pub fn set_area(&mut self, area: Rect) {
         self.area = area;
     }
 
-    // nothing draws itself pressed at the moment
-    #[allow(dead_code)]
+    /// Whether a mouse button is held on it with the pointer still over it.
     pub fn is_pressed(&self) -> bool {
         return self.hovered && self.pressed.is_some();
     }
 
+    /// Feeds it an event and says what came of it.
     // moves are never taken, every clickable needs them for hover
-    pub fn handle(&mut self, event: &Event) -> Click {
-        match *event {
-            Event::MouseMove { pos } => {
+    pub fn handle(&mut self, event: &impl PointerEvent) -> Click {
+        let Some(event) = event.mouse() else {
+            return Click::Ignored;
+        };
+        match event {
+            MouseEvent::Move { pos } => {
                 self.hovered = self.area.contains(pos);
                 return Click::Ignored;
             }
-            Event::MouseDown { pos, button } => {
+            MouseEvent::Down { pos, button } => {
                 self.hovered = self.area.contains(pos);
                 // a press of the button held means its release went to another widget
                 let other_held = self.pressed.is_some_and(|held| held != button);
@@ -54,7 +61,7 @@ impl Clickable {
                 self.pressed = Some(button);
                 return Click::Clicked { button, pos };
             }
-            Event::MouseUp { pos, button } => {
+            MouseEvent::Up { pos, button } => {
                 if self.pressed != Some(button) {
                     return Click::Ignored;
                 }
@@ -62,7 +69,6 @@ impl Clickable {
                 self.hovered = self.area.contains(pos);
                 return Click::Handled;
             }
-            _ => return Click::Ignored,
         }
     }
 }
@@ -77,15 +83,15 @@ mod tests {
         return clickable;
     }
 
-    fn down(x: i32, y: i32) -> Event {
-        return Event::MouseDown {
+    fn down(x: i32, y: i32) -> MouseEvent {
+        return MouseEvent::Down {
             pos: [x, y],
             button: MouseButton::Left,
         };
     }
 
-    fn up(x: i32, y: i32) -> Event {
-        return Event::MouseUp {
+    fn up(x: i32, y: i32) -> MouseEvent {
+        return MouseEvent::Up {
             pos: [x, y],
             button: MouseButton::Left,
         };
@@ -117,9 +123,9 @@ mod tests {
     fn pressed_while_hovered() {
         let mut clickable = clickable();
         clickable.handle(&down(15, 15));
-        clickable.handle(&Event::MouseMove { pos: [100, 0] });
+        clickable.handle(&MouseEvent::Move { pos: [100, 0] });
         assert!(!clickable.is_pressed());
-        clickable.handle(&Event::MouseMove { pos: [15, 15] });
+        clickable.handle(&MouseEvent::Move { pos: [15, 15] });
         assert!(clickable.is_pressed());
     }
 
@@ -128,7 +134,7 @@ mod tests {
         let mut clickable = clickable();
         clickable.handle(&down(15, 15));
         assert!(clickable.handle(&down(15, 15)) != Click::Ignored);
-        let right = Event::MouseDown {
+        let right = MouseEvent::Down {
             pos: [15, 15],
             button: MouseButton::Right,
         };

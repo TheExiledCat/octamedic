@@ -1,48 +1,37 @@
-use octamedic_core::data::palette::OctamedColorPalette;
-
-use crate::framework::{
+pub use crate::palette::Pen;
+use crate::{
     font::{self, Font},
+    palette::IntuitionColorPalette,
     rect::Rect,
     shape::{self, Direction, Sides, Span, Spans},
-    target::{Color, RenderTarget},
+    target::{RenderTarget, Rgba},
     text::Line,
 };
 
-// topaz
+/// Topaz's width in pixels.
 pub const CHAR_WIDTH: i32 = 8;
 
+/// Topaz's height in lines.
 pub const CHAR_HEIGHT: i32 = 8;
 
-// index into the song's palette
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Pen(pub usize);
-
-impl Pen {
-    pub const BLACK: Self = Self(0);
-    pub const LIGHT: Self = Self(1);
-    pub const SHADOW: Self = Self(2);
-    pub const FILL: Self = Self(3);
-    pub const RED: Self = Self(4);
-    pub const ROSE: Self = Self(5);
-    pub const PINK: Self = Self(6);
-    pub const BLUSH: Self = Self(7);
-}
-
+/// Draws shapes and text onto a [`RenderTarget`] with pens from a palette.
 pub struct Painter<'a> {
     target: &'a mut dyn RenderTarget,
-    palette: &'a OctamedColorPalette,
+    palette: &'a IntuitionColorPalette,
 }
 
 impl<'a> Painter<'a> {
-    pub fn new(target: &'a mut dyn RenderTarget, palette: &'a OctamedColorPalette) -> Self {
+    /// Draws onto `target` with the colours of `palette`.
+    pub fn new(target: &'a mut dyn RenderTarget, palette: &'a IntuitionColorPalette) -> Self {
         return Self { target, palette };
     }
 
-    pub fn color(&self, pen: Pen) -> Color {
-        let [r, g, b] = self.palette.rgb(pen.0);
-        return Color::rgb(r, g, b);
+    /// The colour `pen` has in the palette.
+    pub fn color(&self, pen: Pen) -> Rgba {
+        return self.palette.get(pen).to_rgba();
     }
 
+    /// Runs `draw` with drawing clipped to `rect`.
     // draw isn't called at all if rect is empty or off screen
     pub fn clipped(&mut self, rect: Rect, draw: impl FnOnce(&mut Self)) {
         let previous = self.target.get_clip();
@@ -52,32 +41,37 @@ impl<'a> Painter<'a> {
         }
     }
 
+    /// Fills `rect` with `pen`.
     pub fn fill(&mut self, rect: Rect, pen: Pen) {
         let color = self.color(pen);
         self.target.fill(rect, color);
     }
 
-    // for colours outside the palette, which OctaMED gets from the copper
-    pub fn fill_color(&mut self, rect: Rect, color: Color) {
+    /// Fills `rect` with a colour from outside the palette, like the copper gives.
+    pub fn fill_color(&mut self, rect: Rect, color: Rgba) {
         self.target.fill(rect, color);
     }
 
+    /// Fills `rect` with `pen` at `opacity`, from 0 to 1.
     pub fn fill_translucent(&mut self, rect: Rect, pen: Pen, opacity: f32) {
         let mut color = self.color(pen);
-        color.a = (opacity.clamp(0.0, 1.0) * Color::OPAQUE as f32).round() as u8;
+        color.a = (opacity.clamp(0.0, 1.0) * Rgba::OPAQUE as f32).round() as u8;
         self.target.fill(rect, color);
     }
 
+    /// Draws `text` in Topaz with its top left at `x`, `y`.
     pub fn text(&mut self, x: i32, y: i32, text: &str, pen: Pen) {
-        self.text_in_font(x, y, text, pen, Font::Topaz);
+        self.text_in_font(x, y, text, pen, Font::TOPAZ);
     }
 
+    /// Draws `text` bold the Amiga way.
     // amiga bold, same text again 1px right. fits since glyphs leave the last column blank
     pub fn text_bold(&mut self, x: i32, y: i32, text: &str, pen: Pen, font: Font) {
         self.text_in_font(x, y, text, pen, font);
         self.text_in_font(x + 1, y, text, pen, font);
     }
 
+    /// Draws a styled line, spans without a pen of their own in `pen`.
     pub fn line(&mut self, x: i32, y: i32, line: &Line, pen: Pen) {
         let mut span_x = x;
         for span in &line.0 {
@@ -95,26 +89,29 @@ impl<'a> Painter<'a> {
         }
     }
 
+    /// Draws `text` in `font`.
     pub fn text_in_font(&mut self, x: i32, y: i32, text: &str, pen: Pen, font: Font) {
         self.glyphs(x, y, text, pen, font, [1.0, 1.0]);
     }
 
+    /// Draws Topaz `text` scaled, rounded to whole pixels.
     pub fn text_scaled(&mut self, x: i32, y: i32, text: &str, pen: Pen, scale: [f32; 2]) {
-        self.glyphs(x, y, text, pen, Font::Topaz, scale);
+        self.glyphs(x, y, text, pen, Font::TOPAZ, scale);
     }
 
+    /// Draws a line cut to fit `rect` and lined up in it.
     pub fn line_in(&mut self, rect: Rect, line: &Line, pen: Pen, align: Align) {
         let line = line.fit(rect.w);
         let x = line_x(rect, &line, align);
         self.line(x, text_y(rect, line.height()), &line, pen);
     }
 
-    // # light, f fill, s shadow, anything else is see-through
+    /// Draws a picture from rows of text: `#` shine, `f` fill, `s` shadow, anything else see-through.
     pub fn picture(&mut self, rows: &[&str], x: i32, y: i32) {
         for (line, row) in rows.iter().enumerate() {
             for (column, pixel) in row.chars().enumerate() {
                 let pen = match pixel {
-                    '#' => Pen::LIGHT,
+                    '#' => Pen::SHINE,
                     'f' => Pen::FILL,
                     's' => Pen::SHADOW,
                     _ => continue,
@@ -124,6 +121,7 @@ impl<'a> Painter<'a> {
         }
     }
 
+    /// Fills `rect` with a checkerboard of `dots` and `gaps`.
     // checkerboard lines up with the screen, not the rect, so rects next to each other match
     pub fn dotted_rect(&mut self, rect: Rect, dots: Pen, gaps: Pen) {
         self.fill(rect, gaps);
@@ -135,6 +133,7 @@ impl<'a> Painter<'a> {
         }
     }
 
+    /// Draws a 1px box just inside `rect`.
     pub fn outline(&mut self, rect: Rect, pen: Pen) {
         let Rect { x, y, w, h } = rect;
         self.fill(Rect::new(x, y, w, 1), pen);
@@ -143,17 +142,19 @@ impl<'a> Painter<'a> {
         self.fill(Rect::new(x + w - 1, y, 1, h), pen);
     }
 
-    // OctaMED's bevel, light top/right and shadow left/bottom. sides are 2x thickness for the tall
+    /// Draws the raised bevel and returns what's inside it.
+    // the bevel, shine top/right and shadow left/bottom. sides are 2x thickness for the tall
     // pixels, corners meet on a slant like the original. returns the inside
     pub fn frame(&mut self, rect: Rect, thickness: i32) -> Rect {
-        return self.bevel(rect, thickness, Pen::LIGHT, Pen::SHADOW);
+        return self.bevel(rect, thickness, Pen::SHINE, Pen::SHADOW);
     }
 
-    // status row gauge boxes
+    /// Draws the sunk in bevel and returns what's inside it.
     pub fn frame_inverted(&mut self, rect: Rect, thickness: i32) -> Rect {
-        return self.bevel(rect, thickness, Pen::SHADOW, Pen::LIGHT);
+        return self.bevel(rect, thickness, Pen::SHADOW, Pen::SHINE);
     }
 
+    /// Fills `rect` and draws a border on the chosen `sides`.
     pub fn rect(&mut self, rect: Rect, fill: Option<Pen>, border: Option<Border>, sides: Sides) {
         if let Some(fill) = fill {
             self.fill(rect, fill);
@@ -177,6 +178,7 @@ impl<'a> Painter<'a> {
         }
     }
 
+    /// Draws a triangle pointing `direction` in `rect`, filled, bordered or both.
     pub fn triangle(
         &mut self,
         rect: Rect,
@@ -192,6 +194,7 @@ impl<'a> Painter<'a> {
         );
     }
 
+    /// Draws an ellipse filling `rect`, filled, bordered or both.
     pub fn circle(&mut self, rect: Rect, fill: Option<Pen>, border: Option<Border>) {
         self.shape(rect, &shape::ellipse(rect.w, rect.h), fill, border);
     }
@@ -263,14 +266,17 @@ impl<'a> Painter<'a> {
     }
 }
 
+/// Width of `text` in Topaz.
 pub fn text_width(text: &str) -> i32 {
     return text.chars().count() as i32 * CHAR_WIDTH;
 }
 
+/// What's inside a frame of `thickness` drawn around `rect`.
 pub fn inside_frame(rect: Rect, thickness: i32) -> Rect {
     return rect.inset(2 * thickness, thickness);
 }
 
+/// A border's pen and thickness.
 // sides are drawn 2x thickness wide because of the tall pixels
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Border {
@@ -278,6 +284,7 @@ pub struct Border {
     pub thickness: i32,
 }
 
+/// How something lines up across an area.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Align {
     Left,
@@ -286,11 +293,13 @@ pub enum Align {
     Right,
 }
 
+/// Where text `height` lines tall goes to be centred down `rect`.
 // pinned to the top when it doesn't fit, fonts leave the bottom line blank anyway
 pub fn text_y(rect: Rect, height: i32) -> i32 {
     return rect.y + ((rect.h - height) / 2).max(0);
 }
 
+/// Where `line` goes across `rect` to be lined up with `align`.
 // centres the ink, the blank pixels fonts leave either side can be uneven
 pub fn line_x(rect: Rect, line: &Line, align: Align) -> i32 {
     if align != Align::Center {
@@ -300,6 +309,7 @@ pub fn line_x(rect: Rect, line: &Line, align: Align) -> i32 {
     return aligned_text_x(rect, line.width() - left - right, align) - left;
 }
 
+/// Where something `width` wide goes across `rect` to be lined up with `align`.
 pub fn aligned_text_x(rect: Rect, width: i32, align: Align) -> i32 {
     let spare = rect.w - width;
     return match align {
