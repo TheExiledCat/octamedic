@@ -69,6 +69,18 @@ edits while it's playing.
 `app/files.rs` knows the folders: the config folder (`config.toml`, `keybinds.toml`) and the
 projects folder inside the music folder. `initialize` creates them at startup.
 
+The FILES screen is `FileBrowser` (`app/main/file_browser.rs`): the current folder on the left
+(`(dir) / Parent Dir`, then `(dir) name` for each folder, then the files with their sizes), and
+shortcuts on the right (AmigaOS showed its assigns and devices there; we show the usual folders like
+Music and Documents, then the drives, from `files::get_shortcuts`). Each list has a scroller, a
+slider with up/down arrows. Where it is lives in `AppState::browser` (`app/browser.rs`), since the
+FILES header panel (`app/header/files.rs`) uses it too: its DIR box shows the current path, and
+opens what's typed when it loses focus, going back to the old path if that can't be read. The lists
+scroll with their arrows and sliders, and go back to the top for a new folder. Clicking a folder,
+the parent entry or a shortcut opens it, and clicking a file selects it, which FILE shows (typing in
+FILE selects that name). LOAD SONG loads the selected file with `files::load_module` and
+`AppState::load_project`. The other buttons aren't hooked up yet.
+
 ## Tests
 
 Gadgets only need a window to draw, so you can test their logic on a state with no audio device:

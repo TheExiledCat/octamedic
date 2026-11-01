@@ -65,6 +65,17 @@ impl<S, E> Slider<S, E> {
         return self;
     }
 
+    /// Changes the number of steps, keeping the value in range.
+    pub fn set_steps(&mut self, steps: u16) {
+        self.steps = steps.max(1);
+        self.value = self.value.min(self.steps - 1);
+    }
+
+    /// Changes the handle's length, `None` for the track split by the steps.
+    pub fn set_handle(&mut self, length: Option<i32>) {
+        self.handle = length;
+    }
+
     /// Sets what's called when it's dragged.
     pub fn on_slide(mut self, handler: impl Fn(&mut S, Slide) + 'static) -> Self {
         self.set_on_slide(handler);
@@ -249,6 +260,19 @@ mod tests {
             SliderDirection::Vertical => Rect::new(10, 20, 8, 128),
         };
         return slider;
+    }
+
+    #[test]
+    fn steps_change() {
+        let mut slider = slider(SliderDirection::Vertical, false);
+        slider.set_value(15);
+        slider.set_steps(4);
+        assert_eq!(slider.value(), 3);
+        assert_eq!(slider.handle_rect(slider.area), Rect::new(10, 116, 8, 32));
+        slider.set_handle(Some(10));
+        assert_eq!(slider.handle_rect(slider.area), Rect::new(10, 138, 8, 10));
+        slider.set_steps(0);
+        assert_eq!(slider.value(), 0);
     }
 
     #[test]

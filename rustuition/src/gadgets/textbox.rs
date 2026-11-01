@@ -8,7 +8,7 @@ use crate::{
     event::{EditKey, MouseButton, MouseEvent, PointerEvent, TextEvent, TextInput},
     font::Font,
     gadget::Gadget,
-    painter::{Painter, Pen, inside_frame, text_y},
+    painter::{Painter, Pen, inside_frame},
     rect::Rect,
 };
 
@@ -422,7 +422,8 @@ impl<S, E: PointerEvent + TextEvent> Gadget<S, E> for Textbox<S, E> {
         painter.frame(area, self.border);
         let inner = self.inner(area);
         self.scroll_to_cursor(inner.w);
-        let y = text_y(inner, self.font.height());
+        // a row lower when it can't be centred exactly, a font's bottom row is room for descenders
+        let y = inner.y + ((inner.h - self.font.height() + 1) / 2).max(0);
         let selection = self.selection().filter(|_| self.focused);
         let cursor = (self.focused && selection.is_none()).then_some(self.cursor);
         painter.clipped(inner, |painter| {

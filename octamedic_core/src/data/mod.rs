@@ -1,5 +1,6 @@
 pub mod command;
 pub mod instrument;
+pub mod instrument_loader;
 pub mod note;
 pub mod palette;
 pub mod pattern;

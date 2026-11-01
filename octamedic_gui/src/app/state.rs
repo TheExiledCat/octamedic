@@ -21,6 +21,7 @@ use rustuition::palette::{Color, IntuitionColorPalette};
 
 use crate::app::{
     DEFAULT_VIDEO,
+    browser::Browser,
     cursor::EditCursor,
     mode::{HeaderMode, MainMode},
 };
@@ -89,6 +90,7 @@ pub struct AppState {
     // the D switch
     pub play_on_note: bool,
     pub meters: Meters,
+    pub browser: Browser,
     // right click: the title bar shows and the meters and scrolling stop
     pub displays_off: bool,
     video: VideoStandard,
@@ -138,6 +140,7 @@ impl AppState {
             palette,
             play_on_note: false,
             meters: Meters::default(),
+            browser: Browser::new(),
             displays_off: false,
             video: DEFAULT_VIDEO,
             queued_sequence_index: None,
@@ -194,6 +197,27 @@ impl AppState {
     pub fn project_mut(&mut self) -> &mut OctamedicProject {
         self.has_changes = true;
         return &mut self.project;
+    }
+
+    // keeps what isn't the song's, like the file browser and which screen is showing
+    pub fn load_project(&mut self, project: OctamedicProject) {
+        self.stop();
+        for track in 0..SONG_TRACKS {
+            if self.muted_tracks[track] {
+                self.engine.set_track_muted(track, false);
+            }
+        }
+        self.palette = screen_palette(&project.palette());
+        self.project = project;
+        self.active_song = SongId(0);
+        self.active_pattern = PatternId(0);
+        self.cursor = EditCursor::default();
+        self.active_sequence_index = 0;
+        self.active_instrument = InstrumentId(1);
+        self.muted_tracks = [false; SONG_TRACKS];
+        self.has_changes = false;
+        self.restart_timer();
+        self.send_all_to_engine();
     }
 
     pub fn song(&self) -> &OctamedicSong {
@@ -655,6 +679,30 @@ mod tests {
 
     fn state() -> AppState {
         return AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+    }
+
+    #[test]
+    fn loading_resets_the_song_state() {
+        let mut state = state();
+        state.set_song_name("old");
+        state.toggle_track_mute(2);
+        state.set_instrument(5);
+        assert!(!state.is_saved());
+        let mut project = OctamedicProject::new();
+        project.get_song_mut(SongId(0)).unwrap().set_name("new");
+        state.load_project(project);
+        assert_eq!(state.song().name(), "new");
+        assert!(state.is_saved());
+        assert!(!state.is_track_muted(2));
+        assert_eq!(state.active_instrument, InstrumentId(1));
+    }
+
+    #[test]
+    fn loading_keeps_the_browser() {
+        let mut state = state();
+        state.browser.open(std::env::temp_dir()).unwrap();
+        state.load_project(OctamedicProject::new());
+        assert_eq!(state.browser.path(), std::env::temp_dir());
     }
 
     #[test]

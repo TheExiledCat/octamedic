@@ -2,11 +2,15 @@
 #![allow(dead_code)]
 
 use std::{
+    fmt::Display,
     fs, io,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     thread,
 };
+
+use octamed::mmd::{conversion::FromModule, error::MmdError, parser::OctamedMMDParser};
+use octamedic_core::data::project::OctamedicProject;
 
 const FOLDER_ROOT_NAME: &str = "octamedic";
 const CONFIG_FILE_NAME: &str = "config.toml";
@@ -22,6 +26,87 @@ pub fn get_projects_directory_root() -> Option<PathBuf> {
     return dirs::audio_dir()
         .or_else(|| dirs::home_dir().map(|home| home.join("Music")))
         .map(|dir| dir.join(FOLDER_ROOT_NAME));
+}
+
+/// Where the file browser can jump to, like the Amiga's assigns and devices list.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Shortcut {
+    pub name: String,
+    pub path: PathBuf,
+}
+
+pub fn get_shortcuts() -> Vec<Shortcut> {
+    let places = [
+        ("Projects", get_projects_directory_root()),
+        ("Home", dirs::home_dir()),
+        ("Desktop", dirs::desktop_dir()),
+        ("Documents", dirs::document_dir()),
+        ("Downloads", dirs::download_dir()),
+        ("Music", dirs::audio_dir()),
+        ("Pictures", dirs::picture_dir()),
+    ];
+    let places = places.into_iter().filter_map(|(name, path)| {
+        let path = path.filter(|path| path.is_dir())?;
+        return Some(Shortcut {
+            name: name.to_owned(),
+            path,
+        });
+    });
+    return places.chain(drives()).collect();
+}
+
+#[cfg(windows)]
+fn drives() -> Vec<Shortcut> {
+    return ('A'..='Z')
+        .map(|letter| Shortcut {
+            name: format!("{letter}:"),
+            path: PathBuf::from(format!("{letter}:\\")),
+        })
+        .filter(|drive| drive.path.is_dir())
+        .collect();
+}
+
+#[cfg(target_os = "macos")]
+fn drives() -> Vec<Shortcut> {
+    return subfolders(Path::new("/Volumes"));
+}
+
+// where removable drives and WSL's windows drives get mounted
+#[cfg(not(any(windows, target_os = "macos")))]
+fn drives() -> Vec<Shortcut> {
+    let root = Shortcut {
+        name: "/".to_owned(),
+        path: PathBuf::from("/"),
+    };
+    let user = std::env::var("USER").unwrap_or_default();
+    let mounts = [
+        PathBuf::from("/mnt"),
+        Path::new("/media").join(&user),
+        Path::new("/run/media").join(&user),
+    ];
+    let mounted = mounts
+        .iter()
+        .flat_map(|folder| subfolders(folder))
+        // WSL's own mounts, not drives
+        .filter(|drive| !drive.name.starts_with("wsl"));
+    return [root].into_iter().chain(mounted).collect();
+}
+
+#[cfg(not(windows))]
+fn subfolders(folder: &Path) -> Vec<Shortcut> {
+    let Ok(entries) = fs::read_dir(folder) else {
+        return Vec::new();
+    };
+    let mut found: Vec<Shortcut> = entries
+        .filter_map(Result::ok)
+        .filter(|entry| entry.path().is_dir())
+        .map(|entry| Shortcut {
+            name: entry.file_name().to_string_lossy().into_owned(),
+            path: entry.path(),
+        })
+        .collect();
+    found.sort_by(|a, b| a.name.cmp(&b.name));
+    return found;
 }
 
 pub fn get_config_directory_root() -> Option<PathBuf> {
@@ -89,9 +174,94 @@ fn config_file(name: &str) -> io::Result<PathBuf> {
     return Ok(root.join(name));
 }
 
+#[derive(Debug)]
+pub enum ModuleLoadError {
+    Unreadable(MmdError),
+    NoModule,
+}
+
+impl Display for ModuleLoadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        return match self {
+            ModuleLoadError::Unreadable(error) => write!(f, "{error}"),
+            ModuleLoadError::NoModule => write!(f, "there's no module in it"),
+        };
+    }
+}
+
+// a file can hold several modules, only the first is used
+pub fn load_module(path: &Path) -> Result<OctamedicProject, ModuleLoadError> {
+    let modules = OctamedMMDParser::new()
+        .parse_file(path)
+        .map_err(ModuleLoadError::Unreadable)?;
+    let module = modules.first().ok_or(ModuleLoadError::NoModule)?;
+    return Ok(OctamedicProject::from_module(module));
+}
+
 fn missing(folder: &str) -> io::Error {
     return io::Error::new(
         io::ErrorKind::NotFound,
         format!("couldn't find the {folder} folder"),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_file(name: &str, bytes: &[u8]) -> PathBuf {
+        let path = std::env::temp_dir().join(format!("octamedic-{name}-{}", std::process::id()));
+        fs::write(&path, bytes).unwrap();
+        return path;
+    }
+
+    #[test]
+    fn missing_module_file() {
+        let path = std::env::temp_dir().join("octamedic-no-such-module.mmd0");
+        assert!(matches!(
+            load_module(&path),
+            Err(ModuleLoadError::Unreadable(_))
+        ));
+    }
+
+    #[test]
+    fn not_a_module() {
+        let path = temp_file("not-a-module", b"just some text, not a module at all");
+        let result = load_module(&path);
+        let _ = fs::remove_file(&path);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn shortcuts_are_folders() {
+        let shortcuts = get_shortcuts();
+        assert!(!shortcuts.is_empty());
+        for shortcut in &shortcuts {
+            assert!(!shortcut.name.is_empty());
+            assert!(shortcut.path.is_dir(), "{shortcut:?}");
+        }
+    }
+
+    #[test]
+    fn projects_first() {
+        if let Some(projects) = get_projects_directory_root().filter(|path| path.is_dir()) {
+            assert_eq!(get_shortcuts()[0].path, projects);
+        }
+    }
+
+    #[cfg(not(any(windows, target_os = "macos")))]
+    #[test]
+    fn root_and_mounts() {
+        let shortcuts = get_shortcuts();
+        assert!(
+            shortcuts
+                .iter()
+                .any(|shortcut| shortcut.path == Path::new("/"))
+        );
+        assert!(
+            !shortcuts
+                .iter()
+                .any(|shortcut| shortcut.name.starts_with("wsl"))
+        );
+    }
 }

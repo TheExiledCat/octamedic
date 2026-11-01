@@ -1,3 +1,4 @@
+pub mod files;
 pub mod misc;
 pub mod play;
 use rustuition::{
@@ -9,7 +10,7 @@ use rustuition::{
 
 use crate::{
     app::{
-        header::{misc::Misc, play::Play},
+        header::{files::Files, misc::Misc, play::Play},
         mode::HeaderMode,
         mode_buttons::ModeButtons,
         state::AppState,
@@ -18,7 +19,7 @@ use crate::{
     framework::event::Event,
 };
 
-// measured off an OctaMED screenshot, relative to the header's top left
+// from the header's top left
 const WIDGETS_HEIGHT: i32 = 52;
 const STATUS_HEIGHT: i32 = 11;
 const STATUS_INSET: i32 = 3;
@@ -26,6 +27,7 @@ const PANEL: Rect = Rect::new(8, 4, 452, 47);
 const MODE_BUTTONS: Rect = Rect::new(462, 2, 174, 50);
 
 pub struct HeaderPanels {
+    pub files: Files,
     pub misc: Misc,
     pub play: Play,
 }
@@ -33,6 +35,7 @@ pub struct HeaderPanels {
 impl HeaderPanels {
     pub fn new() -> Self {
         return Self {
+            files: Files::new(),
             misc: Misc::new(),
             play: Play::new(),
         };
@@ -40,10 +43,10 @@ impl HeaderPanels {
 
     pub fn panel(&mut self, mode: HeaderMode) -> Option<&mut dyn Gadget<AppState, Event>> {
         return match mode {
+            HeaderMode::Files => Some(&mut self.files),
             HeaderMode::Misc => Some(&mut self.misc),
             HeaderMode::Play => Some(&mut self.play),
-            HeaderMode::Files
-            | HeaderMode::Instrument
+            HeaderMode::Instrument
             | HeaderMode::Block
             | HeaderMode::Edit
             | HeaderMode::Volume

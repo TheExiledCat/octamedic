@@ -18,6 +18,8 @@ pub const SMALL: Font = Font::new(|| &SMALL_FONT);
 
 // play panel labels like PLAY SONG
 pub const LABEL: Font = Font::new(|| &LABEL_FONT);
+// LABEL with 1px between letters, for the ones OctaMED squeezed in like SAVE FORMAT:
+pub const NARROW_LABEL: Font = Font::new(|| &NARROW_LABEL_FONT);
 
 pub const TITLE: Font = Font::new(|| &TITLE_FONT);
 
@@ -79,6 +81,14 @@ static LABEL_FONT: LazyLock<BitmapFont> = LazyLock::new(|| {
     });
 });
 
+static NARROW_LABEL_FONT: LazyLock<BitmapFont> = LazyLock::new(|| {
+    let font = BitmapFont::new("narrow label", 5).space(5).capitals_only();
+    return SMALL.bitmap().glyphs().fold(font, |font, (c, glyph)| {
+        let left = if c.is_ascii_digit() { 1 } else { 0 };
+        font.with_glyph(c, glyph.trimmed().with_margins(left, 1))
+    });
+});
+
 static INTERFACE_FONT: LazyLock<BitmapFont> = LazyLock::new(|| {
     BitmapFont::new("interface", CHAR_HEIGHT)
         .space(CHAR_WIDTH)
@@ -119,7 +129,7 @@ mod tests {
         assert_eq!(parse_glyphs(INTERFACE_GLYPHS, 8).unwrap().len(), 2);
         assert!(parse_glyphs(TITLE_GLYPHS, 9).is_ok());
         assert!(parse_glyphs(AUTHOR_GLYPHS, 5).is_ok());
-        assert_eq!(parse_glyphs(SMALL_GLYPHS, 5).unwrap().len(), 33);
+        assert_eq!(parse_glyphs(SMALL_GLYPHS, 5).unwrap().len(), 38);
         assert!(parse_glyphs(EDITOR_GLYPHS, 8).is_ok());
     }
 
@@ -132,6 +142,14 @@ mod tests {
         assert_eq!(LABEL.width(" "), 6);
         // digits sit further from the letter before, see E1
         assert_eq!(LABEL.blank_sides('1'), Some((3, 1)));
+    }
+
+    #[test]
+    fn narrow_label_spacing() {
+        // S A V E are 6 6 6 5 wide, 1 between each
+        assert_eq!(NARROW_LABEL.width("SAVE"), 6 + 6 + 6 + 5 + 4);
+        // 6 between words, counting E's 1
+        assert_eq!(NARROW_LABEL.width("E F") - NARROW_LABEL.width("EF"), 5);
     }
 
     #[test]

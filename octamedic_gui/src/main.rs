@@ -5,7 +5,6 @@ use ggez::{
     conf::{WindowMode, WindowSetup},
     event,
 };
-use octamed::mmd::{conversion::FromModule, parser::OctamedMMDParser};
 use octamedic_core::data::project::OctamedicProject;
 
 use crate::app::{DEFAULT_VIDEO, app::App, files, screen};
@@ -17,14 +16,10 @@ fn load_project() -> OctamedicProject {
     let Some(path) = std::env::args_os().nth(1).map(PathBuf::from) else {
         return OctamedicProject::new();
     };
-    match OctamedMMDParser::new().parse_file(&path) {
-        Ok(modules) => match modules.first() {
-            Some(module) => return OctamedicProject::from_module(module),
-            None => eprintln!("{} has no module in it", path.display()),
-        },
-        Err(error) => eprintln!("Couldn't open {}: {error}", path.display()),
-    }
-    return OctamedicProject::new();
+    return files::load_module(&path).unwrap_or_else(|error| {
+        eprintln!("Couldn't open {}: {error}", path.display());
+        OctamedicProject::new()
+    });
 }
 
 // window pixels per screen pixel across; screen pixels are twice as tall
