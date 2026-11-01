@@ -1,19 +1,21 @@
 # OctaMEDIC Pro V4 (WIP V0.01 IN DEVELOPMENT)
 
+**Note**: the contents of this README are placeholder until the first demo version releases, there are no releases published yet.
+
 A faithful clone of OctaMED Professional v4
 
 ![Octamed Placeholder](octamedic.png)
 
-## Features
+## Features (Not finished)
 
 - Faithful recreation of the 8 bit sound engine written in Rust using ggez for rendering and cpal for audio playback
 - Works with original MMD0, MMD1, and MMD2 modules, configs and samples
 - All the original settings, keybinds and plugin support
 - Full Midi support
 - Original synthesiser and sample editor
-- Allows exporting modules back in the original MMD formats for playback on real Amigas/MOD players
+- Allows exporting modules back in the original MMD formats for playback on real Amigas/MOD players and exporting as wav
 
-## Newly added
+## Quality of life goals
 
 - Undo buffer, for fixing accidental deletions
 - Extra keybinds for block selection, creation, UI highlighting etc (Full mouseless possibilities)
@@ -27,7 +29,7 @@ A faithful clone of OctaMED Professional v4
     - Track seperation support for sending up to 8 octamed channels out
     - Record master from Internal audio or from interface IO or both while rendering
 - Works in both 1080P HD and the original 640x201 (stretched or windowed) resolutions
-- support for original amiga 32 color support and full 32 bit color capabilities
+- original 12 bit amiga color pallete
 
 ## Contributing
 
