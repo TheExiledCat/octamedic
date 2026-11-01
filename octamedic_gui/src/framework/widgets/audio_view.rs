@@ -1,7 +1,6 @@
-use crate::{
-    app::state::AppState,
-    framework::{painter::Painter, rect::Rect, target::Color, widget::OctamedicWidget},
-};
+use rustuition::{gadget::Gadget, painter::Painter, rect::Rect, target::Rgba};
+
+use crate::{app::state::AppState, framework::event::Event};
 
 // one colour per two lines, top down. measured off OctaMED from the 4th on, the first three just
 // continue its steps up to red
@@ -88,7 +87,7 @@ impl VuMeter {
     }
 
     // lines of the same colour merged into one rect
-    fn bands(&self, area: Rect) -> impl Iterator<Item = (Rect, Color)> {
+    fn bands(&self, area: Rect) -> impl Iterator<Item = (Rect, Rgba)> {
         let bottom = area.y + area.h;
         let filled = self.filled(area);
         let band = move |y: i32| (((y - area.y + 1) / 2) as usize).min(VU_COLORS.len() - 1);
@@ -110,7 +109,7 @@ impl VuMeter {
     }
 }
 
-impl OctamedicWidget for VuMeter {
+impl Gadget<AppState, Event> for VuMeter {
     fn render(&mut self, _state: &AppState, area: Rect, painter: &mut Painter) {
         if area.h <= 0 {
             return;
@@ -133,9 +132,9 @@ fn sample_y(sample: i8, area: Rect) -> i32 {
     return y.min(area.y + area.h - 1);
 }
 
-fn rgb(color: u32) -> Color {
+fn rgb(color: u32) -> Rgba {
     let [_, r, g, b] = color.to_be_bytes();
-    return Color::rgb(r, g, b);
+    return Rgba::rgb(r, g, b);
 }
 
 #[cfg(test)]
@@ -175,7 +174,7 @@ mod tests {
     fn full_meter_bands() {
         let mut meter = VuMeter::default();
         meter.set(MAX_LEVEL);
-        let bands: Vec<(Rect, Color)> = meter.bands(Rect::new(0, 60, 20, 60)).collect();
+        let bands: Vec<(Rect, Rgba)> = meter.bands(Rect::new(0, 60, 20, 60)).collect();
         assert_eq!(bands.len(), VU_COLORS.len());
         assert_eq!(bands[0], (Rect::new(2, 60, 16, 1), rgb(0xFF2211)));
         assert_eq!(bands[3], (Rect::new(2, 65, 16, 2), rgb(0xFF5511)));
@@ -197,10 +196,9 @@ mod tests {
     fn meter_fill() {
         let mut meter = VuMeter::default();
         meter.set(64);
-        let bands: Vec<(Rect, Color)> = meter.bands(Rect::new(0, 0, 20, 54)).collect();
+        let bands: Vec<(Rect, Rgba)> = meter.bands(Rect::new(0, 0, 20, 54)).collect();
         assert_eq!(bands[0].0.y, 27);
-        let silent: Vec<(Rect, Color)> =
-            VuMeter::default().bands(Rect::new(0, 0, 20, 54)).collect();
+        let silent: Vec<(Rect, Rgba)> = VuMeter::default().bands(Rect::new(0, 0, 20, 54)).collect();
         assert_eq!(silent.len(), 1);
         assert_eq!(silent[0].0, Rect::new(2, 53, 16, 1));
     }

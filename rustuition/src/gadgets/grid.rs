@@ -1,12 +1,6 @@
-// nothing reaches into a grid's cells yet
-#![allow(dead_code)]
+use crate::{gadget::Gadget, painter::Painter, rect::Rect};
 
-use crate::{
-    app::state::AppState,
-    framework::{event::Event, painter::Painter, rect::Rect, widget::OctamedicWidget},
-};
-
-// widgets in rows of `columns`, spare pixels get spread over the cells
+/// Gadgets in rows of `columns`, with spare pixels spread over the cells.
 pub struct Grid<W> {
     columns: usize,
     rows: usize,
@@ -14,7 +8,7 @@ pub struct Grid<W> {
 }
 
 impl<W> Grid<W> {
-    // anything past columns * rows isn't shown
+    /// A grid of `cells` row by row. Anything past `columns * rows` isn't shown.
     pub fn new(columns: usize, rows: usize, cells: Vec<W>) -> Self {
         return Self {
             columns,
@@ -23,14 +17,17 @@ impl<W> Grid<W> {
         };
     }
 
+    /// Every cell, row by row.
     pub fn cells(&self) -> &[W] {
         return &self.cells;
     }
 
+    /// Every cell, row by row, to change.
     pub fn cells_mut(&mut self) -> &mut [W] {
         return &mut self.cells;
     }
 
+    /// The cell at `column`, `row`, if there is one.
     pub fn cell_mut(&mut self, column: usize, row: usize) -> Option<&mut W> {
         if column >= self.columns || row >= self.rows {
             return None;
@@ -38,6 +35,7 @@ impl<W> Grid<W> {
         return self.cells.get_mut(row * self.columns + column);
     }
 
+    /// Where cell `index` goes when the grid is drawn in `area`.
     pub fn cell_area(&self, area: Rect, index: usize) -> Rect {
         let (x, w) = span(area.x, area.w, index % self.columns, self.columns);
         let (y, h) = span(area.y, area.h, index / self.columns, self.rows);
@@ -49,21 +47,21 @@ impl<W> Grid<W> {
     }
 }
 
-impl<W: OctamedicWidget> OctamedicWidget for Grid<W> {
-    fn update(&mut self, state: &mut AppState) {
+impl<S, E, W: Gadget<S, E>> Gadget<S, E> for Grid<W> {
+    fn update(&mut self, state: &mut S) {
         for cell in &mut self.cells {
             cell.update(state);
         }
     }
 
-    fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
+    fn handle_event(&mut self, state: &mut S, event: &E) -> bool {
         let shown = self.shown();
         return self.cells[..shown]
             .iter_mut()
             .any(|cell| cell.handle_event(state, event));
     }
 
-    fn render(&mut self, state: &AppState, area: Rect, painter: &mut Painter) {
+    fn render(&mut self, state: &S, area: Rect, painter: &mut Painter) {
         for index in 0..self.shown() {
             let cell_area = self.cell_area(area, index);
             self.cells[index].render(state, cell_area, painter);

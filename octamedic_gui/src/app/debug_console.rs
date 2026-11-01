@@ -1,15 +1,12 @@
 use ggez::input::keyboard::KeyCode;
 use octamedic_util::primitives::Flip;
-
-use crate::{
-    app::state::AppState,
-    framework::{
-        event::Event,
-        painter::{CHAR_HEIGHT, Painter, Pen},
-        rect::Rect,
-        widget::OctamedicWidget,
-    },
+use rustuition::{
+    gadget::Gadget,
+    painter::{CHAR_HEIGHT, Painter, Pen},
+    rect::Rect,
 };
+
+use crate::{app::state::AppState, framework::event::Event};
 
 // the key rather than the character, which repeats while held and is a dead key on some layouts
 const TOGGLE: KeyCode = KeyCode::Grave;
@@ -23,7 +20,7 @@ pub struct DebugConsole {
     visible: bool,
 }
 
-impl OctamedicWidget for DebugConsole {
+impl Gadget<AppState, Event> for DebugConsole {
     fn handle_event(&mut self, _state: &mut AppState, event: &Event) -> bool {
         match *event {
             Event::Key {
@@ -49,13 +46,13 @@ impl OctamedicWidget for DebugConsole {
         if !self.visible {
             return;
         }
-        painter.fill_translucent(area, Pen::BLACK, OPACITY);
+        painter.fill_translucent(area, Pen::BACKGROUND, OPACITY);
         let text = area.inset(MARGIN[0], MARGIN[1]);
         let rows = (text.h / CHAR_HEIGHT).max(0) as usize;
         let lines = state.debug_lines();
         let mut y = text.y;
         for line in lines.iter().skip(lines.len().saturating_sub(rows)) {
-            painter.text(text.x, y, line, Pen::LIGHT);
+            painter.text(text.x, y, line, Pen::SHINE);
             y += CHAR_HEIGHT;
         }
     }

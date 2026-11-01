@@ -1,5 +1,11 @@
 pub mod misc;
 pub mod play;
+use rustuition::{
+    gadget::Gadget,
+    painter::{Painter, Pen},
+    rect::Rect,
+};
+
 use crate::{
     app::{
         header::{misc::Misc, play::Play},
@@ -8,12 +14,7 @@ use crate::{
         state::AppState,
         status_bar::StatusBar,
     },
-    framework::{
-        event::Event,
-        painter::{Painter, Pen},
-        rect::Rect,
-        widget::OctamedicWidget,
-    },
+    framework::event::Event,
 };
 
 // measured off an OctaMED screenshot, relative to the header's top left
@@ -36,7 +37,7 @@ impl HeaderPanels {
         };
     }
 
-    pub fn panel(&mut self, mode: HeaderMode) -> Option<&mut dyn OctamedicWidget> {
+    pub fn panel(&mut self, mode: HeaderMode) -> Option<&mut dyn Gadget<AppState, Event>> {
         return match mode {
             HeaderMode::Misc => Some(&mut self.misc),
             HeaderMode::Play => Some(&mut self.play),
@@ -67,7 +68,7 @@ impl Header {
     }
 }
 
-impl OctamedicWidget for Header {
+impl Gadget<AppState, Event> for Header {
     fn update(&mut self, state: &mut AppState) {
         if let Some(panel) = self.panels.panel(state.header_mode()) {
             panel.update(state);

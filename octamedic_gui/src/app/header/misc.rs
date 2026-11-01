@@ -1,18 +1,24 @@
 use octamed::mmd::module::PALETTE_COLORS;
-use octamedic_core::data::palette::{CHANNEL_MAX, Channel, OctamedColorPalette};
+use octamedic_core::data::palette::OctamedColorPalette;
+use rustuition::{
+    gadget::Gadget,
+    gadgets::{
+        button::{ButtonContent, ContentArea},
+        slider::SliderDirection,
+    },
+    painter::{Align, Painter, Pen},
+    palette::{CHANNEL_MAX, Channel, IntuitionColorPalette},
+    rect::Rect,
+};
 
 use crate::{
-    app::state::AppState,
+    app::{
+        fonts,
+        state::{AppState, screen_palette},
+    },
     framework::{
         event::Event,
-        font::Font,
-        painter::{Align, Painter, Pen},
-        rect::Rect,
-        widget::OctamedicWidget,
-        widgets::{
-            button::{Button, ButtonContent, ContentArea},
-            slider::{Slider, SliderDirection},
-        },
+        widgets::{Button, Slider},
     },
 };
 
@@ -46,7 +52,7 @@ pub struct Misc {
     // the level last set on each slider, so a drag shows up as a change
     levels: [u8; Channel::ALL.len()],
     // the palette when the panel was first shown, which UNDO restores
-    undo_palette: Option<OctamedColorPalette>,
+    undo_palette: Option<IntuitionColorPalette>,
 }
 
 impl Misc {
@@ -58,7 +64,7 @@ impl Misc {
             }),
             values: std::array::from_fn(|_| {
                 Button::new("0")
-                    .font(Font::Interface)
+                    .font(fonts::INTERFACE)
                     .align(Align::Left)
                     .padding(0)
             }),
@@ -98,21 +104,23 @@ impl Misc {
     }
 }
 
-impl OctamedicWidget for Misc {
+impl Gadget<AppState, Event> for Misc {
     fn update(&mut self, state: &mut AppState) {
-        let undo_palette = *self.undo_palette.get_or_insert(state.palette);
+        let undo_palette = self
+            .undo_palette
+            .get_or_insert_with(|| state.palette.clone());
         if self.res.clicked().is_some() {
-            state.palette = OctamedColorPalette::DEFAULT;
+            state.palette = screen_palette(&OctamedColorPalette::DEFAULT);
         }
         if self.undo.clicked().is_some() {
-            state.palette = undo_palette;
+            state.palette = undo_palette.clone();
         }
         for (pen, button) in self.color_buttons.iter_mut().enumerate() {
             if button.clicked().is_some() {
                 self.selected_color = pen;
             }
         }
-        let pen = self.selected_color;
+        let pen = Pen(self.selected_color);
         for (index, channel) in Channel::ALL.into_iter().enumerate() {
             let dragged = self.sliders[index].value() as u8;
             if dragged != self.levels[index] {
@@ -142,7 +150,7 @@ impl OctamedicWidget for Misc {
         for (channel, letter) in CHANNEL_LETTERS.iter().enumerate() {
             let row = Self::row(area, channel);
             let [x, y] = LETTER;
-            painter.text_in_font(row.x + x, row.y + y, letter, Pen::BLACK, Font::Panel);
+            painter.text_in_font(row.x + x, row.y + y, letter, Pen::BACKGROUND, fonts::PANEL);
             self.sliders[channel].render(state, SLIDER.within(row), painter);
             self.values[channel].render(state, VALUE.within(row), painter);
         }
@@ -176,7 +184,7 @@ impl ButtonContent for StackedLabel {
         let [x, y] = self.offset;
         for (line, text) in self.lines.iter().enumerate() {
             let line_y = area.inside.y + y + line as i32 * STACKED_LINE;
-            painter.text_in_font(area.inside.x + x, line_y, text, pen, Font::Small);
+            painter.text_in_font(area.inside.x + x, line_y, text, pen, fonts::SMALL);
         }
     }
 }

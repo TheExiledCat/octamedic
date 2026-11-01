@@ -1,7 +1,8 @@
 use std::borrow::Cow;
 
-use crate::framework::{font::Font, painter::Pen};
+use crate::{font::Font, palette::Pen};
 
+/// Text in one style: font, bold, shadow and pen.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Span<'a> {
     pub text: Cow<'a, str>,
@@ -14,6 +15,7 @@ pub struct Span<'a> {
 }
 
 impl<'a> Span<'a> {
+    /// `text` in Topaz, plain, in the line's pen.
     pub fn new(text: impl Into<Cow<'a, str>>) -> Self {
         return Self {
             text: text.into(),
@@ -24,26 +26,31 @@ impl<'a> Span<'a> {
         };
     }
 
+    /// Sets the font.
     pub fn font(mut self, font: Font) -> Self {
         self.font = font;
         return self;
     }
 
+    /// Draws it bold the Amiga way.
     pub fn bold(mut self) -> Self {
         self.bold = true;
         return self;
     }
 
+    /// Draws fill and shadow copies under it, down and right, like a title.
     pub fn shadowed(mut self) -> Self {
         self.shadowed = true;
         return self;
     }
 
+    /// Draws it in `pen` rather than the line's.
     pub fn pen(mut self, pen: Pen) -> Self {
         self.pen = Some(pen);
         return self;
     }
 
+    /// Its width in pixels.
     pub fn width(&self) -> i32 {
         return self.font.width(&self.text);
     }
@@ -71,15 +78,18 @@ impl From<String> for Span<'static> {
     }
 }
 
+/// Spans drawn one after another.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Line<'a>(pub Vec<Span<'a>>);
 
 impl<'a> Line<'a> {
+    /// Its width in pixels.
     pub fn width(&self) -> i32 {
         return self.0.iter().map(Span::width).sum();
     }
 
-    // ignores bold, OctaMED centres bold text as if it was plain
+    /// Blank pixels before the first ink and after the last.
+    // ignores bold, the Amiga centres bold text as if it was plain
     pub fn blank_sides(&self) -> (i32, i32) {
         let mut x = 0;
         let mut first = None;
@@ -100,6 +110,7 @@ impl<'a> Line<'a> {
         return (first, (x - end).max(0));
     }
 
+    /// The tallest span's height.
     pub fn height(&self) -> i32 {
         return self
             .0
@@ -109,6 +120,7 @@ impl<'a> Line<'a> {
             .unwrap_or(0);
     }
 
+    /// The part of it that fits in `width` pixels.
     // whole chars only. the last one can hang a pixel over, glyphs leave their last column blank
     pub fn fit(&self, width: i32) -> Line<'_> {
         let mut used = 0;
@@ -128,6 +140,7 @@ impl<'a> Line<'a> {
         return Line(spans);
     }
 
+    /// Which char is `offset` pixels in, if any.
     pub fn index_at(&self, offset: i32) -> Option<usize> {
         if offset < 0 {
             return None;
@@ -170,12 +183,24 @@ impl<'a> From<&'a str> for Line<'a> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::LazyLock;
+
     use super::*;
+    use crate::font::BitmapFont;
+
+    // F is 10 wide with its bearing, I 6
+    static NARROW: LazyLock<BitmapFont> = LazyLock::new(|| {
+        BitmapFont::new("narrow", 1)
+            .bearing(1)
+            .with_glyphs("F\n#######.\n\nI\n.##.\n")
+    });
+
+    const NARROW_FONT: Font = Font::new(|| &NARROW);
 
     fn mixed() -> Line<'static> {
         return Line(vec![
-            Span::new("FI").font(Font::Panel),
-            Span::new("01").font(Font::Interface),
+            Span::new("FI").font(NARROW_FONT),
+            Span::new("01").font(Font::TOPAZ),
         ]);
     }
 
@@ -191,8 +216,8 @@ mod tests {
         let cut = line.fit(24);
         assert_eq!(cut.0.len(), 2);
         assert_eq!(cut.0[1].text, "0");
-        assert_eq!(cut.0[1].font, Font::Interface);
-        assert_eq!(mixed().fit(14).0, [Span::new("F").font(Font::Panel)]);
+        assert_eq!(cut.0[1].font, Font::TOPAZ);
+        assert_eq!(mixed().fit(14).0, [Span::new("F").font(NARROW_FONT)]);
     }
 
     #[test]
@@ -212,5 +237,13 @@ mod tests {
         assert_eq!(mixed().index_at(31), Some(3));
         assert_eq!(mixed().index_at(32), None);
         assert_eq!(mixed().index_at(-1), None);
+    }
+
+    #[test]
+    fn blank_sides_skip_bearing() {
+        assert_eq!(
+            Line::from(Span::new("I").font(NARROW_FONT)).blank_sides(),
+            (2, 2)
+        );
     }
 }

@@ -1,0 +1,16 @@
+[package]
+name = "rustuition"
+version = "0.1.0"
+description = "An Amiga Intuition style immediate-mode GUI library"
+edition.workspace = true
+rust-version.workspace = true
+
+[features]
+ggez = ["dep:ggez"]
+
+[dependencies]
+ab_glyph = "0.2.32"
+ggez = { version = "0.9.3", default-features = false, optional = true }
+
+[lints]
+workspace = true

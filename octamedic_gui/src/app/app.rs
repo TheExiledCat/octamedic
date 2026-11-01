@@ -3,23 +3,23 @@ use std::time::{Duration, Instant};
 use ggez::{
     Context, GameResult,
     event::{EventHandler, MouseButton},
-    graphics::{Canvas, Color, DrawParam, Image, Rect as WindowRect, Sampler},
+    graphics::{Canvas, Color, DrawParam, Image, Sampler},
     input::{keyboard::KeyInput, mouse},
 };
 use octamedic_core::{
     amiga::clock::AmigaClock, data::project::OctamedicProject, engine::handle::EngineHandle,
 };
+use rustuition::{
+    gadget::Gadget,
+    painter::Painter,
+    rect::Point,
+    screen::{ScaleMode, Viewport},
+    target::BatchedCanvas,
+};
 
 use crate::{
-    app::{main_view::MainView, state::AppState},
-    framework::{
-        event::{self, Event},
-        painter::Painter,
-        rect::Point,
-        screen::{SCREEN, SCREEN_HEIGHT, SCREEN_WIDTH, ScaleMode, to_screen, viewport},
-        target::BatchedCanvas,
-        widget::OctamedicWidget,
-    },
+    app::{SCREEN, main_view::MainView, state::AppState},
+    framework::event::{self, Event},
 };
 
 const CURSOR: &[u8] = include_bytes!("../../assets/cursor.png");
@@ -37,7 +37,7 @@ pub struct App {
     screen: Image,
     cursor: Image,
     scale_mode: ScaleMode,
-    viewport: WindowRect,
+    viewport: Viewport,
     // in screen pixels
     pointer: Point,
     next_frame: Instant,
@@ -51,8 +51,8 @@ impl App {
         let screen = Image::new_canvas_image(
             ctx,
             ctx.gfx.surface_format(),
-            SCREEN_WIDTH as u32,
-            SCREEN_HEIGHT as u32,
+            SCREEN.width as u32,
+            SCREEN.height as u32,
             1,
         );
         let mut app = Self {
@@ -61,7 +61,7 @@ impl App {
             screen,
             cursor: Image::from_bytes(ctx, CURSOR)?,
             scale_mode: ScaleMode::default(),
-            viewport: SCREEN.into(),
+            viewport: Viewport::default(),
             pointer: [0, 0],
             next_frame: Instant::now(),
             key_repeated: false,
@@ -94,7 +94,7 @@ impl App {
 
     fn fit_viewport(&mut self, ctx: &Context) {
         let (width, height) = ctx.gfx.drawable_size();
-        self.viewport = viewport([width, height], self.scale_mode);
+        self.viewport = SCREEN.viewport([width, height], self.scale_mode);
     }
 
     fn dispatch(&mut self, event: Event) -> bool {
@@ -102,18 +102,17 @@ impl App {
     }
 
     fn mouse_event(&mut self, x: f32, y: f32, event: impl FnOnce(Point) -> Event) {
-        self.pointer = to_screen(self.viewport, [x, y]);
+        self.pointer = SCREEN.to_screen(self.viewport, [x, y]);
         self.dispatch(event(self.pointer));
     }
 
     fn render_screen(&mut self, ctx: &mut Context) -> GameResult {
         let mut canvas = Canvas::from_image(ctx, self.screen.clone(), Color::BLACK);
         canvas.set_sampler(Sampler::nearest_clamp());
-        let palette = self.state.palette;
         {
-            let mut target = BatchedCanvas::new(&ctx.gfx, &mut canvas, SCREEN);
-            let mut painter = Painter::new(&mut target, &palette);
-            self.main.render(&self.state, SCREEN, &mut painter);
+            let mut target = BatchedCanvas::new(&ctx.gfx, &mut canvas, SCREEN.rect());
+            let mut painter = Painter::new(&mut target, &self.state.palette);
+            self.main.render(&self.state, SCREEN.rect(), &mut painter);
         }
         // after the batched fills are flushed, so it's on top
         let [x, y] = self.pointer;
@@ -141,12 +140,12 @@ impl EventHandler for App {
         self.render_screen(ctx)?;
         let mut frame = Canvas::from_frame(ctx, Color::BLACK);
         frame.set_sampler(Sampler::nearest_clamp());
-        let WindowRect { x, y, w, h } = self.viewport;
+        let Viewport { x, y, w, h } = self.viewport;
         frame.draw(
             &self.screen,
             DrawParam::new()
                 .dest([x, y])
-                .scale([w / SCREEN_WIDTH as f32, h / SCREEN_HEIGHT as f32]),
+                .scale([w / SCREEN.width as f32, h / SCREEN.height as f32]),
         );
         frame.finish(ctx)?;
         self.wait_for_next_frame();

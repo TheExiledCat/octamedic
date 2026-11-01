@@ -10,16 +10,18 @@ use octamedic_core::{
     },
 };
 use octamedic_util::{base32, primitives::Flip};
+use rustuition::{
+    font::Font,
+    gadget::Gadget,
+    painter::{CHAR_HEIGHT, CHAR_WIDTH, Painter, Pen},
+    rect::Rect,
+};
 
 use crate::{
-    app::{cursor::EditCursor, state::AppState},
+    app::{cursor::EditCursor, fonts, pens, state::AppState},
     framework::{
         event::Event,
-        font::Font,
         keymap::{Action, Key, KeyActions, Keymap},
-        painter::{CHAR_HEIGHT, CHAR_WIDTH, Painter, Pen},
-        rect::Rect,
-        widget::OctamedicWidget,
         widgets::audio_view::{Oscilloscope, VuMeter},
     },
 };
@@ -174,8 +176,8 @@ impl BlockEditor {
     ) {
         let mut label = |text: String, end_column: i32, y: i32| {
             let end = layout.x + end_column * layout.char_width;
-            let x = end - Font::Interface.width(&text);
-            painter.text_in_font(x, y, &text, Pen::PINK, Font::Interface);
+            let x = end - fonts::INTERFACE.width(&text);
+            painter.text_in_font(x, y, &text, pens::PINK, fonts::INTERFACE);
         };
         for index in 0..layout.tracks {
             let number = self.first_track + index;
@@ -246,19 +248,19 @@ impl BlockEditor {
         painter: &mut Painter,
     ) {
         let lines = [
-            (parts.top, CENTER_ROW - 1, Pen::ROSE),
-            (parts.bottom, CENTER_ROW + 1, Pen::ROSE),
+            (parts.top, CENTER_ROW - 1, pens::ROSE),
+            (parts.bottom, CENTER_ROW + 1, pens::ROSE),
         ];
         for (rect, row, text) in lines {
-            painter.fill(rect, Pen::RED);
+            painter.fill(rect, pens::RED);
             painter.clipped(rect, |painter| {
                 self.render_row(pattern, cursor_line, row, layout, area, text, painter);
             });
         }
         for side in parts.sides {
-            painter.fill(side, Pen::PINK);
+            painter.fill(side, pens::PINK);
             painter.clipped(side, |painter| {
-                let pen = Pen::BLUSH;
+                let pen = pens::BLUSH;
                 self.render_row(pattern, cursor_line, CENTER_ROW, layout, area, pen, painter);
             });
         }
@@ -282,7 +284,7 @@ impl BlockEditor {
                 let x = layout.track_x(index);
                 let scope = scope_area(layout, area, index);
                 for run in self.oscilloscopes[track].runs(scope) {
-                    painter.fill(run, Pen::PINK);
+                    painter.fill(run, pens::PINK);
                     if let Some(cell) = cell_at(pattern, state.cursor.line, area, run.y, track) {
                         let text_line = ((run.y - area.y) % CHAR_HEIGHT) as usize;
                         blend_text(&track_text(cell), x, text_line, layout.font, run, painter);
@@ -358,7 +360,7 @@ impl KeyActions for BlockEditor {
     }
 }
 
-impl OctamedicWidget for BlockEditor {
+impl Gadget<AppState, Event> for BlockEditor {
     fn update(&mut self, state: &mut AppState) {
         if !state.is_playing() {
             self.meters = array::from_fn(|_| VuMeter::default());
@@ -399,7 +401,7 @@ impl OctamedicWidget for BlockEditor {
     }
 
     fn render(&mut self, state: &AppState, area: Rect, painter: &mut Painter) {
-        painter.fill(area, Pen::BLACK);
+        painter.fill(area, Pen::BACKGROUND);
         let Some(pattern) = state.active_pattern() else {
             return;
         };
@@ -414,7 +416,7 @@ impl OctamedicWidget for BlockEditor {
             let pen = if row == CENTER_ROW {
                 Pen::FILL
             } else {
-                Pen::LIGHT
+                Pen::SHINE
             };
             self.render_row(pattern, cursor.line, row, &layout, area, pen, painter);
         }
@@ -422,9 +424,9 @@ impl OctamedicWidget for BlockEditor {
         let width = layout.char_width / CHAR_WIDTH;
         for track in 1..layout.tracks {
             let x = layout.track_x(track) - 1;
-            painter.fill(Rect::new(x, area.y, width, area.h), Pen::PINK);
+            painter.fill(Rect::new(x, area.y, width, area.h), pens::PINK);
             // OctaMED draws the band by flipping a bitplane, which turns the pink red
-            painter.fill(Rect::new(x, band.y, width, band.h), Pen::RED);
+            painter.fill(Rect::new(x, band.y, width, band.h), pens::RED);
         }
         self.render_labels(pattern, &layout, area.y, painter);
         self.render_scopes(state, pattern, &layout, area, painter);
@@ -456,9 +458,9 @@ struct Layout {
 impl Layout {
     fn new(area: Rect, track_count: usize) -> Self {
         let font = if track_count <= WIDE_TRACKS {
-            Font::Editor
+            fonts::EDITOR
         } else {
-            Font::Topaz
+            Font::TOPAZ
         };
         let char_width = font.advance('0');
         let columns = area.w / char_width - LINE_NUMBER_CHARS;
@@ -556,7 +558,7 @@ fn blend_text(text: &str, x: i32, line: usize, font: Font, run: Rect, painter: &
         let left = (x + start).max(run.x);
         let right = (x + start + width).min(run.x + run.w);
         if left < right {
-            painter.fill(Rect::new(left, run.y, right - left, run.h), Pen::BLUSH);
+            painter.fill(Rect::new(left, run.y, right - left, run.h), pens::BLUSH);
         }
     }
 }
@@ -581,12 +583,10 @@ mod tests {
         },
         engine::handle::EngineHandle,
     };
+    use rustuition::target::{RenderTarget, Rgba};
 
     use super::*;
-    use crate::framework::{
-        screen::SCREEN,
-        target::{Color, RenderTarget},
-    };
+    use crate::app::{SCREEN, state::screen_palette};
 
     fn state() -> AppState {
         return AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
@@ -596,12 +596,12 @@ mod tests {
     struct Fills(Vec<Rect>);
 
     impl RenderTarget for Fills {
-        fn fill(&mut self, rect: Rect, _color: Color) {
+        fn fill(&mut self, rect: Rect, _color: Rgba) {
             self.0.push(rect);
         }
 
         fn get_clip(&self) -> Rect {
-            return SCREEN;
+            return SCREEN.rect();
         }
 
         fn set_clip(&mut self, _rect: Rect) -> bool {
@@ -625,8 +625,7 @@ mod tests {
         let area = Rect::new(0, 77, 640, 120);
         let layout = Layout::new(area, 4);
         let mut fills = Fills::default();
-        let palette = state.palette;
-        let mut painter = Painter::new(&mut fills, &palette);
+        let mut painter = Painter::new(&mut fills, &state.palette);
         let pattern = state.active_pattern().unwrap().clone();
         editor.render_scopes(&state, &pattern, &layout, area, &mut painter);
         assert!(
@@ -639,14 +638,14 @@ mod tests {
     #[test]
     fn scope_blends_with_text() {
         let mut fills = Fills::default();
-        let palette = OctamedicProject::new().palette();
+        let palette = screen_palette(&OctamedicProject::new().palette());
         let mut painter = Painter::new(&mut fills, &palette);
-        let ink: Vec<(i32, i32)> = Font::Editor.ink("0", 0).collect();
+        let ink: Vec<(i32, i32)> = fonts::EDITOR.ink("0", 0).collect();
         blend_text(
             "0",
             100,
             0,
-            Font::Editor,
+            fonts::EDITOR,
             Rect::new(100, 50, 16, 1),
             &mut painter,
         );

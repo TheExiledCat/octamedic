@@ -1,8 +1,10 @@
 pub mod block_editor;
 
+use rustuition::gadget::Gadget;
+
 use crate::{
-    app::{main::block_editor::BlockEditor, mode::MainMode},
-    framework::widget::OctamedicWidget,
+    app::{main::block_editor::BlockEditor, mode::MainMode, state::AppState},
+    framework::event::Event,
 };
 
 pub struct MainScreens {
@@ -16,7 +18,7 @@ impl MainScreens {
         };
     }
 
-    pub fn screen(&mut self, mode: MainMode) -> Option<&mut dyn OctamedicWidget> {
+    pub fn screen(&mut self, mode: MainMode) -> Option<&mut dyn Gadget<AppState, Event>> {
         return match mode {
             MainMode::BlockEditor => Some(&mut self.block_editor),
             MainMode::NotationEditor

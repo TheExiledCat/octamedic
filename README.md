@@ -33,7 +33,8 @@ A faithful clone of OctaMED Professional v4
 
 - [CONTRIBUTING.md](CONTRIBUTING.md) for building, code style and PRs
 - [docs/PLAYER.md](docs/PLAYER.md) for how the player works (Paula, DMA, the CIA timer)
-- [octamedic_gui/FRAMEWORK.md](octamedic_gui/FRAMEWORK.md) for the GUI's UI framework
+- [rustuition/README.md](rustuition/README.md) for the Amiga style GUI library, and
+  [octamedic_gui/FRAMEWORK.md](octamedic_gui/FRAMEWORK.md) for how the GUI uses it
 - issue templates: [bug report](.github/ISSUE_TEMPLATE/bug_report.md), [feature request](.github/ISSUE_TEMPLATE/feature_request.md)
 
 ## Documentation

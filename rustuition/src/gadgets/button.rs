@@ -1,21 +1,17 @@
-use std::rc::Rc;
-
-use octamedic_util::primitives::Flip;
+use std::{marker::PhantomData, rc::Rc};
 
 use crate::{
-    app::state::AppState,
-    framework::{
-        clickable::{Click, Clickable},
-        event::{Event, MouseButton},
-        font::Font,
-        painter::{Align, Painter, Pen, inside_frame, line_x, text_y},
-        rect::{Point, Rect},
-        shape::Direction,
-        text::{Line, Span},
-        widget::OctamedicWidget,
-    },
+    clickable::{Click, Clickable},
+    event::{MouseButton, MouseEvent, PointerEvent},
+    font::Font,
+    gadget::Gadget,
+    painter::{Align, Painter, Pen, inside_frame, line_x, text_y},
+    rect::{Point, Rect},
+    shape::Direction,
+    text::{Line, Span},
 };
 
+/// A click on a [`Button`], passed to its handler.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ButtonClick {
     pub button: MouseButton,
@@ -23,10 +19,12 @@ pub struct ButtonClick {
     pub char_index: Option<usize>,
 }
 
-pub trait ButtonHandler: Fn(&mut AppState, ButtonClick) + 'static {}
+/// What a button calls when it's clicked.
+pub trait ButtonHandler<S>: Fn(&mut S, ButtonClick) + 'static {}
 
-impl<F: Fn(&mut AppState, ButtonClick) + 'static> ButtonHandler for F {}
+impl<S, F: Fn(&mut S, ButtonClick) + 'static> ButtonHandler<S> for F {}
 
+/// Where and how a [`ButtonContent`] should draw itself.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ContentArea {
     pub inside: Rect,
@@ -38,10 +36,13 @@ pub struct ContentArea {
     pub fill: Pen,
 }
 
+/// Something a button can show: text, a picture, a shape.
 #[allow(unused_variables)]
 pub trait ButtonContent {
+    /// Draws the content in `pen`.
     fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter);
 
+    /// Which part of the content is at `pos`, like a label's char.
     fn index_at(&self, area: ContentArea, pos: Point) -> Option<usize> {
         return None;
     }
@@ -93,6 +94,7 @@ impl ButtonContent for String {
     }
 }
 
+/// A filled triangle, for arrow buttons.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Triangle {
     pub direction: Direction,
@@ -103,6 +105,7 @@ pub struct Triangle {
 }
 
 impl Triangle {
+    /// A triangle pointing `direction`, `width` by `height` pixels.
     pub fn new(direction: Direction, width: i32, height: i32) -> Self {
         return Self {
             direction,
@@ -112,10 +115,12 @@ impl Triangle {
         };
     }
 
+    /// The small 6x5 arrow.
     pub fn arrow(direction: Direction) -> Self {
         return Self::new(direction, Self::ARROW_WIDTH, Self::ARROW_HEIGHT);
     }
 
+    /// Puts a bar across the point, like jump to start/end.
     pub fn with_bar(mut self) -> Self {
         self.bar = true;
         return self;
@@ -178,13 +183,14 @@ impl ButtonContent for Triangle {
     }
 }
 
-// label then a down arrow, like INS in the play sequence
+/// A label with a down arrow after it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ArrowLabel {
     pub label: &'static str,
 }
 
 impl ArrowLabel {
+    /// Shows `label` with the arrow after it.
     pub fn new(label: &'static str) -> Self {
         return Self { label };
     }
@@ -225,6 +231,7 @@ impl ButtonContent for ArrowLabel {
     }
 }
 
+/// A plus or minus sign, for increment and decrement buttons.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct IncDec {
     is_increment: bool,
@@ -234,6 +241,7 @@ pub struct IncDec {
 }
 
 impl IncDec {
+    /// A plus if `increment`, a minus otherwise, its lines `thickness` thick.
     pub fn new(increment: bool, width: i32, height: i32, thickness: i32) -> Self {
         return Self {
             is_increment: increment,
@@ -243,7 +251,7 @@ impl IncDec {
         };
     }
 
-    // rounds right and up, that's where OctaMED's sit
+    // rounds right and up
     fn lines(&self, inside: Rect) -> (Rect, Option<Rect>) {
         let x = inside.x + (inside.w - self.width + 1) / 2;
         let y = inside.y + (inside.h - self.height) / 2;
@@ -274,13 +282,13 @@ impl ButtonContent for IncDec {
     }
 }
 
-// clones share the content and handler
-#[derive(Clone)]
-pub struct Button {
+/// A push button, Intuition's boolean gadget: clicks on press and can be toggled on.
+// clones share the content and handler. `S` is the app's state, `E` the events it's sent
+pub struct Button<S, E = MouseEvent> {
     content: Rc<dyn ButtonContent>,
     clickable: Clickable,
-    on_click: Option<Rc<dyn ButtonHandler>>,
-    // drawn inverted like OctaMED's switched on buttons
+    on_click: Option<Rc<dyn ButtonHandler<S>>>,
+    // drawn inverted when switched on
     toggled: bool,
     border: i32,
     // [x, y]
@@ -291,9 +299,11 @@ pub struct Button {
     // from the last render
     area: Rect,
     click: Option<ButtonClick>,
+    events: PhantomData<fn(&E)>,
 }
 
-impl Button {
+impl<S, E> Button<S, E> {
+    /// A button showing `content`, in Topaz and centred, with a 1px frame.
     pub fn new(content: impl ButtonContent + 'static) -> Self {
         return Self {
             content: Rc::new(content),
@@ -303,73 +313,87 @@ impl Button {
             border: 1,
             padding: [1, 1],
             align: Align::Center,
-            font: Font::Topaz,
+            font: Font::TOPAZ,
             bold: false,
             area: Rect::default(),
             click: None,
+            events: PhantomData,
         };
     }
 
-    // for owners that poll instead of setting a handler
+    /// Takes the last click, for owners that poll instead of setting a handler.
     pub fn clicked(&mut self) -> Option<ButtonClick> {
         return self.click.take();
     }
 
-    pub fn on_click(mut self, handler: impl Fn(&mut AppState, ButtonClick) + 'static) -> Self {
+    /// Sets what's called when it's clicked.
+    pub fn on_click(mut self, handler: impl Fn(&mut S, ButtonClick) + 'static) -> Self {
         self.set_on_click(handler);
         return self;
     }
 
-    pub fn set_on_click(&mut self, handler: impl Fn(&mut AppState, ButtonClick) + 'static) {
+    /// Changes what's called when it's clicked.
+    pub fn set_on_click(&mut self, handler: impl Fn(&mut S, ButtonClick) + 'static) {
         self.on_click = Some(Rc::new(handler));
     }
 
+    /// Sets the frame thickness.
     pub fn border(mut self, border: i32) -> Self {
         self.border = border;
         return self;
     }
 
+    /// Sets how the content lines up inside the padding.
     pub fn align(mut self, align: Align) -> Self {
         self.align = align;
         return self;
     }
 
+    /// Sets the label's font.
     pub fn font(mut self, font: Font) -> Self {
         self.font = font;
         return self;
     }
 
+    /// Draws the label bold.
     pub fn bold(mut self) -> Self {
         self.bold = true;
         return self;
     }
 
+    /// Sets the space between the frame and the content on every side.
     pub fn padding(mut self, padding: i32) -> Self {
         self.padding = [padding, padding];
         return self;
     }
 
+    /// Sets the space between the frame and the content, across and down.
     pub fn padding_xy(mut self, x: i32, y: i32) -> Self {
         self.padding = [x, y];
         return self;
     }
 
+    /// Changes what it shows.
     pub fn set_content(&mut self, content: impl ButtonContent + 'static) {
         self.content = Rc::new(content);
     }
 
+    /// Changes what it shows to a text label.
     pub fn set_text(&mut self, text: impl Into<String>) {
         self.set_content(text.into());
     }
 
+    /// Switches it between on, drawn inverted, and off.
     pub fn toggle(&mut self) {
-        self.toggled.flip();
+        self.toggled = !self.toggled;
     }
 
+    /// Switches it on, drawn inverted, or off.
     pub fn set_toggled(&mut self, toggled: bool) {
         self.toggled = toggled;
     }
 
+    /// Whether it's switched on.
     pub fn is_toggled(&self) -> bool {
         return self.toggled;
     }
@@ -389,7 +413,7 @@ impl Button {
     // (fill, content), swapped when toggled. holding it down doesn't change the look, buttons
     // that want that use the toggle
     fn pens(&self) -> (Pen, Pen) {
-        let (fill, content) = (Pen::FILL, Pen::BLACK);
+        let (fill, content) = (Pen::FILL, Pen::BACKGROUND);
         return if self.toggled {
             (content, fill)
         } else {
@@ -398,8 +422,20 @@ impl Button {
     }
 }
 
-impl OctamedicWidget for Button {
-    fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
+// derive would want S: Clone
+impl<S, E> Clone for Button<S, E> {
+    fn clone(&self) -> Self {
+        return Self {
+            content: self.content.clone(),
+            clickable: self.clickable.clone(),
+            on_click: self.on_click.clone(),
+            ..*self
+        };
+    }
+}
+
+impl<S, E: PointerEvent> Gadget<S, E> for Button<S, E> {
+    fn handle_event(&mut self, state: &mut S, event: &E) -> bool {
         let click = self.clickable.handle(event);
         if let Click::Clicked { button, pos } = click {
             let char_index = self.content.index_at(self.content_area(self.area), pos);
@@ -412,7 +448,7 @@ impl OctamedicWidget for Button {
         return click.handled();
     }
 
-    fn render(&mut self, _state: &AppState, area: Rect, painter: &mut Painter) {
+    fn render(&mut self, _state: &S, area: Rect, painter: &mut Painter) {
         self.area = area;
         self.clickable.set_area(area);
         let (fill, content) = self.pens();
@@ -423,7 +459,7 @@ impl OctamedicWidget for Button {
     }
 }
 
-// a label too long for the padding moves into it, OctaMED does that with CHRD
+// a label too long for the padding moves into it
 fn place_line<'a>(line: &'a Line, area: ContentArea) -> (Line<'a>, i32) {
     let line = line.fit(area.inside.w);
     let width = line.width();
@@ -443,22 +479,20 @@ fn label_line(text: &str, area: ContentArea) -> Line<'_> {
 mod tests {
     use std::{cell::Cell, rc::Rc};
 
-    use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
-
     use super::*;
+    use crate::event::MouseEvent;
 
-    fn state() -> AppState {
-        return AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
-    }
+    // how many times it was clicked
+    type Clicks = u32;
 
-    fn click(button: &mut Button, state: &mut AppState, pos: Point) {
+    fn click(button: &mut Button<Clicks>, state: &mut Clicks, pos: Point) {
         let mouse = MouseButton::Left;
-        button.handle_event(state, &Event::MouseDown { pos, button: mouse });
-        button.handle_event(state, &Event::MouseUp { pos, button: mouse });
+        button.handle_event(state, &MouseEvent::Down { pos, button: mouse });
+        button.handle_event(state, &MouseEvent::Up { pos, button: mouse });
     }
 
     // NEXT centred in 40px starts at x 4
-    fn next_button(handler: impl ButtonHandler) -> Button {
+    fn next_button(handler: impl ButtonHandler<Clicks>) -> Button<Clicks> {
         let mut button = Button::new("NEXT").on_click(handler);
         button.area = Rect::new(0, 0, 40, 10);
         button.clickable.set_area(button.area);
@@ -480,8 +514,7 @@ mod tests {
 
     #[test]
     fn ins_arrow() {
-        // play sequence INS, 36 wide
-        let button = Button::new("").font(Font::Label);
+        let button = Button::<()>::new("");
         let area = button.content_area(Rect::new(56, 32, 36, 11));
         let ins = ArrowLabel::new("INS");
         let line = label_line(ins.label, area);
@@ -503,14 +536,14 @@ mod tests {
 
     #[test]
     fn toggle_inverts() {
-        let normal = (Pen::FILL, Pen::BLACK);
-        let inverted = (Pen::BLACK, Pen::FILL);
+        let normal = (Pen::FILL, Pen::BACKGROUND);
+        let inverted = (Pen::BACKGROUND, Pen::FILL);
         let mut button = next_button(|_, _| {});
-        let down = Event::MouseDown {
+        let down = MouseEvent::Down {
             pos: [5, 5],
             button: MouseButton::Left,
         };
-        button.handle_event(&mut state(), &down);
+        button.handle_event(&mut 0, &down);
         assert_eq!(button.pens(), normal);
         button.toggle();
         assert!(button.is_toggled());
@@ -521,8 +554,7 @@ mod tests {
 
     #[test]
     fn long_label_padding() {
-        // the status row's CHRD and < boxes
-        let place = |button: Button, rect, text: &'static str| {
+        let place = |button: Button<()>, rect, text: &'static str| {
             let line = Line::from(text);
             let (placed, x) = place_line(&line, button.content_area(rect));
             (placed.0[0].text.to_string(), x)
@@ -540,7 +572,7 @@ mod tests {
     fn click_kept() {
         let mut button = next_button(|_, _| {});
         assert_eq!(button.clicked(), None);
-        click(&mut button, &mut state(), [5, 5]);
+        click(&mut button, &mut 0, [5, 5]);
         let clicked = button.clicked().unwrap();
         assert_eq!(clicked.button, MouseButton::Left);
         assert_eq!(clicked.char_index, Some(0));
@@ -549,11 +581,11 @@ mod tests {
 
     #[test]
     fn clone_shares_handler() {
-        let mut state = state();
-        let template = next_button(|state, _| state.next_pattern());
+        let mut clicks = 0;
+        let template = next_button(|clicks, _| *clicks += 1);
         let mut copy = template.clone();
-        click(&mut copy, &mut state, [5, 5]);
-        assert_eq!(state.active_pattern.0, 1);
+        click(&mut copy, &mut clicks, [5, 5]);
+        assert_eq!(clicks, 1);
     }
 
     #[test]
@@ -569,21 +601,22 @@ mod tests {
     fn content_padding() {
         let area = Rect::new(3, 65, 84, 11);
         assert_eq!(
-            Button::new("").content_area(area).padded,
+            Button::<()>::new("").content_area(area).padded,
             Rect::new(6, 67, 78, 7)
         );
         assert_eq!(
-            Button::new("").padding(0).content_area(area).padded,
+            Button::<()>::new("").padding(0).content_area(area).padded,
             Rect::new(5, 66, 80, 9)
         );
     }
 
     #[test]
     fn click_runs_handler() {
-        let mut state = state();
-        let mut button = next_button(|state, _| state.next_pattern());
-        click(&mut button, &mut state, [5, 5]);
-        assert_eq!(state.active_pattern.0, 1);
+        let mut clicks = 0;
+        let mut button = next_button(|clicks, _| *clicks += 1);
+        click(&mut button, &mut clicks, [5, 5]);
+        click(&mut button, &mut clicks, [5, 5]);
+        assert_eq!(clicks, 2);
     }
 
     #[test]
@@ -591,7 +624,7 @@ mod tests {
         let clicked = Rc::new(Cell::new(None));
         let seen = clicked.clone();
         let mut button = next_button(move |_, click| seen.set(Some(click.char_index)));
-        let mut state = state();
+        let mut state = 0;
         for (x, index) in [
             (4, Some(0)),
             (13, Some(1)),

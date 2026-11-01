@@ -1,14 +1,13 @@
+use rustuition::{
+    gadget::Gadget,
+    painter::{Painter, Pen},
+    rect::Rect,
+    text::{Line, Span},
+};
+
 use crate::{
-    app::state::AppState,
-    framework::{
-        event::Event,
-        font::Font,
-        painter::{Painter, Pen},
-        rect::Rect,
-        text::{Line, Span},
-        widget::OctamedicWidget,
-        widgets::button::Button,
-    },
+    app::{fonts, state::AppState},
+    framework::{event::Event, widgets::Button},
 };
 
 const TITLE: &str = "OctaMEDIC Professional";
@@ -76,7 +75,7 @@ impl TitleBar {
     }
 }
 
-impl OctamedicWidget for TitleBar {
+impl Gadget<AppState, Event> for TitleBar {
     fn update(&mut self, state: &mut AppState) {
         let seconds = state.timer().as_secs();
         self.timer
@@ -88,17 +87,17 @@ impl OctamedicWidget for TitleBar {
     }
 
     fn render(&mut self, state: &AppState, area: Rect, painter: &mut Painter) {
-        painter.fill(area, Pen::BLACK);
+        painter.fill(area, Pen::BACKGROUND);
         let [x, y] = TIMER_LABEL;
-        painter.text_in_font(area.x + x, area.y + y, "TIMER", Pen::LIGHT, Font::Panel);
+        painter.text_in_font(area.x + x, area.y + y, "TIMER", Pen::SHINE, fonts::PANEL);
         let timer = Rect::new(area.x + TIMER.x, area.y + TIMER.y, TIMER.w, TIMER.h);
         self.timer.render(state, timer, painter);
         let [x, y] = TITLE_POSITION;
         let (title_x, title_y) = (area.x + x, area.y + y);
-        let title = Line::from(Span::new(TITLE).font(Font::Title).shadowed());
+        let title = Line::from(Span::new(TITLE).font(fonts::TITLE).shadowed());
         let title_end = title_x + title.width();
         let version_x = title_end + VERSION_GAP;
-        let version_end = version_x + Font::Title.width(VERSION);
+        let version_end = version_x + fonts::TITLE.width(VERSION);
         // tails run behind the text, star to title, between words, version to the edge
         let tail_y = area.y + TAIL_Y;
         let star_end = area.x + STAR_X + STAR[0].len() as i32;
@@ -111,7 +110,7 @@ impl OctamedicWidget for TitleBar {
         );
         let mut char_x = title_x;
         for c in TITLE.chars() {
-            let advance = Font::Title.advance(c);
+            let advance = fonts::TITLE.advance(c);
             if c == ' ' {
                 render_ornament_tail(painter, char_x, tail_y, advance - 1, Taper::Both);
             }
@@ -128,16 +127,16 @@ impl OctamedicWidget for TitleBar {
             Taper::Both,
         );
         painter.picture(&STAR, area.x + STAR_X, area.y);
-        painter.line(title_x, title_y, &title, Pen::LIGHT);
-        painter.text_in_font(version_x, title_y, VERSION, Pen::LIGHT, Font::Title);
-        let author_x = area.right() - AUTHOR_RIGHT_MARGIN - Font::Author.width(AUTHOR);
+        painter.line(title_x, title_y, &title, Pen::SHINE);
+        painter.text_in_font(version_x, title_y, VERSION, Pen::SHINE, fonts::TITLE);
+        let author_x = area.right() - AUTHOR_RIGHT_MARGIN - fonts::AUTHOR.width(AUTHOR);
         painter.picture(&AUTHOR_STAR, author_x - AUTHOR_STAR_OFFSET, area.y);
         painter.text_in_font(
             author_x,
             area.y + AUTHOR_Y,
             AUTHOR,
-            Pen::LIGHT,
-            Font::Author,
+            Pen::SHINE,
+            fonts::AUTHOR,
         );
     }
 }

@@ -1,18 +1,23 @@
 use octamedic_util::{base32, core_extensions::Boxed, primitives::Flip};
+use rustuition::{
+    gadget::Gadget,
+    gadgets::{
+        button::{ButtonHandler, Triangle},
+        grid::Grid,
+    },
+    painter::{Align, Painter, Pen},
+    rect::Rect,
+    shape::Direction,
+};
 
 use crate::{
-    app::state::AppState,
+    app::{
+        fonts::{self, POSITION_SLASH},
+        state::AppState,
+    },
     framework::{
         event::{Event, MouseButton},
-        font::{Font, POSITION_SLASH},
-        painter::{Align, Painter, Pen},
-        rect::Rect,
-        shape::Direction,
-        widget::OctamedicWidget,
-        widgets::{
-            button::{Button, ButtonHandler, Triangle},
-            grid::Grid,
-        },
+        widgets::Button,
     },
 };
 
@@ -47,7 +52,7 @@ impl StatusBar {
         // labels start at the left, as in OctaMED
         let mut boxes: Vec<Button> = labels
             .into_iter()
-            .map(|label| Button::new(label).align(Align::Left).font(Font::Interface))
+            .map(|label| Button::new(label).align(Align::Left).font(fonts::INTERFACE))
             .collect();
 
         boxes[SONG_POSITION].set_on_click(|state, click| {
@@ -86,8 +91,8 @@ impl StatusBar {
         });
         boxes[PREVIOUS_SONG] = Button::new(Triangle::arrow(Direction::Left));
         boxes[NEXT_SONG] = Button::new(Triangle::arrow(Direction::Right));
-        boxes[SONG] = Button::new("").align(Align::Right).font(Font::Interface);
-        let flags: [(usize, &str, i32, Option<Box<dyn ButtonHandler>>); 3] = [
+        boxes[SONG] = Button::new("").align(Align::Right).font(fonts::INTERFACE);
+        let flags: [(usize, &str, i32, Option<Box<dyn ButtonHandler<AppState>>>); 3] = [
             (
                 EDIT,
                 "E",
@@ -101,7 +106,7 @@ impl StatusBar {
         for (index, label, padding, handler) in flags {
             let mut button = Button::new(label)
                 .align(Align::Left)
-                .font(Font::Small)
+                .font(fonts::SMALL)
                 .padding_xy(padding, 1);
             if let Some(handler) = handler {
                 button.set_on_click(handler);
@@ -110,7 +115,7 @@ impl StatusBar {
         }
         boxes[INSTRUMENT] = Button::new("")
             .align(Align::Left)
-            .font(Font::Interface)
+            .font(fonts::INTERFACE)
             .on_click(|state, click| {
                 let advance = click.button == MouseButton::Left;
                 let delta = if advance { 1i8 } else { -1i8 };
@@ -142,7 +147,7 @@ impl StatusBar {
     }
 }
 
-impl OctamedicWidget for StatusBar {
+impl Gadget<AppState, Event> for StatusBar {
     fn update(&mut self, state: &mut AppState) {
         let song = state.song();
         let instrument = state.active_instrument;
@@ -207,9 +212,9 @@ impl OctamedicWidget for StatusBar {
 
 struct GaugeBox;
 
-impl OctamedicWidget for GaugeBox {
+impl Gadget<AppState, Event> for GaugeBox {
     fn render(&mut self, _state: &AppState, area: Rect, painter: &mut Painter) {
-        painter.fill(area, Pen::BLACK);
+        painter.fill(area, Pen::BACKGROUND);
         painter.frame_inverted(area, 1);
     }
 }

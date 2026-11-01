@@ -10,6 +10,9 @@ The crates:
   right now happens here.
 - `octamed_cli` is a REPL for loading, inspecting and playing `.mmd` files (audio through `cpal`).
 - `octamedic_gui` is the editor, on ggez.
+- `rustuition` is the Amiga style GUI library the editor is built on (gadgets, Topaz, the
+  palette). It doesn't know about OctaMEDIC and will get its own repo at some point, so keep
+  anything OctaMED specific in `octamedic_gui`.
 - `octamedic_util` has small helpers like `.flip()`, `.boxed()` and base-32 numbers.
 
 ## Building
@@ -61,11 +64,13 @@ don't mind.
 - [docs/PLAYER.md](docs/PLAYER.md): how playback works (Paula, DMA, the CIA timer) and how the
   engine in `octamedic_core/src/engine/` copies it. The hardware model is in
   `octamedic_core/src/amiga/`.
-- [octamedic_gui/FRAMEWORK.md](octamedic_gui/FRAMEWORK.md): the GUI's little UI framework and how
-  to write widgets with it. OctaMED's gadgets are Amiga Intuition gadgets, so
+- [rustuition/README.md](rustuition/README.md): the GUI library, and how to write gadgets with
+  it. OctaMED's gadgets are Amiga Intuition gadgets, so
   [Intuition Gadgets](https://wiki.amigaos.net/wiki/Intuition_Gadgets) on the AmigaOS wiki is
   useful for how they should behave (e.g. `GACT_IMMEDIATE`, which is why our buttons click on
   press).
+- [octamedic_gui/FRAMEWORK.md](octamedic_gui/FRAMEWORK.md): what the GUI adds on top of
+  rustuition (keys, OctaMED's fonts and pens) and how its screens fit together.
 - `octamed/format.md` is the original MMD format documentation. The parsers in
   `octamed/src/mmd/parser.rs` are what we actually go by.
 

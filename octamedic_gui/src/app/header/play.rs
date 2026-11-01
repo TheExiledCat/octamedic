@@ -4,24 +4,29 @@ use octamedic_core::data::{
     pattern::PatternId,
     tempo::{MAX_BPM, MAX_LINES_PER_BEAT, MAX_TICKS_PER_LINE, OctamedicTempo},
 };
+use rustuition::{
+    gadget::Gadget,
+    gadgets::{
+        button::{ArrowLabel, ButtonContent, ContentArea, IncDec, Triangle},
+        slider::SliderDirection,
+    },
+    painter::{
+        Align::{self, Right},
+        CHAR_HEIGHT, Painter, Pen, text_y,
+    },
+    rect::Rect,
+    shape::Direction::{Down, Left, Right as Rightward, Up},
+    text::{Line, Span},
+};
 
 use crate::{
-    app::state::AppState,
+    app::{
+        fonts::{self, POSITION_SLASH},
+        state::AppState,
+    },
     framework::{
         event::{Event, MouseButton},
-        font::{Font, POSITION_SLASH},
-        painter::{
-            Align::{self, Right},
-            CHAR_HEIGHT, Painter, Pen, text_y,
-        },
-        rect::Rect,
-        shape::Direction::{Down, Left, Right as Rightward, Up},
-        text::{Line, Span},
-        widget::OctamedicWidget,
-        widgets::{
-            button::{ArrowLabel, Button, ButtonContent, ContentArea, IncDec, Triangle},
-            slider::{Slider, SliderDirection},
-        },
+        widgets::{Button, Slider},
     },
 };
 const SEQUENCER_JUMP_BUTTONS: usize = 4;
@@ -96,7 +101,7 @@ impl Play {
         };
     }
 }
-impl OctamedicWidget for Play {
+impl Gadget<AppState, Event> for Play {
     fn update(&mut self, state: &mut AppState) {
         self.sequencer.update(state);
         self.playback.update(state);
@@ -181,11 +186,11 @@ impl Sequencer {
             state.decrement_sequence_pattern();
         });
 
-        let mut edit_buttons = array::from_fn(|_| Button::new("").font(Font::Label));
+        let mut edit_buttons = array::from_fn(|_| Button::new("").font(fonts::LABEL));
         let [ins, del, ins_current] = &mut edit_buttons;
         // OctaMED has this label a pixel right of centre
         *ins = Button::new("INS")
-            .font(Font::Label)
+            .font(fonts::LABEL)
             .align(Align::Left)
             .padding_xy(INS_LABEL_OFFSET, 1);
         del.set_text("DEL");
@@ -216,7 +221,7 @@ impl Sequencer {
         };
     }
 }
-impl OctamedicWidget for Sequencer {
+impl Gadget<AppState, Event> for Sequencer {
     fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
         return self
             .jump_buttons
@@ -247,7 +252,7 @@ impl OctamedicWidget for Sequencer {
             painter.line_in(
                 *row,
                 &Line::from(format!("{:02}", entry.0).as_str()),
-                Pen::LIGHT,
+                Pen::SHINE,
                 Right,
             );
         }
@@ -259,7 +264,7 @@ impl OctamedicWidget for Sequencer {
             INNER_JUMP_BUTTON_HEIGHT,
             OUTER_JUMP_BUTTON_HEIGHT,
         ]);
-        painter.fill(rows[SEQUENCER_JUMP_SEPARATOR_ROW], Pen::BLACK);
+        painter.fill(rows[SEQUENCER_JUMP_SEPARATOR_ROW], Pen::BACKGROUND);
         for (mut i, button) in self.jump_buttons.iter_mut().enumerate() {
             if i >= SEQUENCER_JUMP_SEPARATOR_ROW {
                 i += 1;
@@ -385,11 +390,11 @@ impl ButtonContent for TempoReadout {
         ];
         let gaps = [0, Self::SLASH_GAPS[0], Self::SLASH_GAPS[1]];
         let mut x = area.inside.x + Self::INDENT;
-        let y = text_y(area.padded, Font::Interface.height());
+        let y = text_y(area.padded, fonts::INTERFACE.height());
         for (part, gap) in parts.iter().zip(gaps) {
             x += gap;
-            painter.text_in_font(x, y, part, pen, Font::Interface);
-            x += Font::Interface.width(part);
+            painter.text_in_font(x, y, part, pen, fonts::INTERFACE);
+            x += fonts::INTERFACE.width(part);
         }
     }
 }
@@ -401,7 +406,7 @@ fn left_clicked(button: &mut Button) -> bool {
 }
 
 fn label_button(label: &'static str) -> Button {
-    return Button::new(label).font(Font::Label);
+    return Button::new(label).font(fonts::LABEL);
 }
 
 struct Playback {
@@ -569,7 +574,7 @@ impl Playback {
     }
 }
 
-impl OctamedicWidget for Playback {
+impl Gadget<AppState, Event> for Playback {
     fn update(&mut self, state: &mut AppState) {
         self.update_tempo(state);
         self.update_switches();
@@ -598,8 +603,8 @@ impl OctamedicWidget for Playback {
         self.tempo.render(state, TEMPO.within(area), painter);
 
         let [x, y] = VOL_LABEL;
-        let vol = Line::from(Span::new("VOL:").font(Font::Label));
-        painter.line(area.x + x, area.y + y, &vol, Pen::BLACK);
+        let vol = Line::from(Span::new("VOL:").font(fonts::LABEL));
+        painter.line(area.x + x, area.y + y, &vol, Pen::BACKGROUND);
         self.hex.render(state, HEX.within(area), painter);
         self.dec.render(state, DEC.within(area), painter);
         self.filter.render(state, FILTER.within(area), painter);
@@ -610,7 +615,13 @@ impl OctamedicWidget for Playback {
         self.sts.render(state, STS.within(area), painter);
 
         let [x, y] = CHANNEL_MODE_LABEL;
-        painter.text_in_font(area.x + x, area.y + y, "CH.MODE:", Pen::BLACK, Font::Small);
+        painter.text_in_font(
+            area.x + x,
+            area.y + y,
+            "CH.MODE:",
+            Pen::BACKGROUND,
+            fonts::SMALL,
+        );
         self.hq.render(state, HQ.within(area), painter);
         let modes = CHANNEL_MODES
             .within(area)

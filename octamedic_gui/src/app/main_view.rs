@@ -1,4 +1,10 @@
 use ggez::input::keyboard::KeyCode;
+use rustuition::{
+    gadget::Gadget,
+    painter::{Align, Painter, Pen},
+    rect::Rect,
+    text::Line,
+};
 
 use crate::{
     app::{
@@ -8,10 +14,6 @@ use crate::{
     framework::{
         event::{Event, MouseButton},
         keymap::{Action, Key, KeyActions, Keymap},
-        painter::{Align, Painter, Pen},
-        rect::Rect,
-        text::Line,
-        widget::OctamedicWidget,
     },
 };
 
@@ -52,15 +54,16 @@ impl MainView {
         };
     }
 
-    fn widgets(&mut self, mode: MainMode) -> Vec<&mut dyn OctamedicWidget> {
-        let mut widgets: Vec<&mut dyn OctamedicWidget> = vec![&mut self.title, &mut self.header];
+    fn widgets(&mut self, mode: MainMode) -> Vec<&mut dyn Gadget<AppState, Event>> {
+        let mut widgets: Vec<&mut dyn Gadget<AppState, Event>> =
+            vec![&mut self.title, &mut self.header];
         widgets.extend(self.screens.screen(mode));
         widgets.push(&mut self.footer);
         return widgets;
     }
 }
 
-impl OctamedicWidget for MainView {
+impl Gadget<AppState, Event> for MainView {
     fn update(&mut self, state: &mut AppState) {
         for widget in self.widgets(state.main_mode()) {
             widget.update(state);
@@ -100,12 +103,12 @@ impl OctamedicWidget for MainView {
         match self.screens.screen(state.main_mode()) {
             Some(screen) => screen.render(state, editor, painter),
             None => {
-                painter.fill(editor, Pen::BLACK);
+                painter.fill(editor, Pen::BACKGROUND);
 
                 painter.line_in(
                     editor,
                     &Line::from("Not implemented"),
-                    Pen::LIGHT,
+                    Pen::SHINE,
                     Align::Center,
                 );
             }
