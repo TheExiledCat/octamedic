@@ -282,6 +282,16 @@ impl ButtonContent for IncDec {
     }
 }
 
+/// How a toggled button looks, after Intuition's highlight modes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Highlight {
+    /// Fill and content swap colours, the frame stays raised.
+    #[default]
+    Complement,
+    /// Like `Complement`, with the frame sunk in too.
+    Recess,
+}
+
 /// A push button, Intuition's boolean gadget: clicks on press and can be toggled on.
 // clones share the content and handler. `S` is the app's state, `E` the events it's sent
 pub struct Button<S, E = MouseEvent> {
@@ -290,6 +300,7 @@ pub struct Button<S, E = MouseEvent> {
     on_click: Option<Rc<dyn ButtonHandler<S>>>,
     // drawn inverted when switched on
     toggled: bool,
+    highlight: Highlight,
     border: i32,
     // [x, y]
     padding: [i32; 2],
@@ -310,6 +321,7 @@ impl<S, E> Button<S, E> {
             clickable: Clickable::default(),
             on_click: None,
             toggled: false,
+            highlight: Highlight::Complement,
             border: 1,
             padding: [1, 1],
             align: Align::Center,
@@ -335,6 +347,12 @@ impl<S, E> Button<S, E> {
     /// Changes what's called when it's clicked.
     pub fn set_on_click(&mut self, handler: impl Fn(&mut S, ButtonClick) + 'static) {
         self.on_click = Some(Rc::new(handler));
+    }
+
+    /// Sets how it looks when toggled on.
+    pub fn highlight(mut self, highlight: Highlight) -> Self {
+        self.highlight = highlight;
+        return self;
     }
 
     /// Sets the frame thickness.
@@ -453,7 +471,11 @@ impl<S, E: PointerEvent> Gadget<S, E> for Button<S, E> {
         self.clickable.set_area(area);
         let (fill, content) = self.pens();
         painter.fill(area, fill);
-        painter.frame(area, self.border);
+        if self.toggled && self.highlight == Highlight::Recess {
+            painter.frame_inverted(area, self.border);
+        } else {
+            painter.frame(area, self.border);
+        }
         self.content
             .render(self.content_area(area), content, painter);
     }
@@ -480,7 +502,11 @@ mod tests {
     use std::{cell::Cell, rc::Rc};
 
     use super::*;
-    use crate::event::MouseEvent;
+    use crate::{
+        event::MouseEvent,
+        palette::{Color, IntuitionColorPalette},
+        target::Framebuffer,
+    };
 
     // how many times it was clicked
     type Clicks = u32;
@@ -635,5 +661,27 @@ mod tests {
             click(&mut button, &mut state, [x, 5]);
             assert_eq!(clicked.get(), Some(index), "x {x}");
         }
+    }
+
+    #[test]
+    fn recess_sinks_frame() {
+        let palette =
+            IntuitionColorPalette::new([Color(0x000), Color(0xFFF), Color(0x666), Color(0xAAA)]);
+        let top_edge = |highlight, toggled| {
+            let mut button = Button::<()>::new("").highlight(highlight);
+            button.set_toggled(toggled);
+            let mut screen = Framebuffer::new(20, 10);
+            button.render(
+                &(),
+                screen.bounds(),
+                &mut Painter::new(&mut screen, &palette),
+            );
+            screen.pixel(10, 0).unwrap()
+        };
+        let shine = [255, 255, 255];
+        let shadow = [0x66, 0x66, 0x66];
+        assert_eq!(top_edge(Highlight::Complement, true), shine);
+        assert_eq!(top_edge(Highlight::Recess, false), shine);
+        assert_eq!(top_edge(Highlight::Recess, true), shadow);
     }
 }

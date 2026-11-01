@@ -20,3 +20,26 @@ impl AmigaClock {
         frame_rate: 60,
     };
 }
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum VideoStandard {
+    #[default]
+    Pal,
+    Ntsc,
+}
+
+impl VideoStandard {
+    pub const fn clock(self) -> AmigaClock {
+        return match self {
+            VideoStandard::Pal => AmigaClock::PAL,
+            VideoStandard::Ntsc => AmigaClock::NTSC,
+        };
+    }
+
+    pub const fn other(self) -> Self {
+        return match self {
+            VideoStandard::Pal => VideoStandard::Ntsc,
+            VideoStandard::Ntsc => VideoStandard::Pal,
+        };
+    }
+}

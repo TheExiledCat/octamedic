@@ -1,5 +1,7 @@
 use std::sync::{Arc, mpsc::Receiver};
 
+use octamed::mmd::module::SONG_TRACKS;
+
 use super::{
     handle::{EngineCommand, EngineStatus},
     period::note_period,
@@ -57,9 +59,11 @@ pub struct OctamedicEngine {
     global_transpose: i8,
     // listener's volume, not saved with the song
     output_volume: u8,
+    muted_tracks: [bool; SONG_TRACKS],
 
     mode: PlayMode,
     position: Position,
+    queued_sequence_index: Option<usize>,
     clock: Option<Clock>,
     renderer: Box<dyn Renderer>,
     // last instrument per track, for notes with no instrument number
@@ -71,10 +75,13 @@ impl OctamedicEngine {
         commands: Receiver<EngineCommand>,
         status: Arc<EngineStatus>,
         sample_rate: u32,
+        machine: AmigaClock,
     ) -> Self {
         let scopes = status.scopes().clone();
-        let renderer = PaulaRenderer::new(sample_rate, AmigaClock::PAL, MAX_TRACKS, scopes);
-        return Self::with_renderer(commands, status, sample_rate, Box::new(renderer));
+        let renderer = PaulaRenderer::new(sample_rate, machine, MAX_TRACKS, scopes);
+        let mut engine = Self::with_renderer(commands, status, sample_rate, Box::new(renderer));
+        engine.machine = machine;
+        return engine;
     }
 
     pub fn with_renderer(
@@ -96,12 +103,14 @@ impl OctamedicEngine {
             master_volume: MAX_INSTRUMENT_VOLUME,
             global_transpose: 0,
             output_volume: MAX_INSTRUMENT_VOLUME,
+            muted_tracks: [false; SONG_TRACKS],
             mode: PlayMode::Paused,
             position: Position {
                 sequence_index: 0,
                 pattern: PatternId(0),
                 row: 0,
             },
+            queued_sequence_index: None,
             clock: None,
             renderer,
             track_instruments: [None; MAX_TRACKS],
@@ -155,8 +164,13 @@ impl OctamedicEngine {
             EngineCommand::Stop => self.stop(),
             EngineCommand::SetPattern { id, pattern } => self.set_pattern(id, pattern),
             EngineCommand::SetSequence { sequence } => self.sequence = sequence,
+            EngineCommand::QueueSequenceIndex(index) => self.queued_sequence_index = index,
             EngineCommand::SetInstrument { id, instrument } => self.set_instrument(id, instrument),
             EngineCommand::SetTempo(tempo) => self.tempo = tempo,
+            EngineCommand::SetMachine(machine) => {
+                self.machine = machine;
+                self.renderer.set_clock(machine);
+            }
             EngineCommand::SetTrackVolume { track, volume } => {
                 if let Some(track_volume) = self.track_volumes.get_mut(track) {
                     *track_volume = volume.min(MAX_INSTRUMENT_VOLUME);
@@ -166,6 +180,7 @@ impl OctamedicEngine {
                 self.master_volume = volume.min(MAX_INSTRUMENT_VOLUME)
             }
             EngineCommand::SetGlobalTranspose(transpose) => self.global_transpose = transpose,
+            EngineCommand::SetTrackMuted { track, muted } => self.set_track_muted(track, muted),
             EngineCommand::SetOutputVolume(volume) => {
                 self.output_volume = volume.min(MAX_INSTRUMENT_VOLUME)
             }
@@ -175,6 +190,17 @@ impl OctamedicEngine {
                 instrument,
             } => self.note_on(track, note, Some(instrument)),
             EngineCommand::ReleaseNote { track } => self.release(track),
+        }
+    }
+
+    fn set_track_muted(&mut self, track: usize, muted: bool) {
+        let Some(track_muted) = self.muted_tracks.get_mut(track) else {
+            return;
+        };
+        *track_muted = muted;
+        // a looping sample would carry on forever otherwise
+        if muted {
+            self.renderer.write(track, PaulaWrite::DmaOff);
         }
     }
 
@@ -234,6 +260,7 @@ impl OctamedicEngine {
         self.position.row = self.position.row.min(lines.saturating_sub(1));
         self.release_all();
         self.track_instruments = [None; MAX_TRACKS];
+        self.queued_sequence_index = None;
         self.clock = Some(Clock {
             tick: 0,
             frames_until_tick: 0.0,
@@ -300,7 +327,12 @@ impl OctamedicEngine {
 
     fn advance_row(&mut self) {
         match self.next_position(&self.position) {
-            Some(position) => self.position = position,
+            Some(position) => {
+                if position.row == 0 {
+                    self.queued_sequence_index = None;
+                }
+                self.position = position;
+            }
             None => self.stop(),
         }
     }
@@ -321,7 +353,10 @@ impl OctamedicEngine {
             PlayMode::Pattern => return None,
             _ => {}
         }
-        next.sequence_index += 1;
+        next.sequence_index = match self.queued_sequence_index {
+            Some(index) if index < self.sequence.len() => index,
+            _ => next.sequence_index + 1,
+        };
         if next.sequence_index >= self.sequence.len() {
             if self.mode == PlayMode::Song {
                 return None;
@@ -394,6 +429,11 @@ impl OctamedicEngine {
         let volume = instrument.volume as u32 * self.track_volumes[track] as u32 / max
             * self.master_volume as u32
             / max;
+        if !self.is_muted(track) {
+            let instrument = instrument_id.map_or(0, |id| id.0);
+            self.status
+                .note_triggered(track, note.value, instrument, volume as u8);
+        }
         self.trigger(track, sample, period, volume as u8);
     }
 
@@ -431,12 +471,22 @@ impl OctamedicEngine {
             repeat,
         ];
         for write in writes {
-            self.renderer.write(channel, write);
+            self.write(channel, write);
         }
     }
 
     fn release(&mut self, track: usize) {
-        self.renderer.write(track, PaulaWrite::DmaOff);
+        self.write(track, PaulaWrite::DmaOff);
+    }
+
+    fn write(&mut self, channel: usize, write: PaulaWrite) {
+        if !self.is_muted(channel) {
+            self.renderer.write(channel, write);
+        }
+    }
+
+    fn is_muted(&self, track: usize) -> bool {
+        return self.muted_tracks.get(track).copied().unwrap_or(false);
     }
 
     fn release_all(&mut self) {
@@ -473,7 +523,7 @@ mod tests {
     fn engine() -> (OctamedicEngine, Sender<EngineCommand>, Arc<EngineStatus>) {
         let (sender, receiver) = mpsc::channel();
         let status = Arc::new(EngineStatus::default());
-        let engine = OctamedicEngine::new(receiver, status.clone(), SAMPLE_RATE);
+        let engine = OctamedicEngine::new(receiver, status.clone(), SAMPLE_RATE, AmigaClock::PAL);
         return (engine, sender, status);
     }
 
@@ -810,5 +860,230 @@ mod tests {
         commands.send(EngineCommand::SetMasterVolume(64)).unwrap();
         run(&mut engine, 1);
         assert_eq!(engine.output_volume, 10);
+    }
+
+    fn play_note(commands: &Sender<EngineCommand>, track: usize) {
+        commands
+            .send(EngineCommand::PlayNote {
+                track,
+                note: OctamedicNote { value: 13 },
+                instrument: InstrumentId(1),
+            })
+            .unwrap();
+    }
+
+    fn channel_writes(recorder: &Recorder, channel: usize) -> Vec<PaulaWrite> {
+        return recorder
+            .writes
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(written, _)| *written == channel)
+            .map(|(_, write)| write.clone())
+            .collect();
+    }
+
+    #[test]
+    fn muted_track_writes_nothing() {
+        let (mut engine, commands, recorder) = recording_engine();
+        commands
+            .send(EngineCommand::SetInstrument {
+                id: InstrumentId(1),
+                instrument: Some(instrument()),
+            })
+            .unwrap();
+        commands
+            .send(EngineCommand::SetTrackMuted {
+                track: 1,
+                muted: true,
+            })
+            .unwrap();
+        run(&mut engine, 1);
+        recorder.writes.lock().unwrap().clear();
+        play_note(&commands, 0);
+        play_note(&commands, 1);
+        commands
+            .send(EngineCommand::ReleaseNote { track: 1 })
+            .unwrap();
+        run(&mut engine, 1);
+        assert!(channel_writes(&recorder, 1).is_empty());
+        assert!(channel_writes(&recorder, 0).contains(&PaulaWrite::DmaOn));
+    }
+
+    #[test]
+    fn muting_cuts_and_unmuting_plays() {
+        let (mut engine, commands, recorder) = recording_engine();
+        commands
+            .send(EngineCommand::SetInstrument {
+                id: InstrumentId(1),
+                instrument: Some(instrument()),
+            })
+            .unwrap();
+        play_note(&commands, 2);
+        run(&mut engine, 1);
+        recorder.writes.lock().unwrap().clear();
+        commands
+            .send(EngineCommand::SetTrackMuted {
+                track: 2,
+                muted: true,
+            })
+            .unwrap();
+        run(&mut engine, 1);
+        assert_eq!(channel_writes(&recorder, 2), vec![PaulaWrite::DmaOff]);
+        commands
+            .send(EngineCommand::SetTrackMuted {
+                track: 2,
+                muted: false,
+            })
+            .unwrap();
+        play_note(&commands, 2);
+        run(&mut engine, 1);
+        assert!(channel_writes(&recorder, 2).contains(&PaulaWrite::DmaOn));
+    }
+
+    #[test]
+    fn muted_track_is_silent() {
+        let (mut engine, commands, _) = engine();
+        commands
+            .send(EngineCommand::SetInstrument {
+                id: InstrumentId(1),
+                instrument: Some(instrument()),
+            })
+            .unwrap();
+        play_note(&commands, 0);
+        assert!(run(&mut engine, 1)[0] > 0.0);
+        commands
+            .send(EngineCommand::SetTrackMuted {
+                track: 0,
+                muted: true,
+            })
+            .unwrap();
+        assert_eq!(run(&mut engine, 1)[0], 0.0);
+    }
+
+    #[test]
+    fn mutes_past_song_tracks_ignored() {
+        let (mut engine, commands, _) = engine();
+        commands
+            .send(EngineCommand::SetTrackMuted {
+                track: SONG_TRACKS,
+                muted: true,
+            })
+            .unwrap();
+        run(&mut engine, 1);
+        assert_eq!(engine.muted_tracks, [false; SONG_TRACKS]);
+    }
+
+    fn play_sequence(
+        sequence: Vec<u8>,
+    ) -> (OctamedicEngine, Sender<EngineCommand>, Arc<EngineStatus>) {
+        let (engine, commands, status) = engine();
+        commands.send(EngineCommand::SetTempo(tempo(1))).unwrap();
+        for id in 0..3 {
+            commands
+                .send(EngineCommand::SetPattern {
+                    id: PatternId(id),
+                    pattern: Arc::new(pattern(2, &[])),
+                })
+                .unwrap();
+        }
+        commands
+            .send(EngineCommand::SetSequence {
+                sequence: sequence.into_iter().map(PatternId).collect(),
+            })
+            .unwrap();
+        commands
+            .send(EngineCommand::PlaySong {
+                sequence_start: 0,
+                row: 0,
+                looping: true,
+            })
+            .unwrap();
+        return (engine, commands, status);
+    }
+
+    #[test]
+    fn queued_index_waits_for_block_end() {
+        let (mut engine, commands, status) = play_sequence(vec![0, 1, 2, 0]);
+        run(&mut engine, 50);
+        commands
+            .send(EngineCommand::QueueSequenceIndex(Some(3)))
+            .unwrap();
+        run(&mut engine, 100);
+        assert_eq!(status.sequence_index(), 0);
+        run(&mut engine, 100);
+        assert_eq!(status.sequence_index(), 3);
+        run(&mut engine, 200);
+        assert_eq!(status.sequence_index(), 0);
+    }
+
+    #[test]
+    fn queue_cancelled() {
+        let (mut engine, commands, status) = play_sequence(vec![0, 1, 2]);
+        run(&mut engine, 50);
+        commands
+            .send(EngineCommand::QueueSequenceIndex(Some(2)))
+            .unwrap();
+        commands
+            .send(EngineCommand::QueueSequenceIndex(None))
+            .unwrap();
+        run(&mut engine, 200);
+        assert_eq!(status.sequence_index(), 1);
+    }
+
+    #[test]
+    fn sequence_edit_waits_for_block_end() {
+        let (mut engine, commands, status) = play_sequence(vec![0, 1]);
+        run(&mut engine, 50);
+        commands
+            .send(EngineCommand::SetSequence {
+                sequence: vec![PatternId(0), PatternId(2)],
+            })
+            .unwrap();
+        run(&mut engine, 100);
+        assert_eq!(status.pattern(), 0);
+        run(&mut engine, 100);
+        assert_eq!((status.sequence_index(), status.pattern()), (1, 2));
+    }
+
+    #[test]
+    fn notes_leave_a_trigger() {
+        let (mut engine, commands, status) = engine();
+        commands
+            .send(EngineCommand::SetInstrument {
+                id: InstrumentId(1),
+                instrument: Some(instrument()),
+            })
+            .unwrap();
+        commands
+            .send(EngineCommand::SetTrackMuted {
+                track: 1,
+                muted: true,
+            })
+            .unwrap();
+        play_note(&commands, 0);
+        play_note(&commands, 1);
+        run(&mut engine, 1);
+        let trigger = status.note_trigger(0);
+        assert_eq!(
+            (trigger.count, trigger.note, trigger.instrument),
+            (1, 13, 1)
+        );
+        assert_eq!(trigger.volume, 64);
+        assert_eq!(status.note_trigger(1).count, 0);
+        play_note(&commands, 0);
+        run(&mut engine, 1);
+        assert_eq!(status.note_trigger(0).count, 2);
+    }
+
+    #[test]
+    fn machine_sets_tick_rate() {
+        let (mut engine, commands, _) = engine();
+        let pal = engine.frames_per_tick();
+        commands
+            .send(EngineCommand::SetMachine(AmigaClock::NTSC))
+            .unwrap();
+        run(&mut engine, 1);
+        assert!(engine.frames_per_tick() < pal);
     }
 }

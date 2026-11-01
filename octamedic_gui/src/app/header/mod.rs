@@ -2,8 +2,9 @@ pub mod misc;
 pub mod play;
 use rustuition::{
     gadget::Gadget,
-    painter::{Painter, Pen},
+    painter::{Align::Center, Painter, Pen},
     rect::Rect,
+    text::Line,
 };
 
 use crate::{
@@ -91,6 +92,13 @@ impl Gadget<AppState, Event> for Header {
         let inside = painter.frame_inverted(panel, 1);
         if let Some(mode_panel) = self.panels.panel(state.header_mode()) {
             mode_panel.render(state, inside, painter);
+        } else {
+            painter.line_in(
+                inside,
+                &Line::from("Not Implemented"),
+                Pen::BACKGROUND,
+                Center,
+            );
         }
         let modes = Rect::new(
             area.x + MODE_BUTTONS.x,

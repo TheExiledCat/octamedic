@@ -8,7 +8,10 @@ use super::{
     engine::{OctamedicEngine, PlayMode},
     handle::{EngineCommand, EngineStatus},
 };
-use crate::data::{instrument::MAX_INSTRUMENT_VOLUME, pattern::PatternId, song::OctamedicSong};
+use crate::{
+    amiga::clock::AmigaClock,
+    data::{instrument::MAX_INSTRUMENT_VOLUME, pattern::PatternId, song::OctamedicSong},
+};
 
 // also the most trailing silence a recording can have
 const CHUNK_FRAMES: usize = 256;
@@ -47,6 +50,7 @@ impl std::error::Error for RecordError {}
 // offline render, own engine, no audio device
 pub struct Recorder {
     pub sample_rate: u32,
+    pub machine: AmigaClock,
     pub output_volume: u8,
     pub max_duration: Duration,
 }
@@ -55,6 +59,7 @@ impl Default for Recorder {
     fn default() -> Self {
         return Self {
             sample_rate: DEFAULT_SAMPLE_RATE,
+            machine: AmigaClock::PAL,
             output_volume: MAX_INSTRUMENT_VOLUME,
             max_duration: DEFAULT_MAX_DURATION,
         };
@@ -101,7 +106,8 @@ impl Recorder {
     fn record(&self, song: &OctamedicSong, play: EngineCommand) -> Recording {
         let (commands, receiver) = mpsc::channel();
         let status = Arc::new(EngineStatus::default());
-        let mut engine = OctamedicEngine::new(receiver, status.clone(), self.sample_rate);
+        let mut engine =
+            OctamedicEngine::new(receiver, status.clone(), self.sample_rate, self.machine);
         let setup = EngineCommand::load_song(song)
             .into_iter()
             .chain([EngineCommand::SetOutputVolume(self.output_volume), play]);

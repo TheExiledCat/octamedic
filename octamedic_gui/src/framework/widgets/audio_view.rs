@@ -16,10 +16,10 @@ const VU_EDGES: [u32; 2] = [0xAAAAAA, 0xBBBBBB];
 // edges are a tenth of the width
 const VU_EDGE_SHARE: i32 = 10;
 
-const MAX_LEVEL: u8 = 128;
+pub const MAX_LEVEL: u8 = 128;
 
 // per frame, a full meter empties in about 2/3 s at 50Hz
-const VU_FALL: u8 = 4;
+const FALL: u8 = 4;
 
 #[derive(Clone)]
 pub struct Oscilloscope {
@@ -70,20 +70,34 @@ impl Oscilloscope {
     }
 }
 
+// 0..=128, jumps up straight away and falls back slowly. what every meter shows
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MeterLevel(u8);
+
+impl MeterLevel {
+    // once a frame, with whatever it's measuring now
+    pub fn update(&mut self, level: u8) {
+        self.0 = level.min(MAX_LEVEL).max(self.0.saturating_sub(FALL));
+    }
+
+    pub fn level(self) -> u8 {
+        return self.0;
+    }
+}
+
 #[derive(Default)]
 pub struct VuMeter {
-    level: u8,
+    level: MeterLevel,
 }
 
 impl VuMeter {
-    // 0..=128, jumps up straight away and falls back slowly
     pub fn set(&mut self, level: u8) {
-        self.level = level.min(MAX_LEVEL).max(self.level.saturating_sub(VU_FALL));
+        self.level.update(level);
     }
 
     // a silent meter still shows its bottom line
     fn filled(&self, area: Rect) -> i32 {
-        return (self.level as i32 * area.h / MAX_LEVEL as i32).max(1);
+        return (self.level.level() as i32 * area.h / MAX_LEVEL as i32).max(1);
     }
 
     // lines of the same colour merged into one rect
@@ -185,11 +199,11 @@ mod tests {
     fn meter_falloff() {
         let mut meter = VuMeter::default();
         meter.set(100);
-        assert_eq!(meter.level, 100);
+        assert_eq!(meter.level.level(), 100);
         meter.set(0);
-        assert_eq!(meter.level, 100 - VU_FALL);
+        assert_eq!(meter.level.level(), 100 - FALL);
         meter.set(120);
-        assert_eq!(meter.level, 120);
+        assert_eq!(meter.level.level(), 120);
     }
 
     #[test]

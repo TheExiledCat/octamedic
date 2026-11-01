@@ -7,7 +7,7 @@ use ggez::{
     input::{keyboard::KeyInput, mouse},
 };
 use octamedic_core::{
-    amiga::clock::AmigaClock, data::project::OctamedicProject, engine::handle::EngineHandle,
+    amiga::clock::VideoStandard, data::project::OctamedicProject, engine::handle::EngineHandle,
 };
 use rustuition::{
     gadget::Gadget,
@@ -18,7 +18,7 @@ use rustuition::{
 };
 
 use crate::{
-    app::{SCREEN, main_view::MainView, state::AppState},
+    app::{DEFAULT_VIDEO, main_view::MainView, screen, state::AppState},
     framework::event::{self, Event},
 };
 
@@ -27,14 +27,12 @@ const CURSOR: &[u8] = include_bytes!("../../assets/cursor.png");
 // the pointer sprite's pixels are twice as wide as the screen's
 const CURSOR_SCALE: [f32; 2] = [2.0, 1.0];
 
-// vsync is off, frames get paced to the PAL rate by hand
-const MACHINE: AmigaClock = AmigaClock::PAL;
-
 pub struct App {
     state: AppState,
     main: MainView,
     // native res, scaled up into the window
     screen: Image,
+    video: VideoStandard,
     cursor: Image,
     scale_mode: ScaleMode,
     viewport: Viewport,
@@ -48,17 +46,11 @@ pub struct App {
 impl App {
     pub fn new(ctx: &mut Context, project: OctamedicProject) -> GameResult<Self> {
         mouse::set_cursor_hidden(ctx, true);
-        let screen = Image::new_canvas_image(
-            ctx,
-            ctx.gfx.surface_format(),
-            SCREEN.width as u32,
-            SCREEN.height as u32,
-            1,
-        );
         let mut app = Self {
             state: Self::state_with_engine(project),
             main: MainView::new(),
-            screen,
+            screen: screen_image(ctx, DEFAULT_VIDEO),
+            video: DEFAULT_VIDEO,
             cursor: Image::from_bytes(ctx, CURSOR)?,
             scale_mode: ScaleMode::default(),
             viewport: Viewport::default(),
@@ -72,7 +64,7 @@ impl App {
 
     // no audio device, run silent instead of bailing
     fn state_with_engine(project: OctamedicProject) -> AppState {
-        return match EngineHandle::spawn() {
+        return match EngineHandle::spawn(DEFAULT_VIDEO.clock()) {
             Ok(engine) => AppState::new(project, engine),
             Err(error) => {
                 let mut state = AppState::new(project, EngineHandle::disconnected());
@@ -82,9 +74,10 @@ impl App {
         };
     }
 
-    // fixed schedule so oversleeping doesn't pile up. a late frame just restarts it, no catching up
+    // vsync is off, frames get paced to the PAL or NTSC rate by hand. fixed schedule so
+    // oversleeping doesn't pile up, a late frame just restarts it, no catching up
     fn wait_for_next_frame(&mut self) {
-        self.next_frame += Duration::from_secs(1) / MACHINE.frame_rate;
+        self.next_frame += Duration::from_secs(1) / self.video.clock().frame_rate;
         let now = Instant::now();
         match self.next_frame.checked_duration_since(now) {
             Some(rest) => std::thread::sleep(rest),
@@ -94,7 +87,16 @@ impl App {
 
     fn fit_viewport(&mut self, ctx: &Context) {
         let (width, height) = ctx.gfx.drawable_size();
-        self.viewport = SCREEN.viewport([width, height], self.scale_mode);
+        self.viewport = screen(self.video).viewport([width, height], self.scale_mode);
+    }
+
+    fn follow_video(&mut self, ctx: &Context) {
+        if self.state.video() == self.video {
+            return;
+        }
+        self.video = self.state.video();
+        self.screen = screen_image(ctx, self.video);
+        self.fit_viewport(ctx);
     }
 
     fn dispatch(&mut self, event: Event) -> bool {
@@ -102,7 +104,7 @@ impl App {
     }
 
     fn mouse_event(&mut self, x: f32, y: f32, event: impl FnOnce(Point) -> Event) {
-        self.pointer = SCREEN.to_screen(self.viewport, [x, y]);
+        self.pointer = screen(self.video).to_screen(self.viewport, [x, y]);
         self.dispatch(event(self.pointer));
     }
 
@@ -110,9 +112,10 @@ impl App {
         let mut canvas = Canvas::from_image(ctx, self.screen.clone(), Color::BLACK);
         canvas.set_sampler(Sampler::nearest_clamp());
         {
-            let mut target = BatchedCanvas::new(&ctx.gfx, &mut canvas, SCREEN.rect());
+            let area = screen(self.video).rect();
+            let mut target = BatchedCanvas::new(&ctx.gfx, &mut canvas, area);
             let mut painter = Painter::new(&mut target, &self.state.palette);
-            self.main.render(&self.state, SCREEN.rect(), &mut painter);
+            self.main.render(&self.state, area, &mut painter);
         }
         // after the batched fills are flushed, so it's on top
         let [x, y] = self.pointer;
@@ -130,6 +133,7 @@ impl EventHandler for App {
             .set_window_title(&format!("OctaMEDIC ({:.02} FPS) ", ctx.time.fps()));
         self.state.update();
         self.main.update(&mut self.state);
+        self.follow_video(ctx);
         if self.state.exit_requested {
             ctx.request_quit();
         }
@@ -141,11 +145,12 @@ impl EventHandler for App {
         let mut frame = Canvas::from_frame(ctx, Color::BLACK);
         frame.set_sampler(Sampler::nearest_clamp());
         let Viewport { x, y, w, h } = self.viewport;
+        let screen = screen(self.video);
         frame.draw(
             &self.screen,
             DrawParam::new()
                 .dest([x, y])
-                .scale([w / SCREEN.width as f32, h / SCREEN.height as f32]),
+                .scale([w / screen.width as f32, h / screen.height as f32]),
         );
         frame.finish(ctx)?;
         self.wait_for_next_frame();
@@ -234,4 +239,15 @@ fn mouse_button(button: MouseButton) -> Option<event::MouseButton> {
         MouseButton::Right => Some(event::MouseButton::Right),
         _ => None,
     };
+}
+
+fn screen_image(ctx: &Context, video: VideoStandard) -> Image {
+    let screen = screen(video);
+    return Image::new_canvas_image(
+        ctx,
+        ctx.gfx.surface_format(),
+        screen.width as u32,
+        screen.height as u32,
+        1,
+    );
 }

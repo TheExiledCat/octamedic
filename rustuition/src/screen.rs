@@ -11,12 +11,12 @@ pub struct Screen {
 impl Screen {
     /// 640x256 non-interlaced hires, pixels twice as tall as wide.
     pub const PAL_HIRES: Self = Self::new(640, 256, 2.0);
-    /// 640x200 non-interlaced hires.
-    pub const NTSC_HIRES: Self = Self::new(640, 200, 2.0);
+    /// 640x200 non-interlaced hires, pixels stretched to fill the same picture as PAL.
+    pub const NTSC_HIRES: Self = Self::new(640, 200, 2.56);
     /// 320x256 lores, square pixels.
     pub const PAL_LORES: Self = Self::new(320, 256, 1.0);
-    /// 320x200 lores.
-    pub const NTSC_LORES: Self = Self::new(320, 200, 1.0);
+    /// 320x200 lores, pixels a little taller than wide.
+    pub const NTSC_LORES: Self = Self::new(320, 200, 1.28);
 
     /// A screen `width` by `height` with pixels `pixel_aspect` times as tall as wide.
     pub const fn new(width: i32, height: i32, pixel_aspect: f32) -> Self {
@@ -155,6 +155,20 @@ mod tests {
     #[test]
     fn lores_is_square() {
         assert_eq!(Screen::PAL_LORES.window_size(2.0), [640.0, 512.0]);
+    }
+
+    #[test]
+    fn ntsc_fills_the_same_picture() {
+        for (pal, ntsc) in [
+            (Screen::PAL_HIRES, Screen::NTSC_HIRES),
+            (Screen::PAL_LORES, Screen::NTSC_LORES),
+        ] {
+            assert_eq!(pal.window_size(2.0), ntsc.window_size(2.0));
+            let window = [1920.0, 1080.0];
+            for mode in [ScaleMode::Integer, ScaleMode::Fit] {
+                assert_eq!(pal.viewport(window, mode), ntsc.viewport(window, mode));
+            }
+        }
     }
 
     #[test]

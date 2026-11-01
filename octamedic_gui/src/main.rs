@@ -8,7 +8,7 @@ use ggez::{
 use octamed::mmd::{conversion::FromModule, parser::OctamedMMDParser};
 use octamedic_core::data::project::OctamedicProject;
 
-use crate::app::{SCREEN, app::App, files};
+use crate::app::{DEFAULT_VIDEO, app::App, files, screen};
 
 mod app;
 mod framework;
@@ -35,7 +35,7 @@ fn main() -> GameResult<()> {
         eprintln!("Couldn't create OctaMEDIC's folders: {error}");
     }
     let project = load_project();
-    let [width, height] = SCREEN.window_size(WINDOW_SCALE);
+    let [width, height] = screen(DEFAULT_VIDEO).window_size(WINDOW_SCALE);
     let (mut ctx, event_loop) = ContextBuilder::new("OctaMEDIC", "Amano Rosuko")
         .backend(ggez::conf::Backend::Vulkan)
         .window_mode(WindowMode {

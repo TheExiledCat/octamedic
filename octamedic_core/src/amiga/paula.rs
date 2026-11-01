@@ -80,6 +80,9 @@ impl Default for Scopes {
 pub trait Renderer: Send {
     fn write(&mut self, channel: usize, write: PaulaWrite);
 
+    #[allow(unused_variables)]
+    fn set_clock(&mut self, clock: AmigaClock) {}
+
     /// Adds to `out`, interleaved.
     fn render(&mut self, out: &mut [f32], channels: usize);
 }
@@ -200,6 +203,10 @@ impl PaulaRenderer {
 }
 
 impl Renderer for PaulaRenderer {
+    fn set_clock(&mut self, clock: AmigaClock) {
+        self.clock = clock;
+    }
+
     fn write(&mut self, channel: usize, write: PaulaWrite) {
         if let Some(channel) = self.channels.get_mut(channel) {
             channel.write(write);

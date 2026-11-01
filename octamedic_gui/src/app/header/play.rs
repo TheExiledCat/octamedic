@@ -22,7 +22,7 @@ use rustuition::{
 use crate::{
     app::{
         fonts::{self, POSITION_SLASH},
-        state::AppState,
+        state::{AppState, PlayStart},
     },
     framework::{
         event::{Event, MouseButton},
@@ -288,15 +288,7 @@ impl Gadget<AppState, Event> for Sequencer {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Start {
-    Song,
-    ContinueSong,
-    Block,
-    ContinueBlock,
-}
-
-impl Start {
+impl PlayStart {
     const ALL: [Self; 4] = [
         Self::Song,
         Self::ContinueSong,
@@ -329,16 +321,6 @@ impl Start {
             Self::ContinueSong | Self::ContinueBlock => 18,
             Self::Block => 14,
         };
-    }
-
-    fn play(self, state: &mut AppState) {
-        let line = state.cursor.line;
-        match self {
-            Self::Song => state.play_song(0, 0),
-            Self::ContinueSong => state.play_song(state.active_sequence_index, line),
-            Self::Block => state.play_pattern(state.active_pattern, 0),
-            Self::ContinueBlock => state.play_pattern(state.active_pattern, line),
-        }
     }
 }
 
@@ -425,9 +407,7 @@ struct Playback {
     channel_modes: [Button; CHANNEL_MODES_COUNT],
     stop: Button,
     starts: [Button; 4],
-    // D: play the block when a note is entered
     play_on_note: Button,
-    started: Option<Start>,
 }
 
 impl Playback {
@@ -458,21 +438,20 @@ impl Playback {
             slid: [1; 2],
             tempo_mode: Button::new("BPM"),
             tempo: Button::new(TempoReadout([1; 2])),
-            hex: toggled("HEX"),
+            hex: label_button("HEX"),
             dec: label_button("DEC"),
             filter: label_button("FILTER"),
-            meters: ["E1", "E2", "E3"].map(toggled),
+            meters: ["E1", "E2", "E3"].map(label_button),
             sts: toggled("STS"),
             hq: label_button("HQ"),
             channel_modes,
             stop: label_button("STOP").bold(),
-            starts: Start::ALL.map(|start| {
+            starts: PlayStart::ALL.map(|start| {
                 label_button(start.label())
                     .align(Align::Left)
                     .padding_xy(start.label_offset(), 1)
             }),
             play_on_note: label_button("D"),
-            started: None,
         };
     }
 
@@ -527,23 +506,33 @@ impl Playback {
         self.tempo.set_content(TempoReadout(values));
     }
 
-    // these don't affect playback yet
-    fn update_switches(&mut self) {
+    fn update_meters(&mut self, state: &mut AppState) {
+        let meters = &mut state.meters;
+        let switches = [&mut meters.bars, &mut meters.vu, &mut meters.scopes];
+        for (button, on) in self.meters.iter_mut().zip(switches) {
+            if left_clicked(button) {
+                *on = !*on;
+            }
+            button.set_toggled(*on);
+        }
+    }
+
+    fn update_volume_base(&mut self, state: &mut AppState) {
         if left_clicked(&mut self.hex) {
-            self.hex.set_toggled(true);
-            self.dec.set_toggled(false);
+            state.set_volumes_hex(true);
         }
         if left_clicked(&mut self.dec) {
-            self.dec.set_toggled(true);
-            self.hex.set_toggled(false);
+            state.set_volumes_hex(false);
         }
-        let switches = [
-            &mut self.filter,
-            &mut self.sts,
-            &mut self.hq,
-            &mut self.play_on_note,
-        ];
-        for button in switches.into_iter().chain(&mut self.meters) {
+        let hex = state.song().flags.volumes_hex;
+        self.hex.set_toggled(hex);
+        self.dec.set_toggled(!hex);
+    }
+
+    // these don't affect playback yet
+    fn update_switches(&mut self) {
+        let switches = [&mut self.filter, &mut self.sts, &mut self.hq];
+        for button in switches {
             if left_clicked(button) {
                 button.toggle();
             }
@@ -559,17 +548,19 @@ impl Playback {
     fn update_playing(&mut self, state: &mut AppState) {
         if left_clicked(&mut self.stop) {
             state.stop();
-            self.started = None;
         }
-        for (start, button) in Start::ALL.into_iter().zip(&mut self.starts) {
+        for (start, button) in PlayStart::ALL.into_iter().zip(&mut self.starts) {
             if left_clicked(button) {
-                start.play(state);
-                self.started = Some(start);
+                state.start(start);
             }
         }
+        if left_clicked(&mut self.play_on_note) {
+            state.play_on_note = !state.play_on_note;
+        }
+        self.play_on_note.set_toggled(state.play_on_note);
         let playing = state.is_playing();
-        for (start, button) in Start::ALL.into_iter().zip(&mut self.starts) {
-            button.set_toggled(playing && self.started == Some(start));
+        for (start, button) in PlayStart::ALL.into_iter().zip(&mut self.starts) {
+            button.set_toggled(playing && state.started() == Some(start));
         }
     }
 }
@@ -577,6 +568,8 @@ impl Playback {
 impl Gadget<AppState, Event> for Playback {
     fn update(&mut self, state: &mut AppState) {
         self.update_tempo(state);
+        self.update_volume_base(state);
+        self.update_meters(state);
         self.update_switches();
         self.update_playing(state);
     }
@@ -631,10 +624,41 @@ impl Gadget<AppState, Event> for Playback {
         }
 
         self.stop.render(state, STOP.within(area), painter);
-        for (start, button) in Start::ALL.into_iter().zip(&mut self.starts) {
+        for (start, button) in PlayStart::ALL.into_iter().zip(&mut self.starts) {
             button.render(state, start.rect().within(area), painter);
         }
         self.play_on_note
             .render(state, PLAY_ON_NOTE.within(area), painter);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
+    use rustuition::target::Framebuffer;
+
+    use super::*;
+
+    #[test]
+    fn hex_dec_follow_song() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        let mut playback = Playback::new();
+        let mut screen = Framebuffer::new(460, 50);
+        playback.update(&mut state);
+        playback.render(
+            &state,
+            screen.bounds(),
+            &mut Painter::new(&mut screen, &state.palette),
+        );
+        assert!(playback.dec.is_toggled() && !playback.hex.is_toggled());
+        let press = Event::MouseDown {
+            pos: [HEX.x + 2, HEX.y + 2],
+            button: MouseButton::Left,
+        };
+        playback.handle_event(&mut state, &press);
+        playback.update(&mut state);
+        assert!(state.song().flags.volumes_hex);
+        assert!(!state.is_saved());
+        assert!(playback.hex.is_toggled() && !playback.dec.is_toggled());
     }
 }

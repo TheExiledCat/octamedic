@@ -27,3 +27,40 @@ impl PointerEvent for MouseEvent {
         return Some(*self);
     }
 }
+
+/// A key that edits text, for [`Textbox`](crate::gadgets::textbox::Textbox).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EditKey {
+    Left,
+    Right,
+    Home,
+    End,
+    Backspace,
+    Delete,
+    Enter,
+    Escape,
+    SelectAll,
+}
+
+/// Typing: a character, or an editing key. `shift` extends the selection, `ctrl` goes by words.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TextInput {
+    Char(char),
+    Key {
+        key: EditKey,
+        shift: bool,
+        ctrl: bool,
+    },
+}
+
+/// What text boxes need out of an app's events. Map your own key events to [`TextInput`].
+pub trait TextEvent {
+    /// The typing in it, if it is any.
+    fn text_input(&self) -> Option<TextInput>;
+}
+
+impl TextEvent for MouseEvent {
+    fn text_input(&self) -> Option<TextInput> {
+        return None;
+    }
+}

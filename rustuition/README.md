@@ -178,13 +178,40 @@ clicked. `set_text` / `set_content` change it later.
 It clicks the moment it's pressed, like Intuition's `GACT_IMMEDIATE` gadgets. The handler gets the
 state and a `ButtonClick` with the mouse button and `char_index` (the label character under the
 pointer); or leave the handler out and poll `clicked()`. `toggle` / `set_toggled` draw it
-inverted, the Amiga way of showing a gadget that's on. `border(n)` sets the frame thickness. The
+inverted, the Amiga way of showing a gadget that's on; `highlight(Highlight::Recess)` sinks the
+frame in as well, like OctaMED's track on/off boxes. `border(n)` sets the frame thickness. The
 label is lined up with `align` inside the frame and padding (`padding(n)` or `padding_xy(x, y)`)
 and cut to what fits; a label too long for the padding moves into it.
 
 `Slider` is a proportional gadget with a dotted track, horizontal or vertical, optionally
 reversed. `Grid::new(columns, rows, gadgets)` lays gadgets out in rows and passes events and
 drawing to them.
+
+`Textbox` is Intuition's string gadget. A click focuses it and puts the cursor on the char under
+the pointer, dragging selects, a double click selects a word, and clicking anywhere else, Enter or
+Escape lets go. It takes the usual editing keys: arrows (with Ctrl by word, with Shift to select),
+Home, End, Backspace, Delete and Ctrl+A. `on_update` gets the new text whenever typing changes it,
+`set_text` changes it without calling that, and `max_length` caps it. It needs the keys as well as
+the mouse, so your event type implements `TextEvent` too, turning key presses into `TextInput`:
+
+```rust
+impl TextEvent for Event {
+    fn text_input(&self) -> Option<TextInput> {
+        return match self {
+            Event::Typed(c) => Some(TextInput::Char(*c)),
+            Event::Key(Key::Left) => Some(TextInput::Key {
+                key: EditKey::Left,
+                shift: false,
+                ctrl: false,
+            }),
+            _ => None,
+        };
+    }
+}
+```
+
+Give text boxes your events before other gadgets, so typing doesn't reach them and the box sees
+the click that unfocuses it.
 
 ## Clicks
 

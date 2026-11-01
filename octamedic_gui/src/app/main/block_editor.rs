@@ -11,6 +11,8 @@ use octamedic_core::{
 };
 use octamedic_util::{base32, primitives::Flip};
 use rustuition::{
+    clickable::{Click, Clickable},
+    event::MouseButton,
     font::Font,
     gadget::Gadget,
     painter::{CHAR_HEIGHT, CHAR_WIDTH, Painter, Pen},
@@ -18,16 +20,17 @@ use rustuition::{
 };
 
 use crate::{
-    app::{cursor::EditCursor, fonts, pens, state::AppState},
+    app::{
+        cursor::EditCursor,
+        fonts, pens,
+        state::{AppState, PlayStart},
+    },
     framework::{
         event::Event,
         keymap::{Action, Key, KeyActions, Keymap},
         widgets::audio_view::{Oscilloscope, VuMeter},
     },
 };
-
-// odd, so there is a middle row for the cursor's line
-const ROWS: i32 = 15;
 
 // measured off OctaMED's 4-track view, in font pixels. a sample per pixel, 2 in from the track
 // edge. scopes hang off the highlighted line, meters off the middle of the editor
@@ -36,8 +39,6 @@ const SCOPE_SAMPLES: usize = 42;
 
 const METER_OFFSET: i32 = 45;
 const METER_WIDTH: i32 = 10;
-
-const CENTER_ROW: i32 = ROWS / 2;
 
 // 3 digits and a space
 const LINE_NUMBER_CHARS: i32 = 4;
@@ -99,6 +100,8 @@ pub struct BlockEditor {
     visible_tracks: usize,
     oscilloscopes: [Oscilloscope; SCOPE_CHANNELS],
     meters: [VuMeter; SCOPE_CHANNELS],
+    clickable: Clickable,
+    area: Rect,
 }
 
 impl BlockEditor {
@@ -134,7 +137,25 @@ impl BlockEditor {
             visible_tracks: 1,
             oscilloscopes: array::from_fn(|_| Oscilloscope::new(SCOPE_SAMPLES)),
             meters: array::from_fn(|_| VuMeter::default()),
+            clickable: Clickable::default(),
+            area: Rect::default(),
         };
+    }
+
+    fn click(&mut self, state: &mut AppState, event: &Event) -> bool {
+        if event.button() == Some(MouseButton::Right) {
+            return false;
+        }
+        let click = self.clickable.handle(event);
+        if let Click::Clicked { pos: [x, _], .. } = click {
+            let layout = state
+                .active_pattern()
+                .map(|pattern| Layout::new(self.area, pattern.track_count()));
+            if let Some(index) = layout.and_then(|layout| layout.track_at(x)) {
+                state.toggle_track_mute(self.first_track + index);
+            }
+        }
+        return click.handled();
     }
 
     fn scroll_to(&mut self, track: usize, tracks: usize, visible: usize) {
@@ -206,7 +227,7 @@ impl BlockEditor {
         pen: Pen,
         painter: &mut Painter,
     ) {
-        let line = cursor_line as isize + (row - CENTER_ROW) as isize;
+        let line = cursor_line as isize + (row - center_row(area)) as isize;
         let Ok(line) = usize::try_from(line) else {
             return;
         };
@@ -248,8 +269,8 @@ impl BlockEditor {
         painter: &mut Painter,
     ) {
         let lines = [
-            (parts.top, CENTER_ROW - 1, pens::ROSE),
-            (parts.bottom, CENTER_ROW + 1, pens::ROSE),
+            (parts.top, center_row(area) - 1, pens::ROSE),
+            (parts.bottom, center_row(area) + 1, pens::ROSE),
         ];
         for (rect, row, text) in lines {
             painter.fill(rect, pens::RED);
@@ -261,7 +282,15 @@ impl BlockEditor {
             painter.fill(side, pens::PINK);
             painter.clipped(side, |painter| {
                 let pen = pens::BLUSH;
-                self.render_row(pattern, cursor_line, CENTER_ROW, layout, area, pen, painter);
+                self.render_row(
+                    pattern,
+                    cursor_line,
+                    center_row(area),
+                    layout,
+                    area,
+                    pen,
+                    painter,
+                );
             });
         }
     }
@@ -280,7 +309,7 @@ impl BlockEditor {
             if track >= SCOPE_CHANNELS {
                 break;
             }
-            if state.is_playing() {
+            if state.is_playing() && state.active_meters().scopes {
                 let x = layout.track_x(index);
                 let scope = scope_area(layout, area, index);
                 for run in self.oscilloscopes[track].runs(scope) {
@@ -291,7 +320,9 @@ impl BlockEditor {
                     }
                 }
             }
-            self.meters[track].render(state, meter_area(layout, area, index), painter);
+            if state.active_meters().vu {
+                self.meters[track].render(state, meter_area(layout, area, index), painter);
+            }
         }
     }
 }
@@ -366,6 +397,9 @@ impl Gadget<AppState, Event> for BlockEditor {
             self.meters = array::from_fn(|_| VuMeter::default());
             return;
         }
+        if state.displays_off {
+            return;
+        }
         // the engine's line and block are read apart, so the line can be from the block before
         let lines = state
             .active_pattern()
@@ -382,7 +416,7 @@ impl Gadget<AppState, Event> for BlockEditor {
     }
 
     fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
-        if self.dispatch(state, event) {
+        if self.dispatch(state, event) || self.click(state, event) {
             return true;
         }
         let Event::Text {
@@ -401,6 +435,8 @@ impl Gadget<AppState, Event> for BlockEditor {
     }
 
     fn render(&mut self, state: &AppState, area: Rect, painter: &mut Painter) {
+        self.area = area;
+        self.clickable.set_area(area);
         painter.fill(area, Pen::BACKGROUND);
         let Some(pattern) = state.active_pattern() else {
             return;
@@ -409,11 +445,11 @@ impl Gadget<AppState, Event> for BlockEditor {
         let layout = Layout::new(area, pattern.track_count());
         self.visible_tracks = layout.fits;
         self.scroll_to(cursor.track, pattern.track_count(), layout.tracks);
-        let center_y = area.y + CENTER_ROW * CHAR_HEIGHT;
+        let center_y = area.y + center_row(area) * CHAR_HEIGHT;
         let band = active_band(area, center_y);
         painter.fill(band, Pen::SHADOW);
-        for row in 0..ROWS {
-            let pen = if row == CENTER_ROW {
+        for row in 0..area.h / CHAR_HEIGHT {
+            let pen = if row == center_row(area) {
                 Pen::FILL
             } else {
                 Pen::SHINE
@@ -441,6 +477,10 @@ struct CursorBox {
     top: Rect,
     bottom: Rect,
     sides: [Rect; 2],
+}
+
+fn center_row(area: Rect) -> i32 {
+    return area.h / CHAR_HEIGHT / 2;
 }
 
 fn active_band(area: Rect, center_y: i32) -> Rect {
@@ -481,6 +521,12 @@ impl Layout {
     fn track_x(&self, track: usize) -> i32 {
         return self.x + self.track_column(track) * self.char_width;
     }
+
+    fn track_at(&self, x: i32) -> Option<usize> {
+        let column = (x - self.x) / self.char_width - LINE_NUMBER_CHARS;
+        let track = usize::try_from(column / TRACK_CHARS).ok()?;
+        return (column >= 0 && track < self.tracks).then_some(track);
+    }
 }
 
 // in edit mode a note key also writes the note and moves down by the line add
@@ -498,6 +544,9 @@ fn enter_key(state: &mut AppState, key: char, repeat: bool) -> bool {
     }
     if state.enter_key(cursor.track, cursor.line, key).is_none() {
         return false;
+    }
+    if state.play_on_note && !state.is_playing() {
+        state.start(PlayStart::Block);
     }
     let lines = state
         .active_pattern()
@@ -527,7 +576,7 @@ fn instrument_text(instrument: u8) -> String {
 fn scope_area(layout: &Layout, area: Rect, index: usize) -> Rect {
     let pixel = layout.char_width / CHAR_WIDTH;
     let x = layout.track_x(index) + SCOPE_OFFSET * pixel;
-    let top = active_band(area, area.y + CENTER_ROW * CHAR_HEIGHT).y;
+    let top = active_band(area, area.y + center_row(area) * CHAR_HEIGHT).y;
     return Rect::new(x, top, SCOPE_SAMPLES as i32 * pixel, area.y + area.h - top);
 }
 
@@ -547,7 +596,7 @@ fn cell_at(
     track: usize,
 ) -> Option<&OctamedicPatternTrack> {
     let row = (y - area.y) / CHAR_HEIGHT;
-    let line = usize::try_from(cursor_line as isize + (row - CENTER_ROW) as isize).ok()?;
+    let line = usize::try_from(cursor_line as isize + (row - center_row(area)) as isize).ok()?;
     return pattern.lines.get(line)?.tracks.get(track);
 }
 
@@ -586,7 +635,7 @@ mod tests {
     use rustuition::target::{RenderTarget, Rgba};
 
     use super::*;
-    use crate::app::{SCREEN, state::screen_palette};
+    use crate::app::{DEFAULT_VIDEO, screen, state::screen_palette};
 
     fn state() -> AppState {
         return AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
@@ -601,7 +650,7 @@ mod tests {
         }
 
         fn get_clip(&self) -> Rect {
-            return SCREEN.rect();
+            return screen(DEFAULT_VIDEO).rect();
         }
 
         fn set_clip(&mut self, _rect: Rect) -> bool {
@@ -633,6 +682,19 @@ mod tests {
             "{:?}",
             fills.0
         );
+    }
+
+    #[test]
+    fn e2_hides_meters() {
+        let (mut editor, mut state) = (BlockEditor::new(), state());
+        state.meters.vu = false;
+        let area = Rect::new(0, 77, 640, 120);
+        let layout = Layout::new(area, 4);
+        let mut fills = Fills::default();
+        let mut painter = Painter::new(&mut fills, &state.palette);
+        let pattern = state.active_pattern().unwrap().clone();
+        editor.render_scopes(&state, &pattern, &layout, area, &mut painter);
+        assert!(fills.0.is_empty(), "{:?}", fills.0);
     }
 
     #[test]
@@ -712,6 +774,17 @@ mod tests {
         assert_eq!(state.cursor.line, 2);
         state.cursor.column = 1;
         assert!(!editor.handle_event(&mut state, &Event::text('z')));
+    }
+
+    #[test]
+    fn play_on_note_starts_block() {
+        let (mut editor, mut state) = (BlockEditor::new(), state());
+        state.play_on_note = true;
+        editor.handle_event(&mut state, &Event::text('z'));
+        assert_eq!(state.started(), None);
+        state.cursor.edit_mode = true;
+        editor.handle_event(&mut state, &Event::text('z'));
+        assert_eq!(state.started(), Some(PlayStart::Block));
     }
 
     #[test]
@@ -816,5 +889,52 @@ mod tests {
         };
         assert_eq!(track_text(&cell), "C#2 10C20");
         assert_eq!(track_text(&OctamedicPatternTrack::new()), "--- 00000");
+    }
+
+    fn mouse_down(x: i32, button: MouseButton) -> Event {
+        return Event::MouseDown {
+            pos: [x, 100],
+            button,
+        };
+    }
+
+    #[test]
+    fn track_under_pointer() {
+        let layout = Layout::new(Rect::new(0, 77, 640, 120), 4);
+        assert_eq!(layout.track_at(layout.x), None);
+        assert_eq!(layout.track_at(layout.track_x(0)), Some(0));
+        assert_eq!(layout.track_at(layout.track_x(1) - 1), Some(0));
+        assert_eq!(layout.track_at(layout.track_x(3) + 5), Some(3));
+        assert_eq!(layout.track_at(layout.track_x(4)), None);
+    }
+
+    #[test]
+    fn click_toggles_mute() {
+        let (mut editor, mut state) = (BlockEditor::new(), state());
+        editor.area = Rect::new(0, 77, 640, 120);
+        editor.clickable.set_area(editor.area);
+        let x = Layout::new(editor.area, 4).track_x(2) + 3;
+        assert!(editor.handle_event(&mut state, &mouse_down(x, MouseButton::Left)));
+        assert!(state.is_track_muted(2));
+        assert!(!state.is_track_muted(1));
+        editor.handle_event(
+            &mut state,
+            &Event::MouseUp {
+                pos: [x, 100],
+                button: MouseButton::Left,
+            },
+        );
+        editor.handle_event(&mut state, &mouse_down(x, MouseButton::Left));
+        assert!(!state.is_track_muted(2));
+    }
+
+    #[test]
+    fn right_click_left_alone() {
+        let (mut editor, mut state) = (BlockEditor::new(), state());
+        editor.area = Rect::new(0, 77, 640, 120);
+        editor.clickable.set_area(editor.area);
+        let x = Layout::new(editor.area, 4).track_x(0);
+        assert!(!editor.handle_event(&mut state, &mouse_down(x, MouseButton::Right)));
+        assert!(!state.is_track_muted(0));
     }
 }

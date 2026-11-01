@@ -1,7 +1,7 @@
 use ggez::input::keyboard::{KeyCode, KeyMods};
 pub use rustuition::event::MouseButton;
 use rustuition::{
-    event::{MouseEvent, PointerEvent},
+    event::{EditKey, MouseEvent, PointerEvent, TextEvent, TextInput},
     rect::Point,
 };
 
@@ -31,6 +31,15 @@ pub enum Event {
     },
 }
 
+impl Event {
+    pub fn button(&self) -> Option<MouseButton> {
+        return match *self {
+            Event::MouseDown { button, .. } | Event::MouseUp { button, .. } => Some(button),
+            _ => None,
+        };
+    }
+}
+
 impl PointerEvent for Event {
     fn mouse(&self) -> Option<MouseEvent> {
         return match *self {
@@ -38,6 +47,35 @@ impl PointerEvent for Event {
             Event::MouseDown { pos, button } => Some(MouseEvent::Down { pos, button }),
             Event::MouseUp { pos, button } => Some(MouseEvent::Up { pos, button }),
             Event::Key { .. } | Event::Text { .. } => None,
+        };
+    }
+}
+
+impl TextEvent for Event {
+    fn text_input(&self) -> Option<TextInput> {
+        let shortcut = KeyMods::CTRL | KeyMods::ALT | KeyMods::LOGO;
+        return match *self {
+            Event::Text {
+                character, mods, ..
+            } if !mods.intersects(shortcut) => Some(TextInput::Char(character)),
+            Event::Key { key, mods, .. } => {
+                let ctrl = mods.contains(KeyMods::CTRL);
+                let key = match key {
+                    KeyCode::Left => EditKey::Left,
+                    KeyCode::Right => EditKey::Right,
+                    KeyCode::Home => EditKey::Home,
+                    KeyCode::End => EditKey::End,
+                    KeyCode::Back => EditKey::Backspace,
+                    KeyCode::Delete => EditKey::Delete,
+                    KeyCode::Return | KeyCode::NumpadEnter => EditKey::Enter,
+                    KeyCode::Escape => EditKey::Escape,
+                    KeyCode::A if ctrl => EditKey::SelectAll,
+                    _ => return None,
+                };
+                let shift = mods.contains(KeyMods::SHIFT);
+                Some(TextInput::Key { key, shift, ctrl })
+            }
+            _ => None,
         };
     }
 }
@@ -50,5 +88,48 @@ impl Event {
             mods: KeyMods::NONE,
             repeat: false,
         };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn key(key: KeyCode, mods: KeyMods) -> Option<TextInput> {
+        let event = Event::Key {
+            key,
+            mods,
+            repeat: false,
+        };
+        return event.text_input();
+    }
+
+    #[test]
+    fn keys_to_text_input() {
+        assert_eq!(Event::text('a').text_input(), Some(TextInput::Char('a')));
+        let shortcut = Event::Text {
+            character: 'a',
+            mods: KeyMods::CTRL,
+            repeat: false,
+        };
+        assert_eq!(shortcut.text_input(), None);
+        assert_eq!(
+            key(KeyCode::Left, KeyMods::SHIFT | KeyMods::CTRL),
+            Some(TextInput::Key {
+                key: EditKey::Left,
+                shift: true,
+                ctrl: true
+            })
+        );
+        assert_eq!(
+            key(KeyCode::A, KeyMods::CTRL),
+            Some(TextInput::Key {
+                key: EditKey::SelectAll,
+                shift: false,
+                ctrl: true
+            })
+        );
+        assert_eq!(key(KeyCode::A, KeyMods::NONE), None);
+        assert_eq!(key(KeyCode::Up, KeyMods::NONE), None);
     }
 }

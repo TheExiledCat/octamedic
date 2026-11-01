@@ -87,6 +87,10 @@ differently.
 Volume is the instrument's volume scaled by track volume and song master volume (each out of 64).
 The listener's output volume comes after that and isn't part of the song.
 
+Muting a track (one of the song's 16) drops its `PaulaWrite`s before they reach the renderer, and
+cuts whatever it was playing. Everything else carries on as normal, so it picks up with the right
+instrument when it's unmuted. Mutes aren't saved with the song.
+
 The engine never makes sound itself. Everything it does to a channel is a `PaulaWrite` (period,
 volume, sample range, DMA on/off) in the order of the steps above, sent to a `Renderer`. That way
 you can log the writes per tick and compare them with the original player without listening, and

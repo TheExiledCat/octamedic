@@ -2,10 +2,10 @@ use octamedic_util::{base32, core_extensions::Boxed, primitives::Flip};
 use rustuition::{
     gadget::Gadget,
     gadgets::{
-        button::{ButtonHandler, Triangle},
+        button::{ButtonHandler, Highlight, Triangle},
         grid::Grid,
     },
-    painter::{Align, Painter, Pen},
+    painter::{Align, Painter},
     rect::Rect,
     shape::Direction,
 };
@@ -43,7 +43,7 @@ const GAUGE_ROWS: usize = 2;
 
 pub struct StatusBar {
     boxes: Vec<Button>,
-    gauge: Grid<GaugeBox>,
+    gauge: Grid<Button>,
 }
 
 impl StatusBar {
@@ -139,7 +139,7 @@ impl StatusBar {
                 }
             });
 
-        let gauge_boxes = (0..GAUGE_COLUMNS * GAUGE_ROWS).map(|_| GaugeBox).collect();
+        let gauge_boxes = (0..GAUGE_COLUMNS * GAUGE_ROWS).map(track_button).collect();
         return Self {
             boxes,
             gauge: Grid::new(GAUGE_COLUMNS, GAUGE_ROWS, gauge_boxes),
@@ -187,6 +187,9 @@ impl Gadget<AppState, Event> for StatusBar {
         }
 
         self.boxes[EDIT].set_toggled(state.cursor.edit_mode);
+        for (track, button) in self.gauge.cells_mut().iter_mut().enumerate() {
+            button.set_toggled(!state.is_track_muted(track));
+        }
     }
 
     fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
@@ -210,11 +213,45 @@ impl Gadget<AppState, Event> for StatusBar {
     }
 }
 
-struct GaugeBox;
+fn track_button(track: usize) -> Button {
+    return Button::new("")
+        .highlight(Highlight::Recess)
+        .on_click(move |state, click| {
+            if click.button == MouseButton::Left {
+                state.toggle_track_mute(track);
+            }
+        });
+}
 
-impl Gadget<AppState, Event> for GaugeBox {
-    fn render(&mut self, _state: &AppState, area: Rect, painter: &mut Painter) {
-        painter.fill(area, Pen::BACKGROUND);
-        painter.frame_inverted(area, 1);
+#[cfg(test)]
+mod tests {
+    use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
+    use rustuition::target::Framebuffer;
+
+    use super::*;
+
+    #[test]
+    fn gauge_toggles_tracks() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        let mut status = StatusBar::new();
+        let area = Rect::new(0, 0, 56, 12);
+        let mut screen = Framebuffer::new(56, 12);
+        status.update(&mut state);
+        status
+            .gauge
+            .render(&state, area, &mut Painter::new(&mut screen, &state.palette));
+        let cell = status.gauge.cell_area(area, 9);
+        let press = Event::MouseDown {
+            pos: [cell.x + 1, cell.y + 1],
+            button: MouseButton::Left,
+        };
+        assert!(status.gauge.cells()[9].is_toggled());
+        status.gauge.handle_event(&mut state, &press);
+        status.update(&mut state);
+        let muted: Vec<usize> = (0..16)
+            .filter(|&track| state.is_track_muted(track))
+            .collect();
+        assert_eq!(muted, [9]);
+        assert!(!status.gauge.cells()[9].is_toggled());
     }
 }

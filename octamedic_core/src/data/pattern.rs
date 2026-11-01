@@ -26,12 +26,14 @@ impl From<UByte> for PatternId {
 #[derive(Clone)]
 pub struct OctamedicPattern {
     pub lines: Vec<OctamedicPatternLine>,
+    pub name: String,
 }
 
 impl OctamedicPattern {
     pub fn new() -> Self {
         return Self {
             lines: vec![OctamedicPatternLine::new(TrackCount::default().tracks()); DEFAULT_LINES],
+            name: String::new(),
         };
     }
 
@@ -67,7 +69,10 @@ impl OctamedicPattern {
                     .collect(),
             })
             .collect();
-        return Self { lines };
+        return Self {
+            lines,
+            name: String::new(),
+        };
     }
 }
 
@@ -85,7 +90,11 @@ impl From<&OctamedMMD0Block> for OctamedicPattern {
 
 impl From<&OctamedMMD1Block> for OctamedicPattern {
     fn from(value: &OctamedMMD1Block) -> Self {
-        return Self::from_octamed(&value.lines);
+        let mut pattern = Self::from_octamed(&value.lines);
+        if let Some(info) = &value.info {
+            pattern.name = info.block_name.clone();
+        }
+        return pattern;
     }
 }
 

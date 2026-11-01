@@ -2,7 +2,7 @@ use std::{
     fmt::Display,
     sync::{
         Arc,
-        atomic::{AtomicU8, AtomicUsize, Ordering},
+        atomic::{AtomicU8, AtomicU32, AtomicUsize, Ordering},
         mpsc::{self, Receiver, Sender},
     },
     thread::{self, JoinHandle},
@@ -15,11 +15,11 @@ use cpal::{
 
 use super::engine::{OctamedicEngine, PlayMode};
 use crate::{
-    amiga::paula::Scopes,
+    amiga::{clock::AmigaClock, paula::Scopes},
     data::{
         instrument::{InstrumentId, OctamedicInstrument},
         note::OctamedicNote,
-        pattern::{OctamedicPattern, PatternId},
+        pattern::{MAX_TRACKS, OctamedicPattern, PatternId},
         song::OctamedicSong,
         tempo::OctamedicTempo,
     },
@@ -44,11 +44,13 @@ pub enum EngineCommand {
     SetSequence {
         sequence: Vec<PatternId>,
     },
+    QueueSequenceIndex(Option<usize>),
     SetInstrument {
         id: InstrumentId,
         instrument: Option<OctamedicInstrument>,
     },
     SetTempo(OctamedicTempo),
+    SetMachine(AmigaClock),
     SetTrackVolume {
         track: usize,
         volume: u8,
@@ -56,6 +58,10 @@ pub enum EngineCommand {
     SetMasterVolume(u8),
     SetOutputVolume(u8),
     SetGlobalTranspose(i8),
+    SetTrackMuted {
+        track: usize,
+        muted: bool,
+    },
     PlayNote {
         track: usize,
         note: OctamedicNote,
@@ -98,16 +104,63 @@ impl EngineCommand {
     }
 }
 
-#[derive(Default)]
+/// The last note started on a track. `count` goes up by one with every note, so a reader can tell
+/// a new note from the same one again.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NoteTrigger {
+    pub count: u8,
+    pub note: u8,
+    pub instrument: u8,
+    pub volume: u8,
+}
+
 pub struct EngineStatus {
     play_mode: AtomicU8,
     sequence_index: AtomicUsize,
     pattern: AtomicUsize,
     row: AtomicUsize,
     scopes: Arc<Scopes>,
+    // a NoteTrigger per track, packed so it's read in one go
+    triggers: Vec<AtomicU32>,
+}
+
+impl Default for EngineStatus {
+    fn default() -> Self {
+        return Self {
+            play_mode: AtomicU8::default(),
+            sequence_index: AtomicUsize::default(),
+            pattern: AtomicUsize::default(),
+            row: AtomicUsize::default(),
+            scopes: Arc::default(),
+            triggers: (0..MAX_TRACKS).map(|_| AtomicU32::default()).collect(),
+        };
+    }
 }
 
 impl EngineStatus {
+    pub fn note_trigger(&self, track: usize) -> NoteTrigger {
+        let packed = self
+            .triggers
+            .get(track)
+            .map_or(0, |trigger| trigger.load(Ordering::Relaxed));
+        let [count, note, instrument, volume] = packed.to_be_bytes();
+        return NoteTrigger {
+            count,
+            note,
+            instrument,
+            volume,
+        };
+    }
+
+    pub fn note_triggered(&self, track: usize, note: u8, instrument: u8, volume: u8) {
+        let Some(trigger) = self.triggers.get(track) else {
+            return;
+        };
+        let count = self.note_trigger(track).count.wrapping_add(1);
+        let packed = u32::from_be_bytes([count, note, instrument, volume]);
+        trigger.store(packed, Ordering::Relaxed);
+    }
+
     pub fn play_mode(&self) -> PlayMode {
         return PlayMode::from_u8(self.play_mode.load(Ordering::Relaxed));
     }
@@ -178,7 +231,7 @@ pub struct EngineHandle {
 
 impl EngineHandle {
     /// Default output device.
-    pub fn spawn() -> Result<Self, EngineError> {
+    pub fn spawn(machine: AmigaClock) -> Result<Self, EngineError> {
         let (commands, receiver) = mpsc::channel();
         let (shutdown, shutdown_receiver) = mpsc::channel::<()>();
         let (ready, ready_receiver) = mpsc::channel();
@@ -188,7 +241,7 @@ impl EngineHandle {
         let thread = thread::Builder::new()
             .name("octamedic-engine".into())
             .spawn(move || {
-                let stream = match open_stream(receiver, engine_status) {
+                let stream = match open_stream(receiver, engine_status, machine) {
                     Ok(stream) => stream,
                     Err(error) => {
                         let _ = ready.send(Err(error));
@@ -264,8 +317,16 @@ impl EngineHandle {
         self.send(EngineCommand::SetSequence { sequence });
     }
 
+    pub fn queue_sequence_index(&self, index: Option<usize>) {
+        self.send(EngineCommand::QueueSequenceIndex(index));
+    }
+
     pub fn set_instrument(&self, id: InstrumentId, instrument: Option<OctamedicInstrument>) {
         self.send(EngineCommand::SetInstrument { id, instrument });
+    }
+
+    pub fn set_machine(&self, machine: AmigaClock) {
+        self.send(EngineCommand::SetMachine(machine));
     }
 
     pub fn set_tempo(&self, tempo: OctamedicTempo) {
@@ -284,6 +345,10 @@ impl EngineHandle {
     // listener volume, 0-64, survives loading another song
     pub fn set_output_volume(&self, volume: u8) {
         self.send(EngineCommand::SetOutputVolume(volume));
+    }
+
+    pub fn set_track_muted(&self, track: usize, muted: bool) {
+        self.send(EngineCommand::SetTrackMuted { track, muted });
     }
 
     pub fn play_note(&self, track: usize, note: OctamedicNote, instrument: InstrumentId) {
@@ -319,12 +384,13 @@ impl Drop for EngineHandle {
 fn open_stream(
     commands: Receiver<EngineCommand>,
     status: Arc<EngineStatus>,
+    machine: AmigaClock,
 ) -> Result<Stream, EngineError> {
     let device = cpal::default_host()
         .default_output_device()
         .ok_or(EngineError::NoOutputDevice)?;
     let config = device.default_output_config().map_err(EngineError::audio)?;
-    let engine = OctamedicEngine::new(commands, status, config.sample_rate());
+    let engine = OctamedicEngine::new(commands, status, config.sample_rate(), machine);
     let stream_config = config.config();
     let stream = match config.sample_format() {
         SampleFormat::F32 => build_stream::<f32>(&device, &stream_config, engine),

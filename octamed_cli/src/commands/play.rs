@@ -4,6 +4,7 @@ use clap_derive::Args;
 use clap_num::number_range;
 use octamed::mmd::conversion::FromModule;
 use octamedic_core::{
+    amiga::clock::AmigaClock,
     data::{project::OctamedicProject, song::SongId, volume::MAX_VOLUME},
     engine::{engine::PlayMode, handle::EngineHandle},
 };
@@ -33,7 +34,8 @@ impl Command for PlayCommand {
         let song = project
             .get_song(SongId(0))
             .ok_or_else(|| CommandError::Generic("module has no song".into()))?;
-        let engine = EngineHandle::spawn().map_err(|e| CommandError::Generic(e.to_string()))?;
+        let engine = EngineHandle::spawn(AmigaClock::PAL)
+            .map_err(|e| CommandError::Generic(e.to_string()))?;
         engine.set_output_volume(self.volume);
         engine.load_song(song);
         engine.play_song(0, 0, false);

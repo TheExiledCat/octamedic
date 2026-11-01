@@ -1,4 +1,3 @@
-use octamedic_util::primitives::Flip;
 use rustuition::{
     clickable::{Click, Clickable},
     gadget::Gadget,
@@ -35,23 +34,12 @@ const GADGET_PICTURE: [&str; 9] = [
 
 #[derive(Default)]
 pub struct CopyrightBar {
-    visible: bool,
     gadget: Clickable,
-}
-
-impl CopyrightBar {
-    pub fn toggle(&mut self) {
-        self.visible.flip();
-    }
-
-    pub fn is_visible(&self) -> bool {
-        return self.visible;
-    }
 }
 
 impl Gadget<AppState, Event> for CopyrightBar {
     fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
-        if !self.visible {
+        if !state.displays_off {
             return false;
         }
         match self.gadget.handle(event) {
@@ -66,8 +54,8 @@ impl Gadget<AppState, Event> for CopyrightBar {
         }
     }
 
-    fn render(&mut self, _state: &AppState, area: Rect, painter: &mut Painter) {
-        if !self.visible {
+    fn render(&mut self, state: &AppState, area: Rect, painter: &mut Painter) {
+        if !state.displays_off {
             self.gadget.set_area(Rect::default());
             return;
         }

@@ -3,8 +3,9 @@ use std::{
     time::{Duration, Instant},
 };
 
-use octamed::utility::note::SEMITONES_PER_OCTAVE;
+use octamed::{mmd::module::SONG_TRACKS, utility::note::SEMITONES_PER_OCTAVE};
 use octamedic_core::{
+    amiga::clock::VideoStandard,
     data::{
         instrument::{InstrumentId, MAX_INSTRUMENTS},
         note::OctamedicNote,
@@ -19,6 +20,7 @@ use octamedic_core::{
 use rustuition::palette::{Color, IntuitionColorPalette};
 
 use crate::app::{
+    DEFAULT_VIDEO,
     cursor::EditCursor,
     mode::{HeaderMode, MainMode},
 };
@@ -45,6 +47,32 @@ const TOP_OCTAVE_KEYS: [char; 13] = [
     'q', '2', 'w', '3', 'e', 'r', '5', 't', '6', 'y', '7', 'u', 'i',
 ];
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlayStart {
+    Song,
+    ContinueSong,
+    Block,
+    ContinueBlock,
+}
+
+// the E1, E2 and E3 switches
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Meters {
+    pub bars: bool,
+    pub vu: bool,
+    pub scopes: bool,
+}
+
+impl Default for Meters {
+    fn default() -> Self {
+        return Self {
+            bars: true,
+            vu: true,
+            scopes: true,
+        };
+    }
+}
+
 pub struct AppState {
     pub engine: EngineHandle,
     pub active_song: SongId,
@@ -58,6 +86,15 @@ pub struct AppState {
     pub exit_requested: bool,
     pub notification: Option<String>,
     pub palette: IntuitionColorPalette,
+    // the D switch
+    pub play_on_note: bool,
+    pub meters: Meters,
+    // right click: the title bar shows and the meters and scrolling stop
+    pub displays_off: bool,
+    video: VideoStandard,
+    queued_sequence_index: Option<usize>,
+    started: Option<PlayStart>,
+    muted_tracks: [bool; SONG_TRACKS],
     project: OctamedicProject,
     header_mode: HeaderMode,
     main_mode: MainMode,
@@ -99,6 +136,13 @@ impl AppState {
             exit_requested: false,
             notification: None,
             palette,
+            play_on_note: false,
+            meters: Meters::default(),
+            displays_off: false,
+            video: DEFAULT_VIDEO,
+            queued_sequence_index: None,
+            started: None,
+            muted_tracks: [false; SONG_TRACKS],
             project,
             header_mode: HeaderMode::default(),
             main_mode: MainMode::default(),
@@ -137,7 +181,7 @@ impl AppState {
             );
             // a block plays outside the sequence
             if matches!(mode, PlayMode::Song | PlayMode::SongLoop) {
-                self.keep_sequence_index_inside(index);
+                self.follow_sequence(index);
             }
             self.select_block(block);
         }
@@ -210,6 +254,18 @@ impl AppState {
         return self.timer + self.timer_resumed.map_or(Duration::ZERO, |at| at.elapsed());
     }
 
+    pub fn is_track_muted(&self, track: usize) -> bool {
+        return self.muted_tracks.get(track).copied().unwrap_or(false);
+    }
+
+    pub fn toggle_track_mute(&mut self, track: usize) {
+        let Some(muted) = self.muted_tracks.get_mut(track) else {
+            return;
+        };
+        *muted = !*muted;
+        self.engine.set_track_muted(track, *muted);
+    }
+
     pub fn restart_timer(&mut self) {
         self.timer = Duration::ZERO;
         self.timer_resumed = self.timer_resumed.map(|_| Instant::now());
@@ -251,8 +307,46 @@ impl AppState {
         self.playback_start_time = Some(Instant::now());
     }
 
+    pub fn video(&self) -> VideoStandard {
+        return self.video;
+    }
+
+    pub fn set_video(&mut self, video: VideoStandard) {
+        self.video = video;
+        self.engine.set_machine(video.clock());
+    }
+
+    pub fn active_meters(&self) -> Meters {
+        if self.displays_off {
+            return Meters {
+                bars: false,
+                vu: false,
+                scopes: false,
+            };
+        }
+        return self.meters;
+    }
+
+    pub fn start(&mut self, start: PlayStart) {
+        self.queued_sequence_index = None;
+        let line = self.cursor.line;
+        match start {
+            PlayStart::Song => self.play_song(0, 0),
+            PlayStart::ContinueSong => self.play_song(self.active_sequence_index, line),
+            PlayStart::Block => self.play_pattern(self.active_pattern, 0),
+            PlayStart::ContinueBlock => self.play_pattern(self.active_pattern, line),
+        }
+        self.started = Some(start);
+    }
+
+    pub fn started(&self) -> Option<PlayStart> {
+        return self.started;
+    }
+
     pub fn stop(&mut self) {
         self.engine.stop();
+        self.started = None;
+        self.queued_sequence_index = None;
     }
 
     pub fn set_instrument(&mut self, instrument: u8) -> InstrumentId {
@@ -282,7 +376,8 @@ impl AppState {
         return self.set_sequence(self.active_sequence_index.saturating_sub(1));
     }
 
-    // returns block 0 when the sequence is empty
+    // returns block 0 when the sequence is empty. while a song plays, the move waits for the
+    // block playing to end
     pub fn set_sequence(&mut self, index: usize) -> PatternId {
         self.keep_sequence_index_inside(index);
         let block = self
@@ -291,8 +386,33 @@ impl AppState {
             .get(self.active_sequence_index)
             .copied()
             .unwrap_or(PatternId::ZERO);
-        self.select_block(block.0 as usize);
+        if self.is_playing_song() {
+            let playing = self.engine.status().sequence_index();
+            let queued =
+                (self.active_sequence_index != playing).then_some(self.active_sequence_index);
+            self.queued_sequence_index = queued;
+            self.engine.queue_sequence_index(queued);
+        } else {
+            self.select_block(block.0 as usize);
+        }
         return block;
+    }
+
+    fn is_playing_song(&self) -> bool {
+        return matches!(
+            self.engine.status().play_mode(),
+            PlayMode::Song | PlayMode::SongLoop
+        );
+    }
+
+    fn follow_sequence(&mut self, playing: usize) {
+        match self.queued_sequence_index {
+            Some(queued) if queued != playing => self.keep_sequence_index_inside(queued),
+            _ => {
+                self.queued_sequence_index = None;
+                self.keep_sequence_index_inside(playing);
+            }
+        }
     }
 
     pub fn increase_line_add(&mut self) {
@@ -329,6 +449,22 @@ impl AppState {
     pub fn set_tempo(&mut self, tempo: OctamedicTempo) {
         *self.song_mut().tempo_mut() = tempo;
         self.engine.set_tempo(tempo);
+    }
+
+    pub fn set_block_name(&mut self, name: &str) {
+        if let Some(pattern) = self.active_pattern_mut() {
+            pattern.name = name.to_owned();
+        }
+    }
+
+    pub fn set_song_name(&mut self, name: &str) {
+        self.song_mut().set_name(name);
+    }
+
+    pub fn set_volumes_hex(&mut self, hex: bool) {
+        if self.song().flags.volumes_hex != hex {
+            self.song_mut().flags.volumes_hex = hex;
+        }
     }
 
     pub fn key_to_note(&self, key: char) -> Option<OctamedicNote> {
