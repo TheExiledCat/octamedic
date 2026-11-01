@@ -5,6 +5,7 @@ pub mod note;
 pub mod palette;
 pub mod pattern;
 pub mod project;
+pub mod sample_import;
 pub mod song;
 pub mod tempo;
 pub mod track_count;

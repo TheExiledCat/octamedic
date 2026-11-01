@@ -1,9 +1,10 @@
-use std::{fs, path::Path};
+use std::fs;
 
 use octamedic_core::{
     data::{
-        instrument_loader::{InstrumentLoader, load_instrument},
-        wav_loader::{WavChannel, WavInfo, WavLoader},
+        instrument_loader::{InstrumentLoader, find_loader, instrument_name},
+        sample_import::{DecodedSample, ImportSettings, SampleChannel},
+        wav_loader::WavLoader,
     },
     engine::period::note_period,
 };
@@ -11,44 +12,58 @@ use rustuition::gadgets::dialog::{Checkbox, Cycle, Label};
 
 use crate::{app::state::AppState, framework::widgets::Dialog};
 
+// every format LOAD INSTR knows, tried in order
+const LOADERS: &[&dyn InstrumentLoader] = &[&WavLoader];
+
 // downsampling converts to the rate this note plays at, so it plays at its original pitch there.
 // the numbers are the engine's notes, counted from 1 = C-1 in semitones, so 13 = C-2 and 25 = C-3
 const NOTES: [(&str, u8); 3] = [("C-1", 1), ("C-2", 13), ("C-3", 25)];
 const DEFAULT_NOTE: usize = 2;
-const CHANNELS: [(&str, WavChannel); 3] = [
-    ("Left", WavChannel::Left),
-    ("Right", WavChannel::Right),
-    ("Mixed", WavChannel::Mixed),
+const CHANNELS: [(&str, SampleChannel); 3] = [
+    ("Left", SampleChannel::Left),
+    ("Right", SampleChannel::Right),
+    ("Mixed", SampleChannel::Mixed),
 ];
 const DEFAULT_CHANNEL: usize = 2;
 
-/// Asks how to load the file selected in the browser, then puts it in the active instrument.
+/// Loads the file selected in the browser into the active instrument, asking how first if its
+/// format wants to.
 pub fn load_selected_instrument(state: &mut AppState) {
+    load_with(state, LOADERS);
+}
+
+fn load_with(state: &mut AppState, loaders: &[&dyn InstrumentLoader]) {
     let Some(name) = state.browser.selected_file() else {
         state.notify("Select a sample to load first");
         return;
     };
     let path = state.browser.path().join(name);
-    match wav_dialog(&path) {
-        Ok(dialog) => state.open_dialog(dialog),
-        Err(message) => state.notify(message),
+    let Ok(bytes) = fs::read(&path) else {
+        state.notify("Can't read file");
+        return;
+    };
+    let Some(loader) = find_loader(&bytes, loaders) else {
+        state.notify("Not a sample");
+        return;
+    };
+    let decoded = match loader.decode(&bytes) {
+        Ok(decoded) => decoded,
+        Err(error) => return state.notify(error.to_string()),
+    };
+    let name = instrument_name(&path);
+    if loader.asks_for_settings() {
+        state.open_dialog(import_dialog(name, decoded));
+        return;
+    }
+    match decoded.to_instrument(&name, ImportSettings::default()) {
+        Ok(instrument) => state.replace_instrument(state.active_instrument, instrument),
+        Err(error) => state.notify(error.to_string()),
     }
 }
 
-fn wav_dialog(path: &Path) -> Result<Dialog, String> {
-    let any_wav = WavLoader {
-        channel: WavChannel::Mixed,
-        downsample_to: None,
-        allow_aliasing: false,
-    };
-    let bytes = fs::read(path).map_err(|_| "Can't read file".to_owned())?;
-    if !any_wav.recognizes(&bytes) {
-        return Err("Not a sample".to_owned());
-    }
-    let info = WavLoader::info(&bytes).map_err(|error| error.to_string())?;
-    let name = path.file_name().unwrap_or_default().to_string_lossy();
+fn import_dialog(name: String, decoded: DecodedSample) -> Dialog {
     let mut dialog = Dialog::new("Load instrument")
-        .with(Label::new(&format!("{name}\n{}", describe(info))))
+        .with(Label::new(&format!("{name}\n{}", describe(&decoded))))
         .submit_button("Load")
         .cancel_button("Cancel");
     let downsample = dialog.add_field(Checkbox::new("Downsample").checked(true));
@@ -58,27 +73,29 @@ fn wav_dialog(path: &Path) -> Result<Dialog, String> {
     let new_rate = dialog.add_field(Label::new(" "));
     let allow_aliasing = dialog.add_field(Checkbox::new("Allow aliasing"));
     let channel_names = CHANNELS.map(|(name, _)| name);
-    let channel = (info.channels > 1)
+    let channel = (decoded.channels.len() > 1)
         .then(|| dialog.add_field(Cycle::new("Channel:", &channel_names).chosen(DEFAULT_CHANNEL)));
-    let path = path.to_path_buf();
+    let original_rate = decoded.rate;
     let dialog = dialog.on_change(move |state, fields| {
         let (_, target) = NOTES[fields.get(note)];
         let target = note_rate(state, target);
-        let text = rate_text(fields.get(downsample), target, info.sample_rate);
+        let text = rate_text(fields.get(downsample), target, original_rate);
         fields.set(new_rate, text);
     });
-    return Ok(dialog.on_submit_checked(move |state, result| {
+    return dialog.on_submit_checked(move |state, result| {
         let channel = channel.map_or(DEFAULT_CHANNEL, |field| *result.get(field));
         let (_, note) = NOTES[*result.get(note)];
-        let loader = WavLoader {
+        let settings = ImportSettings {
             channel: CHANNELS[channel].1,
             downsample_to: result.get(downsample).then(|| note_rate(state, note)),
             allow_aliasing: *result.get(allow_aliasing),
         };
-        let instrument = load_instrument(&path, &[&loader]).map_err(|error| error.to_string())?;
+        let instrument = decoded
+            .to_instrument(&name, settings)
+            .map_err(|error| error.to_string())?;
         state.replace_instrument(state.active_instrument, instrument);
         return Ok(());
-    }));
+    });
 }
 
 // in Hz, on the machine it's running as
@@ -94,13 +111,13 @@ fn rate_text(downsample: bool, target: u32, original: u32) -> String {
     return format!("Stays at {original} Hz");
 }
 
-fn describe(info: WavInfo) -> String {
-    let channels = match info.channels {
+fn describe(decoded: &DecodedSample) -> String {
+    let channels = match decoded.channels.len() {
         1 => "mono".to_owned(),
         2 => "stereo".to_owned(),
         count => format!("{count} channels"),
     };
-    return format!("{} Hz, {} bit, {channels}", info.sample_rate, info.bits);
+    return format!("{} Hz, {} bit, {channels}", decoded.rate, decoded.bits);
 }
 
 #[cfg(test)]
@@ -215,11 +232,49 @@ mod tests {
 
     #[test]
     fn describes_the_file() {
-        let info = WavInfo {
-            sample_rate: 44_100,
-            channels: 2,
+        let decoded = DecodedSample {
+            rate: 44_100,
             bits: 16,
+            channels: vec![vec![], vec![]],
+            repeat: None,
         };
-        assert_eq!(describe(info), "44100 Hz, 16 bit, stereo");
+        assert_eq!(describe(&decoded), "44100 Hz, 16 bit, stereo");
+    }
+
+    // already what Paula plays, so it doesn't ask
+    struct ReadyLoader;
+
+    impl InstrumentLoader for ReadyLoader {
+        fn recognizes(&self, bytes: &[u8]) -> bool {
+            return bytes.starts_with(b"READY");
+        }
+
+        fn decode(
+            &self,
+            bytes: &[u8],
+        ) -> Result<DecodedSample, octamedic_core::data::instrument_loader::InstrumentLoadError>
+        {
+            return Ok(DecodedSample {
+                rate: 8287,
+                bits: 8,
+                channels: vec![bytes[5..].iter().map(|&b| b as i8 as f32 / 128.0).collect()],
+                repeat: None,
+            });
+        }
+
+        fn asks_for_settings(&self) -> bool {
+            return false;
+        }
+    }
+
+    #[test]
+    fn formats_without_settings_load_straight_away() {
+        let (mut state, folder) = state_with_file("kick", b"READY\x10\x20\x30");
+        load_with(&mut state, &[&ReadyLoader]);
+        let _ = fs::remove_dir_all(&folder);
+        assert!(state.take_pending_dialogs().is_empty());
+        let instrument = state.song().instruments[0].clone().unwrap();
+        assert_eq!(instrument.name, "kick");
+        assert_eq!(instrument.sample.unwrap().data, [16, 32, 48]);
     }
 }
