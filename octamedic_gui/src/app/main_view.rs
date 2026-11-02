@@ -14,6 +14,7 @@ use crate::{
         header::Header,
         main::MainScreens,
         mode::MainMode,
+        screen_filters::open_filters_dialog,
         state::AppState,
         title_bar::TitleBar,
     },
@@ -36,6 +37,7 @@ const NOTIFICATION_PADDING: [i32; 2] = [2, 1];
 pub enum MainAction {
     Quit,
     ToggleVideo,
+    ScreenFilters,
 }
 
 impl Action for MainAction {}
@@ -56,7 +58,12 @@ impl MainView {
             keys: Keymap::new("main")
                 .bind(Key::ctrl(KeyCode::Q), MainAction::Quit, "Quit")
                 // temporary, until there's a setting for it
-                .bind(Key::ctrl(KeyCode::F12), MainAction::ToggleVideo, "PAL/NTSC"),
+                .bind(Key::ctrl(KeyCode::F12), MainAction::ToggleVideo, "PAL/NTSC")
+                .bind(
+                    Key::ctrl(KeyCode::F11),
+                    MainAction::ScreenFilters,
+                    "Filters",
+                ),
             title: TitleBar::new(),
             header: Header::new(),
             screens: MainScreens::new(),
@@ -166,6 +173,7 @@ impl KeyActions for MainView {
         match action {
             MainAction::Quit => state.request_exit(),
             MainAction::ToggleVideo => state.set_video(state.video().other()),
+            MainAction::ScreenFilters => open_filters_dialog(state),
         }
     }
 
@@ -173,6 +181,7 @@ impl KeyActions for MainView {
         return match action {
             MainAction::Quit => "Quit OctaMEDIC",
             MainAction::ToggleVideo => "Switch between PAL and NTSC",
+            MainAction::ScreenFilters => "Scanlines and other screen filters",
         };
     }
 }

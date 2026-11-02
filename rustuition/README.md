@@ -117,6 +117,28 @@ shine top and right, shadow left and bottom, meeting on a slant. `frame_inverted
 one. Borders are `thickness` lines tall at top and bottom and twice that many pixels wide at the
 sides, so they look even on tall pixels.
 
+## Filters
+
+Filters (`filters.rs`) change a finished `Framebuffer` after everything's been painted. There's
+`Scanlines` (darkens every `spacing`th line), `ChromaticAberration` (red moves one way, blue the
+other), `VhsWobble` (lines shift sideways in a rolling wave with some jitter) and `ColorAdjust`
+(hue, saturation, brightness, contrast and warmth, like a monitor's knobs). A closure taking
+`&mut Framebuffer` is a filter too, and a list of them runs in order:
+
+```rust
+let wobble = VhsWobble { frame: frame_count, ..VhsWobble::default() };
+let filters: [&dyn Filter; 3] = [&wobble, &ChromaticAberration::default(), &Scanlines::default()];
+filters.as_slice().apply(&mut screen);
+```
+
+They work at the framebuffer's own resolution, so on a 640x256 screen a scanline is a whole line.
+`pixels_mut` and `row_mut` give your own filters the pixels.
+
+`FilterParams` lists a filter's settings as `Param`s (name, range, step, default) and gets and sets
+them by index, so one dialog can edit any filter. `AdjustableFilter` is a filter with params, for
+keeping different ones in a list. Call `advance_frame` once a frame to move animated ones like
+`VhsWobble` on.
+
 ## Fonts and text
 
 `Font` (`font.rs`) is a cheap handle to a `BitmapFont`. `Font::TOPAZ` is Kickstart 2's Topaz,
@@ -178,11 +200,13 @@ Your own content types implement `render`, plus `index_at` if it matters which p
 
 It clicks the moment it's pressed, like Intuition's `GACT_IMMEDIATE` gadgets. The handler gets the
 state and a `ButtonClick` with the mouse button and `char_index` (the label character under the
-pointer); or leave the handler out and poll `clicked()`. `toggle` / `set_toggled` draw it
-inverted, the Amiga way of showing a gadget that's on; `highlight(Highlight::Recess)` sinks the
-frame in as well, like OctaMED's track on/off boxes. `border(n)` sets the frame thickness. The
-label is lined up with `align` inside the frame and padding (`padding(n)` or `padding_xy(x, y)`)
-and cut to what fits; a label too long for the padding moves into it.
+pointer); or leave the handler out and poll `clicked()`. `repeat(delay, interval)` makes it keep
+clicking while it's held, like a held key; the repeats come from `update`, so call that every frame.
+`toggle` / `set_toggled` draw it inverted, the Amiga way of showing a gadget that's on;
+`highlight(Highlight::Recess)` sinks the frame in as well, like OctaMED's track on/off boxes.
+`border(n)` sets the frame thickness. The label is lined up with `align` inside the frame and
+padding (`padding(n)` or `padding_xy(x, y)`) and cut to what fits; a label too long for the padding
+moves into it.
 
 `Slider` is a proportional gadget with a dotted track, horizontal or vertical, optionally
 reversed. `Grid::new(columns, rows, gadgets)` lays gadgets out in rows and passes events and
@@ -234,14 +258,23 @@ let dialog = dialog.on_submit(move |state, result| state.rename(result.get(name)
 ```
 
 `with` adds something that only shows (a `Label`), `add_field` something with a value
-(`TextField`, `Checkbox`, `Cycle`, `PopupList`, `Toggle`, or a `Label` whose text changes) and
-gives back a `Field` that reads it from the `DialogResult`, already the right type. Each button submits or
-cancels; Enter presses the first submit button, and Escape and the close gadget cancel unless
-`cancellable(false)`. `on_submit_checked` can refuse with a message, which keeps the dialog open.
+(`TextField`, `Checkbox`, `Cycle`, `Dropdown`, `Toggle`, `NumberField`, `ReorderableList`, or a
+`Label` whose text changes) and gives back a `Field` that reads it from the `DialogResult`,
+already the right type. Each button submits or cancels; Enter presses the first submit button,
+and Escape and the close gadget cancel unless `cancellable(false)`. `on_submit_checked` can
+refuse with a message, which keeps the dialog open.
 `on_change` runs when it opens and whenever a component takes an event, and its `DialogFields`
 can read, set and disable fields, so one can follow another. `message`, `confirm` and
 `text_input` are ready made. New components implement `DialogComponent`, plus `DialogInput` if
 they have a value.
+
+`NumberField` is a number you type in or step with - and + buttons (which repeat while held),
+kept in its range.
+`ReorderableList` (`gadgets/reorderable_list.rs`) is a list of rows, each picking one of the same
+options from a dropdown, with up and down arrows to put them in order and an On button.
+`can_add`, `can_remove` and `editable` add Add, Del and Edit buttons, and `on_event` gets a
+`ListEvent` for every change as it's made, so whatever the list stands for can follow it, like an
+effects chain.
 
 ## Clicks
 

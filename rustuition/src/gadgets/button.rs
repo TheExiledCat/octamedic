@@ -1,4 +1,8 @@
-use std::{marker::PhantomData, rc::Rc};
+use std::{
+    marker::PhantomData,
+    rc::Rc,
+    time::{Duration, Instant},
+};
 
 use crate::{
     clickable::{Click, Clickable},
@@ -300,6 +304,17 @@ pub enum Highlight {
     Recess,
 }
 
+/// How long a button's held before it starts clicking again, when it repeats.
+pub const DEFAULT_REPEAT_DELAY: Duration = Duration::from_millis(400);
+/// How often a held button clicks once it's repeating.
+pub const DEFAULT_REPEAT_INTERVAL: Duration = Duration::from_millis(60);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Repeat {
+    delay: Duration,
+    interval: Duration,
+}
+
 /// A push button, Intuition's boolean gadget: clicks on press and can be toggled on.
 // clones share the content and handler. `S` is the app's state, `E` the events it's sent
 pub struct Button<S, E = MouseEvent> {
@@ -319,6 +334,9 @@ pub struct Button<S, E = MouseEvent> {
     // from the last render
     area: Rect,
     click: Option<ButtonClick>,
+    repeat: Option<Repeat>,
+    // the mouse button holding it down, and when it next clicks again
+    held: Option<(MouseButton, Instant)>,
     events: PhantomData<fn(&E)>,
 }
 
@@ -339,8 +357,17 @@ impl<S, E> Button<S, E> {
             enabled: true,
             area: Rect::default(),
             click: None,
+            repeat: None,
+            held: None,
             events: PhantomData,
         };
+    }
+
+    /// Keeps clicking while it's held down, after `delay` and then every `interval`, like a
+    /// held key. It waits while the pointer's off it. Repeats come from [`Gadget::update`].
+    pub fn repeat(mut self, delay: Duration, interval: Duration) -> Self {
+        self.repeat = Some(Repeat { delay, interval });
+        return self;
     }
 
     pub fn enabled(mut self, enabled: bool) -> Self {
@@ -354,6 +381,7 @@ impl<S, E> Button<S, E> {
         if !enabled {
             self.clickable.reset();
             self.click = None;
+            self.held = None;
         }
     }
 
@@ -484,19 +512,50 @@ impl<S, E> Clone for Button<S, E> {
     }
 }
 
+impl<S, E> Button<S, E> {
+    fn press(&mut self, state: &mut S, click: ButtonClick) {
+        self.click = Some(click);
+        if let Some(handler) = &self.on_click {
+            handler(state, click);
+        }
+    }
+
+    fn repeat_at(&mut self, state: &mut S, now: Instant) {
+        let (Some(repeat), Some((button, due))) = (self.repeat, self.held) else {
+            return;
+        };
+        if !self.enabled || !self.clickable.is_pressed() || now < due {
+            return;
+        }
+        self.held = Some((button, now + repeat.interval));
+        let click = ButtonClick {
+            button,
+            char_index: None,
+        };
+        self.press(state, click);
+    }
+}
+
 impl<S, E: PointerEvent> Gadget<S, E> for Button<S, E> {
+    fn update(&mut self, state: &mut S) {
+        self.repeat_at(state, Instant::now());
+    }
+
     fn handle_event(&mut self, state: &mut S, event: &E) -> bool {
         if !self.enabled {
             return false;
         }
         let click = self.clickable.handle(event);
-        if let Click::Clicked { button, pos } = click {
-            let char_index = self.content.index_at(self.content_area(self.area), pos);
-            let click = ButtonClick { button, char_index };
-            self.click = Some(click);
-            if let Some(handler) = &self.on_click {
-                handler(state, click);
+        match click {
+            Click::Clicked { button, pos } => {
+                if let Some(repeat) = self.repeat {
+                    self.held = Some((button, Instant::now() + repeat.delay));
+                }
+                let char_index = self.content.index_at(self.content_area(self.area), pos);
+                self.press(state, ButtonClick { button, char_index });
             }
+            Click::Handled => self.held = None,
+            Click::Ignored => {}
         }
         return click.handled();
     }
@@ -762,5 +821,42 @@ mod tests {
             &mut Painter::new(&mut screen, &palette),
         );
         assert_eq!(screen.pixel(10, 5), Some([0, 0, 0]));
+    }
+
+    #[test]
+    fn held_button_repeats_after_the_delay() {
+        let clicks = Rc::new(std::cell::Cell::new(0));
+        let counted = clicks.clone();
+        let mut button = Button::<()>::new("+")
+            .repeat(DEFAULT_REPEAT_DELAY, DEFAULT_REPEAT_INTERVAL)
+            .on_click(move |_, _| counted.set(counted.get() + 1));
+        button.clickable.set_area(Rect::new(0, 0, 10, 10));
+        let press = MouseEvent::Down {
+            pos: [5, 5],
+            button: MouseButton::Left,
+        };
+        let start = Instant::now();
+        button.handle_event(&mut (), &press);
+        assert_eq!(clicks.get(), 1);
+        button.repeat_at(&mut (), start + DEFAULT_REPEAT_DELAY / 2);
+        assert_eq!(clicks.get(), 1);
+        let repeating = start + DEFAULT_REPEAT_DELAY + Duration::from_millis(10);
+        button.repeat_at(&mut (), repeating);
+        button.repeat_at(&mut (), repeating);
+        assert_eq!(clicks.get(), 2);
+        button.repeat_at(&mut (), repeating + DEFAULT_REPEAT_INTERVAL);
+        assert_eq!(clicks.get(), 3);
+        // off the button it waits, and letting go stops it
+        button.handle_event(&mut (), &MouseEvent::Move { pos: [50, 50] });
+        button.repeat_at(&mut (), repeating + 4 * DEFAULT_REPEAT_INTERVAL);
+        assert_eq!(clicks.get(), 3);
+        let release = MouseEvent::Up {
+            pos: [50, 50],
+            button: MouseButton::Left,
+        };
+        button.handle_event(&mut (), &release);
+        button.handle_event(&mut (), &MouseEvent::Move { pos: [5, 5] });
+        button.repeat_at(&mut (), repeating + 8 * DEFAULT_REPEAT_INTERVAL);
+        assert_eq!(clicks.get(), 3);
     }
 }

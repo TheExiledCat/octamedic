@@ -14,6 +14,7 @@ pub mod main;
 pub mod main_view;
 pub mod mode;
 pub mod pens;
+pub mod screen_filters;
 pub mod state;
 pub mod status_bar;
 pub mod title_bar;

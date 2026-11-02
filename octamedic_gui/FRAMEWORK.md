@@ -57,6 +57,10 @@ Amiga's chip memory (sample data and synth waveforms, `OctamedicProject::chip_by
 about what the project takes saved as an MMD1 module (`module_bytes`). Both are in
 `octamedic_core/src/data/memory.rs`.
 
+Ctrl+F11 opens the screen filters (`app/screen_filters.rs`), a list of rustuition's filters in the
+order they run. While any is on, the screen and the pointer are painted into a `Framebuffer`
+instead of straight onto the GPU, filtered, and uploaded as the screen image.
+
 The mode buttons set two modes: `HeaderMode` (which panel the header shows) and `MainMode` (what
 fills the screen below). Each button's `ModeBinding` in `app/mode/buttons.rs` says which. Header
 panels are in `app/header/`, one file each (`misc.rs` is MISC), and `HeaderPanels::panel` maps

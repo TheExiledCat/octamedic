@@ -80,6 +80,20 @@ impl Framebuffer {
         return &self.pixels;
     }
 
+    /// The pixels to change directly, row by row from the top left.
+    pub fn pixels_mut(&mut self) -> &mut [[u8; 3]] {
+        return &mut self.pixels;
+    }
+
+    /// Row `y`'s pixels to change directly, or `None` off the edge.
+    pub fn row_mut(&mut self, y: i32) -> Option<&mut [[u8; 3]]> {
+        if y < 0 || y >= self.height {
+            return None;
+        }
+        let start = (y * self.width) as usize;
+        return Some(&mut self.pixels[start..start + self.width as usize]);
+    }
+
     /// The pixels as bytes: r, g, b, r, g, b...
     pub fn as_bytes(&self) -> &[u8] {
         return self.pixels.as_flattened();

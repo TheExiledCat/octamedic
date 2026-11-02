@@ -1,5 +1,6 @@
 pub mod clickable;
 pub mod event;
+pub mod filters;
 pub mod font;
 pub mod gadget;
 pub mod gadgets;

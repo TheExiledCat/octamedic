@@ -2059,6 +2059,7 @@ dependencies = [
  "dirs",
  "fs4",
  "ggez",
+ "image",
  "octamed",
  "octamedic_core",
  "octamedic_util",
