@@ -1,7 +1,4 @@
-use crate::data::{
-    audio_decode,
-    instrument_loader::{Decoded, InstrumentLoadError, InstrumentLoader},
-};
+use crate::import::{Decoded, InstrumentLoadError, InstrumentLoader, decode};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FlacLoader;
@@ -12,7 +9,7 @@ impl InstrumentLoader for FlacLoader {
     }
 
     fn decode(&self, bytes: &[u8]) -> Result<Decoded, InstrumentLoadError> {
-        return audio_decode::decode(bytes, "flac", "FLAC").map(Decoded::Sample);
+        return decode::decode(bytes, "flac", "FLAC").map(Decoded::Sample);
     }
 }
 

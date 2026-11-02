@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use crate::data::{
-    instrument::{InstrumentKind, OctamedicInstrument, OctamedicSample, SampleOctaves},
-    instrument_loader::InstrumentLoadError,
+use crate::{
+    data::instrument::{InstrumentKind, OctamedicInstrument, OctamedicSample, SampleOctaves},
+    import::InstrumentLoadError,
 };
 
 /// A sample as a loader read it, before it's made into what Paula plays.

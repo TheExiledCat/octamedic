@@ -8,7 +8,7 @@ use symphonia::core::{
     meta::MetadataOptions,
 };
 
-use crate::data::{instrument_loader::InstrumentLoadError, sample_import::DecodedSample};
+use crate::import::{InstrumentLoadError, sample::DecodedSample};
 
 /// Decodes a whole FLAC, MP3 or WAV file. `format_name` is for the error message.
 pub fn decode(

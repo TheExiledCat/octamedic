@@ -1,3 +1,5 @@
+pub mod buttons;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum HeaderMode {
     Files,

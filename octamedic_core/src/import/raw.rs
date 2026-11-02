@@ -1,7 +1,4 @@
-use crate::data::{
-    instrument_loader::{Decoded, InstrumentLoadError, InstrumentLoader},
-    sample_import::DecodedSample,
-};
+use crate::import::{Decoded, InstrumentLoadError, InstrumentLoader, sample::DecodedSample};
 
 // raw files don't say. C-2 on PAL, and it's only ever shown
 const NOMINAL_RATE: u32 = 8287;
@@ -37,7 +34,7 @@ impl InstrumentLoader for RawLoader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data::sample_import::ImportSettings;
+    use crate::import::sample::ImportSettings;
 
     #[test]
     fn recognizes_anything() {

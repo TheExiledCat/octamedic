@@ -5,8 +5,8 @@ documentation) covers, and how OctaMED's own files and samples work.
 
 ## Loading instruments
 
-LOAD INSTR (`octamedic_gui/src/app/load_instrument.rs`) tries the formats in its `LOADERS` list in
-order, and the first `InstrumentLoader` (`octamedic_core/src/data/instrument_loader.rs`) that
+LOAD INSTR (`octamedic_gui/src/app/files/load_instrument.rs`) tries the formats in its `LOADERS` list in
+order, and the first `InstrumentLoader` (`octamedic_core/src/import/mod.rs`) that
 recognizes the file takes it. Loaders go by the file's header, never its extension: plenty of
 files, especially old Amiga ones, don't have one.
 
@@ -23,9 +23,9 @@ does with a file it doesn't recognize, so it goes last. The MP3 frame header che
 field (sync bits, version, layer, bitrate and sample rate index) so raw data that happens to start
 with the sync bits still loads as raw.
 
-A loader only decodes the file into a `DecodedSample` (`octamedic_core/src/data/sample_import.rs`):
+A loader only decodes the file into a `DecodedSample` (`octamedic_core/src/import/sample.rs`):
 its rate, bit depth if it has one, one list per channel from -1.0 to 1.0, and loop points if the
-format stores them. WAV, FLAC and MP3 decode through `symphonia` (`audio_decode.rs`).
+format stores them. WAV, FLAC and MP3 decode through `symphonia` (`import/decode.rs`).
 `DecodedSample::to_instrument` then makes the 8-bit mono sample Paula plays, the same way for every
 format, with `ImportSettings`:
 

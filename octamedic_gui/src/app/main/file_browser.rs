@@ -11,7 +11,7 @@ use rustuition::{
 };
 
 use crate::{
-    app::{browser::Browser, state::AppState},
+    app::{files::browser::Browser, state::AppState},
     framework::{
         event::Event,
         widgets::{Button, Slider},

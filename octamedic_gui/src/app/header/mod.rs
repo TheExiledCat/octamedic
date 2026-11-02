@@ -11,8 +11,7 @@ use rustuition::{
 use crate::{
     app::{
         header::{files::Files, misc::Misc, play::Play},
-        mode::HeaderMode,
-        mode_buttons::ModeButtons,
+        mode::{HeaderMode, buttons::ModeButtons},
         state::AppState,
         status_bar::StatusBar,
     },

@@ -1,16 +1,17 @@
 use std::fs;
 
 use octamedic_core::{
-    data::{
-        flac_loader::FlacLoader,
-        instrument_loader::{Decoded, InstrumentLoader, find_loader, instrument_name},
-        mp3_loader::Mp3Loader,
-        msh_loader::MshLoader,
-        raw_loader::RawLoader,
-        sample_import::{DecodedSample, ImportSettings, SampleChannel},
-        wav_loader::WavLoader,
-    },
     engine::period::note_period,
+    import::{
+        Decoded, InstrumentLoader, find_loader,
+        flac::FlacLoader,
+        instrument_name,
+        mp3::Mp3Loader,
+        msh::MshLoader,
+        raw::RawLoader,
+        sample::{DecodedSample, ImportSettings, SampleChannel},
+        wav::WavLoader,
+    },
 };
 use rustuition::gadgets::dialog::{Checkbox, Cycle, Label};
 
@@ -296,7 +297,7 @@ mod tests {
         fn decode(
             &self,
             bytes: &[u8],
-        ) -> Result<Decoded, octamedic_core::data::instrument_loader::InstrumentLoadError> {
+        ) -> Result<Decoded, octamedic_core::import::InstrumentLoadError> {
             return Ok(Decoded::Sample(DecodedSample {
                 rate: 8287,
                 bits: Some(8),

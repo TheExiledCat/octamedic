@@ -1,8 +1,16 @@
 use std::{fmt::Display, fs, io, path::Path};
 
-use crate::data::{
-    instrument::{InstrumentKind, OctamedicInstrument},
-    sample_import::{DecodedSample, ImportSettings},
+pub mod decode;
+pub mod flac;
+pub mod mp3;
+pub mod msh;
+pub mod raw;
+pub mod sample;
+pub mod wav;
+
+use crate::{
+    data::instrument::{InstrumentKind, OctamedicInstrument},
+    import::sample::{DecodedSample, ImportSettings},
 };
 
 pub enum Decoded {

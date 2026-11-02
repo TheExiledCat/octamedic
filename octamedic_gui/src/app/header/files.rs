@@ -125,7 +125,7 @@ impl Gadget<AppState, Event> for Files {
         }
         let [load_instrument, _] = &mut self.instr;
         if load_instrument.clicked().is_some() {
-            crate::app::load_instrument::load_selected_instrument(state);
+            crate::app::files::load_instrument::load_selected_instrument(state);
         }
         if self.del_file.clicked().is_some() {
             delete_selected_file(state);

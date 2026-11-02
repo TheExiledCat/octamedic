@@ -53,7 +53,7 @@ by a right click nothing else takes, its gadget quits), `Header` (`app/header/mo
 after them in `app/`.
 
 The mode buttons set two modes: `HeaderMode` (which panel the header shows) and `MainMode` (what
-fills the screen below). Each button's `ModeBinding` in `app/mode_buttons.rs` says which. Header
+fills the screen below). Each button's `ModeBinding` in `app/mode/buttons.rs` says which. Header
 panels are in `app/header/`, one file each (`misc.rs` is MISC), and `HeaderPanels::panel` maps
 each `HeaderMode` to one. A panel draws inside the header's sunken area and gets the header's
 updates and events while it's showing. Main screens are in `app/main/` and `MainScreens::screen`
@@ -76,21 +76,21 @@ row's, in hex like OctaMED: 12 up to 9A. Clicking it goes up (right click down) 
 F1 to F5 only go up to 5. Shift+Left and Shift+Right change the instrument. Holding a note key
 repeats it like a new press.
 
-`app/files.rs` knows the folders: the config folder (`config.toml`, `keybinds.toml`) and the
+`app/files/mod.rs` knows the folders: the config folder (`config.toml`, `keybinds.toml`) and the
 projects folder inside the music folder. `initialize` creates them at startup.
 
 The FILES screen is `FileBrowser` (`app/main/file_browser.rs`): the current folder on the left
 (`(dir) / Parent Dir`, then `(dir) name` for each folder, then the files with their sizes), and
 shortcuts on the right (AmigaOS showed its assigns and devices there; we show the usual folders like
 Music and Documents, then the drives, from `files::get_shortcuts`). Each list has a scroller, a
-slider with up/down arrows. Where it is lives in `AppState::browser` (`app/browser.rs`), since the
+slider with up/down arrows. Where it is lives in `AppState::browser` (`app/files/browser.rs`), since the
 FILES header panel (`app/header/files.rs`) uses it too: its DIR box shows the current path, and
 opens what's typed when it loses focus, going back to the old path if that can't be read. The lists
 scroll with their arrows and sliders, and go back to the top for a new folder. Clicking a folder,
 the parent entry or a shortcut opens it, and clicking a file selects it, which FILE shows (typing in
 FILE selects that name). LOAD SONG loads the selected file with `files::load_module` and
 `AppState::load_project`, asking first if the song has unsaved changes. LOAD INSTR loads it into the
-active instrument (`app/load_instrument.rs`, see [docs/FILES.md](../docs/FILES.md)), and DEL FILE
+active instrument (`app/files/load_instrument.rs`, see [docs/FILES.md](../docs/FILES.md)), and DEL FILE
 deletes it after asking. Buttons that don't do anything yet are disabled, so they're ghosted like on
 the Amiga.
 

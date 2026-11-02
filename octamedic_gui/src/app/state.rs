@@ -22,8 +22,8 @@ use rustuition::palette::{Color, IntuitionColorPalette};
 use crate::{
     app::{
         DEFAULT_VIDEO,
-        browser::Browser,
         cursor::EditCursor,
+        files::browser::Browser,
         mode::{HeaderMode, MainMode},
     },
     framework::widgets::Dialog,

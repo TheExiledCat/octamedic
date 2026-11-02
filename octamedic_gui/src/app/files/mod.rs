@@ -1,6 +1,9 @@
 // the config, keybinds and file manager parts are for screens that don't exist yet
 #![allow(dead_code)]
 
+pub mod browser;
+pub mod load_instrument;
+
 use std::{
     fmt::Display,
     fs, io,

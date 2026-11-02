@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use octamed::mmd::synth::OctamedMMD0SynthInstrument;
 
-use crate::data::{
-    instrument::{InstrumentKind, OctamedicSample, OctamedicSynth, SampleOctaves},
-    instrument_loader::{Decoded, InstrumentLoadError, InstrumentLoader},
+use crate::{
+    data::instrument::{InstrumentKind, OctamedicSample, OctamedicSynth, SampleOctaves},
+    import::{Decoded, InstrumentLoadError, InstrumentLoader},
 };
 
 const ID: &[u8] = b"MSH\0";
@@ -53,7 +53,7 @@ fn hybrid_sample(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data::sample_import::ImportSettings;
+    use crate::import::sample::ImportSettings;
 
     // volume 64 then end, waveform 0 then end, one 4 byte waveform
     fn synth_msh() -> Vec<u8> {
