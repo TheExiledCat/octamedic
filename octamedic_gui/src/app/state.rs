@@ -54,6 +54,13 @@ const TOP_OCTAVE_KEYS: [char; 13] = [
     'q', '2', 'w', '3', 'e', 'r', '5', 't', '6', 'y', '7', 'u', 'i',
 ];
 
+/// How the instrument name box gets selected.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NameEdit {
+    Select,
+    Clear,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PlayStart {
     Song,
@@ -94,8 +101,8 @@ pub struct AppState {
     pub spacing: bool,
     // the keypad edits the play sequence without Ctrl while it's on
     pub caps_lock: bool,
-    // Amiga+I asked for the instrument name box, true to clear it too
-    pub name_edit_request: Option<bool>,
+    // Amiga+I asked for the instrument name box
+    pub name_edit_request: Option<NameEdit>,
     pub recording: bool,
     pub exit_requested: bool,
     pub notification: Option<String>,

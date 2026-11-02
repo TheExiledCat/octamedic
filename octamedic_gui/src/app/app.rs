@@ -121,7 +121,7 @@ impl App {
         self.fit_viewport(ctx);
     }
 
-    fn follow_alts(&mut self, key: KeyCode, held: bool) {
+    fn track_alt(&mut self, key: KeyCode, held: bool) {
         match key {
             KeyCode::LAlt => self.alts_held[0] = held,
             KeyCode::RAlt => self.alts_held[1] = held,
@@ -129,7 +129,7 @@ impl App {
         }
     }
 
-    fn mods(&self, mods: KeyMods) -> KeyMods {
+    fn with_amiga(&self, mods: KeyMods) -> KeyMods {
         let [left, right] = self.alts_held;
         return amiga_mods(mods, left, right);
     }
@@ -282,7 +282,7 @@ impl EventHandler for App {
         let Some(key) = input.keycode else {
             return Ok(());
         };
-        self.follow_alts(key, true);
+        self.track_alt(key, true);
         if key == KeyCode::Capital && !repeated {
             self.state.caps_lock.flip();
         }
@@ -297,7 +297,7 @@ impl EventHandler for App {
         }
         let event = Event::Key {
             key,
-            mods: self.mods(input.mods),
+            mods: self.with_amiga(input.mods),
             repeat: repeated,
         };
         self.dispatch(event);
@@ -307,7 +307,7 @@ impl EventHandler for App {
     fn key_up_event(&mut self, _ctx: &mut Context, input: KeyInput) -> GameResult {
         if let Some(key) = input.keycode {
             self.key_repeat.released(key);
-            self.follow_alts(key, false);
+            self.track_alt(key, false);
         }
         return Ok(());
     }
@@ -317,12 +317,12 @@ impl EventHandler for App {
             return Ok(());
         }
         let shift = ctx.keyboard.active_mods().contains(KeyMods::SHIFT);
-        if let Some(caps_lock) = caps_lock_from(character, shift) {
+        if let Some(caps_lock) = caps_lock_from_letter(character, shift) {
             self.state.caps_lock = caps_lock;
         }
         self.dispatch(Event::Text {
             character,
-            mods: self.mods(ctx.keyboard.active_mods()),
+            mods: self.with_amiga(ctx.keyboard.active_mods()),
             repeat: self.key_repeated,
         });
         return Ok(());
@@ -331,7 +331,7 @@ impl EventHandler for App {
 
 // the key's toggle isn't in the modifiers, and it may already be on at startup, so a typed letter
 // tells: uppercase without shift, or lowercase with it, means it's on
-fn caps_lock_from(character: char, shift: bool) -> Option<bool> {
+fn caps_lock_from_letter(character: char, shift: bool) -> Option<bool> {
     if !character.is_alphabetic() || character.is_uppercase() == character.is_lowercase() {
         return None;
     }
@@ -413,10 +413,10 @@ mod tests {
 
     #[test]
     fn letters_tell_whether_caps_lock_is_on() {
-        assert_eq!(caps_lock_from('A', false), Some(true));
-        assert_eq!(caps_lock_from('a', false), Some(false));
-        assert_eq!(caps_lock_from('a', true), Some(true));
-        assert_eq!(caps_lock_from('A', true), Some(false));
-        assert_eq!(caps_lock_from('5', false), None);
+        assert_eq!(caps_lock_from_letter('A', false), Some(true));
+        assert_eq!(caps_lock_from_letter('a', false), Some(false));
+        assert_eq!(caps_lock_from_letter('a', true), Some(true));
+        assert_eq!(caps_lock_from_letter('A', true), Some(false));
+        assert_eq!(caps_lock_from_letter('5', false), None);
     }
 }

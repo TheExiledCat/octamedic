@@ -4,7 +4,7 @@ use octamed::mmd::module::SONG_TRACKS;
 
 use super::{
     handle::{EngineCommand, EngineStatus},
-    period::sample_note,
+    period::{SampleNote, sample_note},
 };
 use crate::{
     amiga::{
@@ -192,8 +192,8 @@ impl OctamedicEngine {
             } => self.note_on(track, note, Some(instrument)),
             EngineCommand::ReleaseNote { track } => self.release(track),
             EngineCommand::Preview(Some((sample, note))) => {
-                let (copy, period) = sample_note(note.value, 0, 0, sample.octaves);
-                self.trigger(0, sample, copy, period, MAX_INSTRUMENT_VOLUME);
+                let played = sample_note(note.value, 0, 0, sample.octaves);
+                self.trigger(0, sample, played, MAX_INSTRUMENT_VOLUME);
             }
             EngineCommand::Preview(None) => self.release(0),
         }
@@ -430,8 +430,7 @@ impl OctamedicEngine {
             return;
         };
         let transpose = instrument.transpose.wrapping_add(self.global_transpose);
-        let (copy, period) =
-            sample_note(note.value, transpose, instrument.finetune, sample.octaves);
+        let played = sample_note(note.value, transpose, instrument.finetune, sample.octaves);
         let max = MAX_INSTRUMENT_VOLUME as u32;
         let volume = instrument.volume as u32 * self.track_volumes[track] as u32 / max
             * self.master_volume as u32
@@ -441,20 +440,19 @@ impl OctamedicEngine {
             self.status
                 .note_triggered(track, note.value, instrument, volume as u8);
         }
-        self.trigger(track, sample, copy, period, volume as u8);
+        self.trigger(track, sample, played, volume as u8);
     }
 
     // same order the 68k player does it: dma off, sample, period, volume, dma on, then the
-    // repeat range, which is the loop or silence. `copy` is the octave copy, 0 for plain samples
+    // repeat range, which is the loop or silence
     fn trigger(
         &mut self,
         channel: usize,
         sample: Arc<OctamedicSample>,
-        copy: u32,
-        period: u16,
+        played: SampleNote,
         volume: u8,
     ) {
-        let copy = sample.octave_copy(copy);
+        let copy = sample.octave_copy(played.copy);
         let (end, repeat) = match copy.repeat {
             Some(repeat) => (
                 repeat.end,
@@ -480,7 +478,7 @@ impl OctamedicEngine {
                 start: copy.data.start,
                 len: end - copy.data.start,
             },
-            PaulaWrite::Period(period),
+            PaulaWrite::Period(played.period),
             PaulaWrite::Volume(volume),
             PaulaWrite::DmaOn,
             repeat,

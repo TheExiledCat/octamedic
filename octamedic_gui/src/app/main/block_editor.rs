@@ -654,7 +654,7 @@ fn enter_digit(state: &mut AppState, key: char) -> bool {
     else {
         return false;
     };
-    let Some(typed) = with_digit(cell, cursor.column, key) else {
+    let Some(typed) = type_digit(cell, cursor.column, key) else {
         return false;
     };
     state.edit_track(cursor.line, cursor.track, |cell| *cell = typed);
@@ -672,7 +672,7 @@ fn move_down(state: &mut AppState) {
 // the instrument's right base 32 digit, then the command's and the value's two hex digits each.
 // like OctaMED the instrument's left digit can't be typed, so typing gives 0 to V and higher ones
 // come from entering a note with that instrument selected. None if `key` isn't a digit there
-fn with_digit(
+fn type_digit(
     mut cell: OctamedicPatternTrack,
     column: usize,
     key: char,
@@ -755,7 +755,7 @@ fn blend_text(text: &str, x: i32, line: usize, font: Font, run: Rect, painter: &
 }
 
 // no note but an instrument is a hold, which keeps the note before going
-fn cell_note_text(cell: &OctamedicPatternTrack) -> String {
+fn note_column_text(cell: &OctamedicPatternTrack) -> String {
     if cell.note.value == 0 && cell.instrument_id.0 != 0 {
         return HOLD_TEXT.to_owned();
     }
@@ -765,7 +765,7 @@ fn cell_note_text(cell: &OctamedicPatternTrack) -> String {
 fn track_text(cell: &OctamedicPatternTrack) -> String {
     return format!(
         "{}{}{:02X}{:02X}",
-        cell_note_text(cell),
+        note_column_text(cell),
         instrument_text(cell.instrument_id.0),
         cell.command_id.0,
         cell.command_value
@@ -950,7 +950,7 @@ mod tests {
     #[test]
     fn digits_go_where_the_cursor_is() {
         let cell = OctamedicPatternTrack::new();
-        let typed = |cell, column, key| with_digit(cell, column, key).unwrap();
+        let typed = |cell, column, key| type_digit(cell, column, key).unwrap();
         let cell = typed(cell, 1, 'v');
         assert_eq!(cell.instrument_id, InstrumentId(31));
         let cell = typed(cell, 2, 'c');
@@ -973,14 +973,14 @@ mod tests {
     fn digits_that_dont_fit() {
         let mut cell = OctamedicPatternTrack::new();
         // 0 to 9 and A to V for the instrument
-        assert!(with_digit(cell, 1, 'w').is_none());
+        assert!(type_digit(cell, 1, 'w').is_none());
         // typing replaces a higher instrument
         cell.instrument_id = InstrumentId(40);
-        let typed = with_digit(cell, 1, '3').unwrap();
+        let typed = type_digit(cell, 1, '3').unwrap();
         assert_eq!(typed.instrument_id, InstrumentId(3));
-        assert!(with_digit(cell, 2, 'g').is_none());
-        assert!(with_digit(cell, 6, '1').is_none());
-        assert!(with_digit(cell, 0, '1').is_none());
+        assert!(type_digit(cell, 2, 'g').is_none());
+        assert!(type_digit(cell, 6, '1').is_none());
+        assert!(type_digit(cell, 0, '1').is_none());
     }
 
     #[test]
@@ -1052,7 +1052,7 @@ mod tests {
 
     #[test]
     fn typing_an_instrument_alone_makes_a_hold() {
-        let cell = with_digit(OctamedicPatternTrack::new(), 1, '3').unwrap();
+        let cell = type_digit(OctamedicPatternTrack::new(), 1, '3').unwrap();
         assert_eq!(track_text(&cell), "-|- 30000");
         assert_eq!(track_text(&OctamedicPatternTrack::new()), "--- 00000");
     }

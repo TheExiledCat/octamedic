@@ -18,7 +18,10 @@ use rustuition::{
 };
 
 use crate::{
-    app::{fonts, state::AppState},
+    app::{
+        fonts,
+        state::{AppState, NameEdit},
+    },
     framework::{
         event::Event,
         widgets::{
@@ -163,7 +166,7 @@ impl Instrument {
         };
     }
 
-    fn update_buttons(&mut self, state: &mut AppState) {
+    fn update_transport(&mut self, state: &mut AppState) {
         let [first, previous, next, last, _] = &mut self.transport;
         for button in [&mut *previous, &mut *next] {
             button.update(state);
@@ -180,7 +183,10 @@ impl Instrument {
         if last.clicked().is_some() {
             state.set_instrument(u8::MAX);
         }
-        // everything back to nothing, volume included
+    }
+
+    // everything back to nothing, volume included
+    fn update_flush(&mut self, state: &mut AppState) {
         if self.flush.clicked().is_some() {
             let mut flushed = OctamedicInstrument::new("");
             flushed.volume = 0;
@@ -261,9 +267,10 @@ fn active(state: &AppState) -> Option<&OctamedicInstrument> {
 
 impl Gadget<AppState, Event> for Instrument {
     fn update(&mut self, state: &mut AppState) {
-        self.update_buttons(state);
-        if let Some(clear) = state.name_edit_request.take() {
-            if clear {
+        self.update_transport(state);
+        self.update_flush(state);
+        if let Some(edit) = state.name_edit_request.take() {
+            if edit == NameEdit::Clear {
                 self.name.set_text("");
                 state.edit_active_instrument(|instrument| instrument.name.clear());
             }
@@ -498,7 +505,7 @@ mod tests {
     #[test]
     fn amiga_i_clears_and_edits_the_name() {
         let (mut panel, mut state) = panel();
-        state.name_edit_request = Some(true);
+        state.name_edit_request = Some(NameEdit::Clear);
         update(&mut panel, &mut state);
         assert!(panel.name.is_focused());
         assert_eq!(active(&state).name, "");

@@ -15,7 +15,7 @@ use crate::{
     app::{
         fonts::{self, POSITION_SLASH},
         mode::HeaderMode,
-        state::{AppState, MAX_OCTAVE},
+        state::{AppState, MAX_OCTAVE, NameEdit},
     },
     framework::{
         event::{Event, MouseButton},
@@ -54,8 +54,7 @@ pub enum StatusBarAction {
     MoveInstrument(i32),
     FirstInstrument,
     LastInstrument,
-    // true to clear it too
-    EditName(bool),
+    EditName(NameEdit),
 }
 
 // a quick scroll through the instrument list
@@ -223,12 +222,12 @@ impl StatusBar {
                 )
                 .bind(
                     Key::amiga(KeyCode::I),
-                    StatusBarAction::EditName(false),
+                    StatusBarAction::EditName(NameEdit::Select),
                     "Instr name",
                 )
                 .bind(
                     Key::new(KeyCode::I, AMIGA | KeyMods::SHIFT),
-                    StatusBarAction::EditName(true),
+                    StatusBarAction::EditName(NameEdit::Clear),
                     "Clear instr name",
                 ),
             boxes,
@@ -338,21 +337,27 @@ impl KeyActions for StatusBar {
 
     fn perform(&mut self, action: StatusBarAction, state: &mut AppState) {
         match action {
-            StatusBarAction::NextInstrument => state.next_instrument(),
-            StatusBarAction::PrevInstrument => state.prev_instrument(),
-            StatusBarAction::ToggleSpacing => {
-                state.spacing.flip();
-                return;
+            StatusBarAction::NextInstrument => {
+                state.next_instrument();
             }
-            StatusBarAction::MoveInstrument(delta) => state.move_instrument(delta),
-            StatusBarAction::FirstInstrument => state.set_instrument(1),
-            StatusBarAction::LastInstrument => state.set_instrument(u8::MAX),
-            StatusBarAction::EditName(clear) => {
+            StatusBarAction::PrevInstrument => {
+                state.prev_instrument();
+            }
+            StatusBarAction::ToggleSpacing => state.spacing.flip(),
+            StatusBarAction::MoveInstrument(delta) => {
+                state.move_instrument(delta);
+            }
+            StatusBarAction::FirstInstrument => {
+                state.set_instrument(1);
+            }
+            StatusBarAction::LastInstrument => {
+                state.set_instrument(u8::MAX);
+            }
+            StatusBarAction::EditName(edit) => {
                 state.set_modes(HeaderMode::Instrument, state.main_mode());
-                state.name_edit_request = Some(clear);
-                return;
+                state.name_edit_request = Some(edit);
             }
-        };
+        }
     }
 
     fn describe(action: StatusBarAction) -> &'static str {
@@ -364,8 +369,8 @@ impl KeyActions for StatusBar {
             StatusBarAction::MoveInstrument(_) => "Later in the instrument list",
             StatusBarAction::FirstInstrument => "First instrument",
             StatusBarAction::LastInstrument => "Last instrument",
-            StatusBarAction::EditName(false) => "Edit the instrument's name",
-            StatusBarAction::EditName(true) => "Clear and edit the instrument's name",
+            StatusBarAction::EditName(NameEdit::Select) => "Edit the instrument's name",
+            StatusBarAction::EditName(NameEdit::Clear) => "Clear and edit the instrument's name",
         };
     }
 }
@@ -468,7 +473,7 @@ mod tests {
         assert_eq!(press(&mut state, KeyCode::Numpad2, alt), 2);
         press(&mut state, KeyCode::I, AMIGA | KeyMods::SHIFT);
         assert_eq!(state.header_mode(), HeaderMode::Instrument);
-        assert_eq!(state.name_edit_request, Some(true));
+        assert_eq!(state.name_edit_request, Some(NameEdit::Clear));
     }
 
     #[test]

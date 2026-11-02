@@ -186,8 +186,8 @@ impl Gadget<AppState, Event> for MainView {
         }
         // last, so a text field being typed in gets its space first. space stops, shift+space
         // continues the song, like the STOP and CONT. SONG buttons
-        if let Some(shifted) = space(event).filter(|_| !taken) {
-            if shifted {
+        if let Some(mods) = space_bar_mods(event).filter(|_| !taken) {
+            if mods.contains(KeyMods::SHIFT) {
                 state.start(PlayStart::ContinueSong);
             } else {
                 state.stop();
@@ -268,8 +268,8 @@ fn sequence(state: &mut AppState, action: SequenceAction) {
     }
 }
 
-// whether shift's held, for a space without other shortcut keys
-fn space(event: &Event) -> Option<bool> {
+// what's held with a typed space, if it's not a shortcut
+fn space_bar_mods(event: &Event) -> Option<KeyMods> {
     let Event::Text {
         character: ' ',
         mods,
@@ -281,7 +281,7 @@ fn space(event: &Event) -> Option<bool> {
     if mods.intersects(KeyMods::CTRL | KeyMods::ALT | KeyMods::LOGO) {
         return None;
     }
-    return Some(mods.contains(KeyMods::SHIFT));
+    return Some(mods);
 }
 
 impl KeyActions for MainView {

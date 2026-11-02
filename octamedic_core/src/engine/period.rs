@@ -140,25 +140,36 @@ pub fn note_period(note: u8, transpose: i8, finetune: i8) -> u16 {
     return period_at(note_index(note, transpose), finetune);
 }
 
-/// Which of a sample's octave copies plays `note`, counting from the shortest, and at which
-/// period. Plain samples only have copy 0.
-pub fn sample_note(note: u8, transpose: i8, finetune: i8, octaves: SampleOctaves) -> (u32, u16) {
+/// How a sample plays a note: which of its octave copies, counting from the shortest, at which
+/// period.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SampleNote {
+    pub copy: u32,
+    pub period: u16,
+}
+
+/// Plain samples only have copy 0.
+pub fn sample_note(note: u8, transpose: i8, finetune: i8, octaves: SampleOctaves) -> SampleNote {
     let index = note_index(note, transpose);
-    let Some(kind) = multi_octave_kind(octaves) else {
-        if octaves == SampleOctaves::ExtraLow {
-            return (0, extra_low_period(index, finetune));
-        }
-        return (0, period_at(index, finetune));
+    let Some(row) = octave_table_row(octaves) else {
+        let period = if octaves == SampleOctaves::ExtraLow {
+            extra_low_period(index, finetune)
+        } else {
+            period_at(index, finetune)
+        };
+        return SampleNote { copy: 0, period };
     };
     let octave = index as usize / NOTES_PER_OCTAVE as usize;
     let semitone = index as usize % NOTES_PER_OCTAVE as usize;
-    let row = OCTAVE_ROWS[kind][octave] as usize;
-    let period = table(finetune)[row * NOTES_PER_OCTAVE as usize + semitone];
-    return (OCTAVE_COPIES[kind][octave] as u32, period);
+    let periods_row = OCTAVE_ROWS[row][octave] as usize;
+    return SampleNote {
+        copy: OCTAVE_COPIES[row][octave] as u32,
+        period: table(finetune)[periods_row * NOTES_PER_OCTAVE as usize + semitone],
+    };
 }
 
-// the tables' row: the MMD instrument type less one
-fn multi_octave_kind(octaves: SampleOctaves) -> Option<usize> {
+// the MMD instrument type less one
+fn octave_table_row(octaves: SampleOctaves) -> Option<usize> {
     return match octaves {
         SampleOctaves::Five => Some(0),
         SampleOctaves::Three => Some(1),
@@ -264,23 +275,95 @@ mod tests {
     fn multi_octave_copies_and_periods() {
         use SampleOctaves::*;
         // C-1, C-5 and C-6 on the table in docs/FILES.md
-        assert_eq!(sample_note(1, 0, 0, Five), (4, 428));
-        assert_eq!(sample_note(49, 0, 0, Five), (1, 214));
-        assert_eq!(sample_note(61, 0, 0, Five), (0, 214));
-        assert_eq!(sample_note(1, 0, 0, Three), (2, 856));
-        assert_eq!(sample_note(61, 0, 0, Three), (0, 214));
-        assert_eq!(sample_note(13, 0, 0, Seven), (5, 428));
-        assert_eq!(sample_note(14, 0, 0, Two), (1, 404));
+        assert_eq!(
+            sample_note(1, 0, 0, Five),
+            SampleNote {
+                copy: 4,
+                period: 428
+            }
+        );
+        assert_eq!(
+            sample_note(49, 0, 0, Five),
+            SampleNote {
+                copy: 1,
+                period: 214
+            }
+        );
+        assert_eq!(
+            sample_note(61, 0, 0, Five),
+            SampleNote {
+                copy: 0,
+                period: 214
+            }
+        );
+        assert_eq!(
+            sample_note(1, 0, 0, Three),
+            SampleNote {
+                copy: 2,
+                period: 856
+            }
+        );
+        assert_eq!(
+            sample_note(61, 0, 0, Three),
+            SampleNote {
+                copy: 0,
+                period: 214
+            }
+        );
+        assert_eq!(
+            sample_note(13, 0, 0, Seven),
+            SampleNote {
+                copy: 5,
+                period: 428
+            }
+        );
+        assert_eq!(
+            sample_note(14, 0, 0, Two),
+            SampleNote {
+                copy: 1,
+                period: 404
+            }
+        );
         // plain samples only ever play copy 0
-        assert_eq!(sample_note(13, 0, 0, One), (0, 428));
+        assert_eq!(
+            sample_note(13, 0, 0, One),
+            SampleNote {
+                copy: 0,
+                period: 428
+            }
+        );
     }
 
     #[test]
     fn extra_low_is_two_octaves_down() {
         use SampleOctaves::ExtraLow;
-        assert_eq!(sample_note(1, 0, 0, ExtraLow), (0, 3424));
-        assert_eq!(sample_note(13, 0, 0, ExtraLow), (0, 1712));
-        assert_eq!(sample_note(25, 0, 0, ExtraLow), (0, 856));
-        assert_eq!(sample_note(37, 0, 0, ExtraLow), (0, 428));
+        assert_eq!(
+            sample_note(1, 0, 0, ExtraLow),
+            SampleNote {
+                copy: 0,
+                period: 3424
+            }
+        );
+        assert_eq!(
+            sample_note(13, 0, 0, ExtraLow),
+            SampleNote {
+                copy: 0,
+                period: 1712
+            }
+        );
+        assert_eq!(
+            sample_note(25, 0, 0, ExtraLow),
+            SampleNote {
+                copy: 0,
+                period: 856
+            }
+        );
+        assert_eq!(
+            sample_note(37, 0, 0, ExtraLow),
+            SampleNote {
+                copy: 0,
+                period: 428
+            }
+        );
     }
 }
