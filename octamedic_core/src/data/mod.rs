@@ -4,6 +4,8 @@ pub mod flac_loader;
 pub mod instrument;
 pub mod instrument_loader;
 pub mod mp3_loader;
+pub mod msh_loader;
+pub mod notation;
 pub mod note;
 pub mod palette;
 pub mod pattern;

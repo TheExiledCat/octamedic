@@ -307,7 +307,6 @@ pub struct Button<S, E = MouseEvent> {
     align: Align,
     font: Font,
     bold: bool,
-    // ghosted and ignoring the mouse when not
     enabled: bool,
     // from the last render
     area: Rect,
@@ -354,7 +353,6 @@ impl<S, E> Button<S, E> {
         return self.enabled;
     }
 
-    /// Where it was last drawn.
     pub fn area(&self) -> Rect {
         return self.area;
     }

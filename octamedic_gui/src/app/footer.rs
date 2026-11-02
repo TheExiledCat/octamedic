@@ -232,8 +232,7 @@ fn sample_bytes(song: &OctamedicSong) -> usize {
         .instruments
         .iter()
         .flatten()
-        .filter_map(|instrument| instrument.sample.as_ref())
-        .map(|sample| sample.data.len())
+        .map(|instrument| instrument.data_bytes())
         .sum();
 }
 

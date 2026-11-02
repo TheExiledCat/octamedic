@@ -73,6 +73,8 @@ don't mind.
   rustuition (keys, OctaMED's fonts and pens) and how its screens fit together.
 - `octamed/format.md` is the original MMD format documentation. The parsers in
   `octamed/src/mmd/parser.rs` are what we actually go by.
+- [docs/FILES.md](docs/FILES.md): the rest of the files: how instruments get loaded (WAV, FLAC,
+  MP3, raw), multi-octave samples, and how synth sounds are stored on their own.
 
-Not yet please: MIDI and synth instruments (they come after effect commands), and
-`OctamedicProject::to_module()`, writing back to MMD, which playback doesn't need.
+Not yet please: MIDI, and playing synth instruments (they come after effect commands). Synths
+are read and kept, just not played.

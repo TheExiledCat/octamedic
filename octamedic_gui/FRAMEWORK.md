@@ -66,6 +66,16 @@ edits while it's playing.
 
 `state.debug("...")` adds a line to the debug console.
 
+Dialogs are rustuition's `Dialog` (the `Dialog` alias in `framework/widgets`). Open one with
+`state.open_dialog(dialog)`, from anywhere that has the state, even another dialog's callback.
+`DialogStack` (`framework/dialog_stack.rs`, owned by `App`) picks them up, gives the top one every
+event and draws them over everything.
+
+The status bar's box next to E shows the keyboard's two octaves, the bottom row's and the top
+row's, in hex like OctaMED: 12 up to 9A. Clicking it goes up (right click down) and loops round;
+F1 to F5 only go up to 5. Shift+Left and Shift+Right change the instrument. Holding a note key
+repeats it like a new press.
+
 `app/files.rs` knows the folders: the config folder (`config.toml`, `keybinds.toml`) and the
 projects folder inside the music folder. `initialize` creates them at startup.
 
@@ -79,7 +89,10 @@ opens what's typed when it loses focus, going back to the old path if that can't
 scroll with their arrows and sliders, and go back to the top for a new folder. Clicking a folder,
 the parent entry or a shortcut opens it, and clicking a file selects it, which FILE shows (typing in
 FILE selects that name). LOAD SONG loads the selected file with `files::load_module` and
-`AppState::load_project`. The other buttons aren't hooked up yet.
+`AppState::load_project`, asking first if the song has unsaved changes. LOAD INSTR loads it into the
+active instrument (`app/load_instrument.rs`, see [docs/FILES.md](../docs/FILES.md)), and DEL FILE
+deletes it after asking. Buttons that don't do anything yet are disabled, so they're ghosted like on
+the Amiga.
 
 ## Tests
 

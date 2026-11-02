@@ -352,7 +352,6 @@ mod tests {
             .flat_map(|y| (0..12).map(move |x| (x, y)))
             .filter(|&(x, y)| screen.pixel(x, y) == Some([0, 0, 0]))
             .collect();
-        // every 4th pixel, 2 along on odd lines, and nothing left of the rect
         assert_eq!(
             dots,
             [

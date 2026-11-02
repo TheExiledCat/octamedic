@@ -180,7 +180,9 @@ mod tests {
 
     use super::*;
     use crate::data::{
-        instrument::{InstrumentId, OctamedicInstrument, OctamedicSample},
+        instrument::{
+            InstrumentId, InstrumentKind, OctamedicInstrument, OctamedicSample, SampleOctaves,
+        },
         note::OctamedicNote,
         tempo::OctamedicTempo,
     };
@@ -200,9 +202,10 @@ mod tests {
         cell.note = OctamedicNote { value: 13 };
         cell.instrument_id = InstrumentId(1);
         let mut instrument = OctamedicInstrument::new("square");
-        instrument.sample = Some(Arc::new(OctamedicSample {
+        instrument.kind = InstrumentKind::Sample(Arc::new(OctamedicSample {
             data: vec![100, -100],
             repeat: Some((0, 2)),
+            octaves: SampleOctaves::One,
         }));
         song.set_instrument(InstrumentId(1), Some(instrument));
         return song;

@@ -420,7 +420,7 @@ impl OctamedicEngine {
             self.release(track);
             return;
         };
-        let Some(sample) = instrument.sample.clone() else {
+        let Some(sample) = instrument.sample().cloned() else {
             self.release(track);
             return;
         };
@@ -518,6 +518,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::data::instrument::{InstrumentKind, SampleOctaves};
 
     const SAMPLE_RATE: u32 = 1000;
 
@@ -550,9 +551,10 @@ mod tests {
 
     fn instrument() -> OctamedicInstrument {
         let mut instrument = OctamedicInstrument::new("test");
-        instrument.sample = Some(Arc::new(OctamedicSample {
+        instrument.kind = InstrumentKind::Sample(Arc::new(OctamedicSample {
             data: vec![127; 4],
             repeat: Some((0, 4)),
+            octaves: SampleOctaves::One,
         }));
         return instrument;
     }
@@ -725,7 +727,7 @@ mod tests {
     #[test]
     fn note_writes_order() {
         let instrument = instrument();
-        let sample = instrument.sample.clone().unwrap();
+        let sample = instrument.sample().cloned().unwrap();
         let writes = note_writes(instrument, 13);
         assert_eq!(
             writes,
@@ -766,9 +768,10 @@ mod tests {
     #[test]
     fn one_shot() {
         let mut instrument = instrument();
-        instrument.sample = Some(Arc::new(OctamedicSample {
+        instrument.kind = InstrumentKind::Sample(Arc::new(OctamedicSample {
             data: vec![127; 6],
             repeat: None,
+            octaves: SampleOctaves::One,
         }));
         let writes = note_writes(instrument, 13);
         assert!(matches!(
@@ -795,8 +798,9 @@ mod tests {
         let sample = Arc::new(OctamedicSample {
             data: vec![127; 10],
             repeat: Some((2, 6)),
+            octaves: SampleOctaves::One,
         });
-        instrument.sample = Some(sample.clone());
+        instrument.kind = InstrumentKind::Sample(sample.clone());
         let writes = note_writes(instrument, 13);
         assert_eq!(
             writes[1],

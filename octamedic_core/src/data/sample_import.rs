@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::data::{
-    instrument::{OctamedicInstrument, OctamedicSample},
+    instrument::{InstrumentKind, OctamedicInstrument, OctamedicSample, SampleOctaves},
     instrument_loader::InstrumentLoadError,
 };
 
@@ -64,9 +64,10 @@ impl DecodedSample {
             _ => (mono, self.repeat),
         };
         let mut instrument = OctamedicInstrument::new(name);
-        instrument.sample = Some(Arc::new(OctamedicSample {
+        instrument.kind = InstrumentKind::Sample(Arc::new(OctamedicSample {
             data: mono.iter().map(|&sample| to_8_bit(sample)).collect(),
             repeat,
+            octaves: SampleOctaves::One,
         }));
         return Ok(instrument);
     }
@@ -147,7 +148,7 @@ mod tests {
 
     fn data(sample: &DecodedSample, settings: ImportSettings) -> Vec<i8> {
         let instrument = sample.to_instrument("test", settings).unwrap();
-        return instrument.sample.unwrap().data.clone();
+        return instrument.sample().unwrap().data.clone();
     }
 
     fn with_channel(channel: SampleChannel) -> ImportSettings {
@@ -233,7 +234,7 @@ mod tests {
         let mut sample = decoded(16_000, vec![vec![0.0; 100]]);
         sample.repeat = Some((20, 80));
         let instrument = sample.to_instrument("test", halved(false)).unwrap();
-        assert_eq!(instrument.sample.unwrap().repeat, Some((10, 40)));
+        assert_eq!(instrument.sample().unwrap().repeat, Some((10, 40)));
     }
 
     #[test]

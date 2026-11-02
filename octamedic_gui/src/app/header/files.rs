@@ -71,7 +71,6 @@ impl Files {
                 .pens(Pen::BACKGROUND, Pen::SHINE, Pen::FILL, pens::RED)
                 .padding(0)
         };
-        // ghosted until they're hooked up
         let unhooked = |button: Button| button.enabled(false);
         return Self {
             formats: FORMAT_LABELS.map(|(label, font)| unhooked(Button::new(label).font(font))),

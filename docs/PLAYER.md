@@ -119,4 +119,6 @@ the song's filter flag. It keeps running while off, so switching it doesn't clic
   middle.
 - The A500's fixed RC low-pass (about 4.4kHz, always on, unlike the LED filter).
 - Paula can't fetch faster than a period of about 124 allows, the renderer doesn't limit that.
+- Multi-octave samples (MMD instrument types 1 to 6) play as one long sample. The player picks one
+  of the octave copies for each note and a period for it; [FILES.md](FILES.md) has the tables.
 - MIDI and synth instruments.

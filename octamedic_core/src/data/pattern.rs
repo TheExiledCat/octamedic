@@ -57,6 +57,7 @@ impl OctamedicPattern {
         let lines = lines
             .iter()
             .map(|line| OctamedicPatternLine {
+                highlighted: false,
                 tracks: line
                     .tracks
                     .iter()
@@ -93,6 +94,9 @@ impl From<&OctamedMMD1Block> for OctamedicPattern {
         let mut pattern = Self::from_octamed(&value.lines);
         if let Some(info) = &value.info {
             pattern.name = info.block_name.clone();
+            for (index, line) in pattern.lines.iter_mut().enumerate() {
+                line.highlighted = info.highlight_mask.is_highlighted(index);
+            }
         }
         return pattern;
     }
@@ -101,12 +105,14 @@ impl From<&OctamedMMD1Block> for OctamedicPattern {
 #[derive(Clone)]
 pub struct OctamedicPatternLine {
     pub tracks: Vec<OctamedicPatternTrack>,
+    pub highlighted: bool,
 }
 
 impl OctamedicPatternLine {
     fn new(track_count: usize) -> Self {
         return OctamedicPatternLine {
             tracks: vec![OctamedicPatternTrack::new(); track_count],
+            highlighted: false,
         };
     }
 }

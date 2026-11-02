@@ -420,7 +420,6 @@ impl Playback {
         let mut channel_modes: [Button; CHANNEL_MODES_COUNT] =
             array::from_fn(|mode| label_button(CHANNEL_MODE_LABELS[mode]));
         channel_modes[0].set_toggled(true);
-        // STS, HQ and the channel modes don't do anything yet
         for mode in &mut channel_modes {
             mode.set_enabled(false);
         }

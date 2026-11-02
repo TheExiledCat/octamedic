@@ -8,7 +8,7 @@ use std::{
 
 use crate::{
     amiga::{clock::AmigaClock, filter::LedFilter},
-    data::instrument::OctamedicSample,
+    data::instrument::{OctamedicSample, SampleOctaves},
 };
 
 // 4 tracks at full volume = full scale
@@ -30,6 +30,7 @@ pub static SILENCE: LazyLock<Arc<OctamedicSample>> = LazyLock::new(|| {
     return Arc::new(OctamedicSample {
         data: vec![0, 0],
         repeat: None,
+        octaves: SampleOctaves::One,
     });
 });
 
@@ -290,7 +291,11 @@ mod tests {
     const SAMPLE_RATE: u32 = AmigaClock::PAL.paula_clock / 5;
 
     fn sample(data: Vec<i8>) -> Arc<OctamedicSample> {
-        return Arc::new(OctamedicSample { data, repeat: None });
+        return Arc::new(OctamedicSample {
+            data,
+            repeat: None,
+            octaves: SampleOctaves::One,
+        });
     }
 
     fn range(sample: &Arc<OctamedicSample>, start: usize, len: usize) -> PaulaWrite {

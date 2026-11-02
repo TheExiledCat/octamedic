@@ -1,7 +1,6 @@
 use crate::data::{
     audio_decode,
-    instrument_loader::{InstrumentLoadError, InstrumentLoader},
-    sample_import::DecodedSample,
+    instrument_loader::{Decoded, InstrumentLoadError, InstrumentLoader},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -12,8 +11,8 @@ impl InstrumentLoader for FlacLoader {
         return bytes.starts_with(b"fLaC");
     }
 
-    fn decode(&self, bytes: &[u8]) -> Result<DecodedSample, InstrumentLoadError> {
-        return audio_decode::decode(bytes, "flac", "FLAC");
+    fn decode(&self, bytes: &[u8]) -> Result<Decoded, InstrumentLoadError> {
+        return audio_decode::decode(bytes, "flac", "FLAC").map(Decoded::Sample);
     }
 }
 
@@ -33,7 +32,7 @@ mod tests {
     // 0.1s of a 440 Hz sine, 22050 Hz, 16 bit stereo
     #[test]
     fn decodes() {
-        let decoded = FlacLoader.decode(SINE).unwrap();
+        let decoded = FlacLoader.decode(SINE).unwrap().into_sample().unwrap();
         assert_eq!((decoded.rate, decoded.bits), (22_050, Some(16)));
         assert_eq!(decoded.channels.len(), 2);
         assert_eq!(decoded.channels[0].len(), 2205);

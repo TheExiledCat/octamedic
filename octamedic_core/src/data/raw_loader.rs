@@ -1,5 +1,5 @@
 use crate::data::{
-    instrument_loader::{InstrumentLoadError, InstrumentLoader},
+    instrument_loader::{Decoded, InstrumentLoadError, InstrumentLoader},
     sample_import::DecodedSample,
 };
 
@@ -16,17 +16,17 @@ impl InstrumentLoader for RawLoader {
         return true;
     }
 
-    fn decode(&self, bytes: &[u8]) -> Result<DecodedSample, InstrumentLoadError> {
+    fn decode(&self, bytes: &[u8]) -> Result<Decoded, InstrumentLoadError> {
         let samples = bytes
             .iter()
             .map(|&byte| byte as i8 as f32 / 128.0)
             .collect();
-        return Ok(DecodedSample {
+        return Ok(Decoded::Sample(DecodedSample {
             rate: NOMINAL_RATE,
             bits: Some(8),
             channels: vec![samples],
             repeat: None,
-        });
+        }));
     }
 
     fn asks_for_settings(&self) -> bool {
@@ -48,16 +48,16 @@ mod tests {
     #[test]
     fn bytes_come_out_as_they_went_in() {
         let bytes = [0x00, 0x7F, 0x80, 0xFF, 0x40];
-        let decoded = RawLoader.decode(&bytes).unwrap();
+        let decoded = RawLoader.decode(&bytes).unwrap().into_sample().unwrap();
         let instrument = decoded
             .to_instrument("raw", ImportSettings::default())
             .unwrap();
-        assert_eq!(instrument.sample.unwrap().data, [0, 127, -128, -1, 64]);
+        assert_eq!(instrument.sample().unwrap().data, [0, 127, -128, -1, 64]);
     }
 
     #[test]
     fn empty_file_has_no_sound() {
-        let decoded = RawLoader.decode(&[]).unwrap();
+        let decoded = RawLoader.decode(&[]).unwrap().into_sample().unwrap();
         assert!(
             decoded
                 .to_instrument("raw", ImportSettings::default())

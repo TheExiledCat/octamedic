@@ -22,6 +22,7 @@ use crate::{
     framework::{
         dialog_stack::DialogStack,
         event::{self, Event},
+        key_repeat::KeyRepeat,
     },
 };
 
@@ -45,6 +46,9 @@ pub struct App {
     next_frame: Instant,
     // text input events don't say whether the key is repeating
     key_repeated: bool,
+    key_repeat: KeyRepeat,
+    // the text event after a held back repeat gets dropped too
+    repeat_held_back: bool,
 }
 
 impl App {
@@ -62,6 +66,8 @@ impl App {
             pointer: [0, 0],
             next_frame: Instant::now(),
             key_repeated: false,
+            key_repeat: KeyRepeat::default(),
+            repeat_held_back: false,
         };
         app.fit_viewport(ctx);
         return Ok(app);
@@ -222,6 +228,15 @@ impl EventHandler for App {
         let Some(key) = input.keycode else {
             return Ok(());
         };
+        let now = Instant::now();
+        let delay = self.state.video().clock().key_repeat_delay;
+        self.repeat_held_back = repeated && !self.key_repeat.allows_repeat(key, now, delay);
+        if self.repeat_held_back {
+            return Ok(());
+        }
+        if !repeated {
+            self.key_repeat.pressed(key, now);
+        }
         let event = Event::Key {
             key,
             mods: input.mods,
@@ -231,7 +246,17 @@ impl EventHandler for App {
         return Ok(());
     }
 
+    fn key_up_event(&mut self, _ctx: &mut Context, input: KeyInput) -> GameResult {
+        if let Some(key) = input.keycode {
+            self.key_repeat.released(key);
+        }
+        return Ok(());
+    }
+
     fn text_input_event(&mut self, ctx: &mut Context, character: char) -> GameResult {
+        if self.repeat_held_back {
+            return Ok(());
+        }
         self.dispatch(Event::Text {
             character,
             mods: ctx.keyboard.active_mods(),

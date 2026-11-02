@@ -2,10 +2,13 @@ use std::fmt::Display;
 
 use octamedic_util::base32;
 
-use crate::utility::{
-    bytes::{Byte, Offset, UByte, ULong, UWord, Word, bit_flag},
-    note,
-    octamed_tempo::OctamedTempo,
+use crate::{
+    mmd::synth::OctamedMMD0SynthInstrument,
+    utility::{
+        bytes::{Byte, Offset, UByte, ULong, UWord, Word, bit_flag},
+        note,
+        octamed_tempo::OctamedTempo,
+    },
 };
 
 pub const MAX_INSTRUMENTS: usize = 63;
@@ -344,7 +347,33 @@ pub struct OctamedMMD1BlockInfoHeader {
 }
 
 //todo
-pub struct OctamedMMD1HighlightMask {}
+/// A bit per line, bit 0 of the first longword for the first line.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct OctamedMMD1HighlightMask {
+    pub words: Vec<ULong>,
+}
+
+impl OctamedMMD1HighlightMask {
+    pub fn is_highlighted(&self, line: usize) -> bool {
+        return self
+            .words
+            .get(line / 32)
+            .is_some_and(|word| word.0 & (1 << (line % 32)) != 0);
+    }
+
+    pub fn from_lines(highlighted: impl IntoIterator<Item = bool>) -> Self {
+        let mut words = Vec::new();
+        for (line, on) in highlighted.into_iter().enumerate() {
+            if line % 32 == 0 {
+                words.push(ULong(0));
+            }
+            if on {
+                words[line / 32].0 |= 1 << (line % 32);
+            }
+        }
+        return Self { words };
+    }
+}
 
 pub struct OctamedMMD2BlockCommandPageTable {}
 
@@ -370,6 +399,7 @@ impl OctamedMMD0SampleHeader {
 pub struct OctamedMMD0SampleTable {
     pub headers: Vec<Option<OctamedMMD0SampleHeader>>,
     pub samples: Vec<Option<Vec<Byte>>>,
+    pub synths: Vec<Option<OctamedMMD0SynthInstrument>>,
 }
 
 #[repr(i16)]
@@ -713,6 +743,17 @@ impl AsInstrumentString for UByte {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn highlight_mask_bits() {
+        let mut lines = vec![false; 40];
+        lines[0] = true;
+        lines[33] = true;
+        let mask = OctamedMMD1HighlightMask::from_lines(lines);
+        assert_eq!(mask.words, [ULong(1), ULong(1 << 1)]);
+        assert!(mask.is_highlighted(0) && mask.is_highlighted(33));
+        assert!(!mask.is_highlighted(1) && !mask.is_highlighted(64));
+    }
 
     #[test]
     fn mmd0_instrument_bits() {

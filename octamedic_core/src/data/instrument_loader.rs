@@ -1,18 +1,51 @@
 use std::{fmt::Display, fs, io, path::Path};
 
 use crate::data::{
-    instrument::OctamedicInstrument,
+    instrument::{InstrumentKind, OctamedicInstrument},
     sample_import::{DecodedSample, ImportSettings},
 };
+
+pub enum Decoded {
+    /// Still needs making into what Paula plays, see [`DecodedSample::to_instrument`].
+    Sample(DecodedSample),
+    Ready(InstrumentKind),
+}
+
+impl Decoded {
+    pub fn into_sample(self) -> Option<DecodedSample> {
+        return match self {
+            Decoded::Sample(sample) => Some(sample),
+            Decoded::Ready(_) => None,
+        };
+    }
+
+    pub fn into_instrument(
+        self,
+        name: &str,
+        settings: ImportSettings,
+    ) -> Result<OctamedicInstrument, InstrumentLoadError> {
+        return match self {
+            Decoded::Sample(sample) => sample.to_instrument(name, settings),
+            Decoded::Ready(kind) => {
+                let mut instrument = OctamedicInstrument::new(name);
+                if let InstrumentKind::Synth(synth) | InstrumentKind::Hybrid(synth, _) = &kind {
+                    instrument.decay = synth.default_decay;
+                }
+                instrument.kind = kind;
+                Ok(instrument)
+            }
+        };
+    }
+}
 
 /// One audio file format. Picked by the file's header, not its extension, since old Amiga files
 /// often have none.
 pub trait InstrumentLoader {
     fn recognizes(&self, bytes: &[u8]) -> bool;
 
-    fn decode(&self, bytes: &[u8]) -> Result<DecodedSample, InstrumentLoadError>;
+    fn decode(&self, bytes: &[u8]) -> Result<Decoded, InstrumentLoadError>;
 
-    /// Whether to ask about channel and downsampling first.
+    /// Whether to ask about channel and downsampling first, for samples.
     fn asks_for_settings(&self) -> bool {
         return true;
     }
@@ -65,7 +98,7 @@ pub fn load_instrument(
     let loader = find_loader(&bytes, loaders).ok_or(InstrumentLoadError::UnknownFormat)?;
     return loader
         .decode(&bytes)?
-        .to_instrument(&instrument_name(path), settings);
+        .into_instrument(&instrument_name(path), settings);
 }
 
 #[cfg(test)]
@@ -84,9 +117,9 @@ mod tests {
             return bytes.starts_with(RAW_HEADER);
         }
 
-        fn decode(&self, bytes: &[u8]) -> Result<DecodedSample, InstrumentLoadError> {
+        fn decode(&self, bytes: &[u8]) -> Result<Decoded, InstrumentLoadError> {
             let samples = &bytes[RAW_HEADER.len()..];
-            return Ok(DecodedSample {
+            return Ok(Decoded::Sample(DecodedSample {
                 rate: 8000,
                 bits: Some(8),
                 channels: vec![
@@ -96,7 +129,7 @@ mod tests {
                         .collect(),
                 ],
                 repeat: None,
-            });
+            }));
         }
     }
 
@@ -119,7 +152,7 @@ mod tests {
         let _ = fs::remove_file(&path);
         let instrument = instrument.unwrap();
         assert_eq!(instrument.name, "BassDrum");
-        assert_eq!(instrument.sample.unwrap().data, [0, 127, -128]);
+        assert_eq!(instrument.sample().unwrap().data, [0, 127, -128]);
     }
 
     #[test]

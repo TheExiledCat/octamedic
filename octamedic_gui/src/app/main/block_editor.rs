@@ -420,9 +420,7 @@ impl Gadget<AppState, Event> for BlockEditor {
             return true;
         }
         let Event::Text {
-            character,
-            mods,
-            repeat,
+            character, mods, ..
         } = *event
         else {
             return false;
@@ -431,7 +429,7 @@ impl Gadget<AppState, Event> for BlockEditor {
         if mods.intersects(KeyMods::CTRL | KeyMods::ALT | KeyMods::LOGO) {
             return false;
         }
-        return enter_key(state, character, repeat);
+        return enter_key(state, character);
     }
 
     fn render(&mut self, state: &AppState, area: Rect, painter: &mut Painter) {
@@ -530,14 +528,10 @@ impl Layout {
 }
 
 // in edit mode a note key also writes the note and moves down by the line add
-fn enter_key(state: &mut AppState, key: char, repeat: bool) -> bool {
+fn enter_key(state: &mut AppState, key: char) -> bool {
     let cursor = state.cursor;
     if cursor.column != 0 {
         return false;
-    }
-    // holding a note key plays and writes its note once
-    if repeat {
-        return state.key_to_note(key).is_some();
     }
     if !cursor.edit_mode {
         return state.play_key(cursor.track, key).is_some();
@@ -770,7 +764,8 @@ mod tests {
         state.line_add = 2;
         assert!(editor.handle_event(&mut state, &Event::text('z')));
         let cell = *state.active_pattern().unwrap().track(0, 0).unwrap();
-        assert_eq!(cell.note.value, 13);
+        // z is C on the bottom row, octave 1 to start with
+        assert_eq!(cell.note.value, 1);
         assert_eq!(state.cursor.line, 2);
         state.cursor.column = 1;
         assert!(!editor.handle_event(&mut state, &Event::text('z')));
@@ -796,15 +791,18 @@ mod tests {
             mods: KeyMods::NONE,
             repeat: true,
         };
+        // repeats like a new press, like OctaMED
         assert!(editor.handle_event(&mut state, &held));
+        assert!(editor.handle_event(&mut state, &held));
+        assert_eq!(state.cursor.line, 2);
+        let pattern = state.active_pattern().unwrap();
+        assert_eq!(pattern.track(1, 0).unwrap().note.value, 1);
         let with_super = Event::Text {
             character: 'z',
             mods: KeyMods::LOGO,
             repeat: false,
         };
         assert!(!editor.handle_event(&mut state, &with_super));
-        assert!(state.is_saved());
-        assert_eq!(state.cursor.line, 0);
         state.cursor.column = 1;
         assert!(!editor.handle_event(&mut state, &held));
     }

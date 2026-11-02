@@ -3,8 +3,9 @@ use std::fs;
 use octamedic_core::{
     data::{
         flac_loader::FlacLoader,
-        instrument_loader::{InstrumentLoader, find_loader, instrument_name},
+        instrument_loader::{Decoded, InstrumentLoader, find_loader, instrument_name},
         mp3_loader::Mp3Loader,
+        msh_loader::MshLoader,
         raw_loader::RawLoader,
         sample_import::{DecodedSample, ImportSettings, SampleChannel},
         wav_loader::WavLoader,
@@ -16,7 +17,8 @@ use rustuition::gadgets::dialog::{Checkbox, Cycle, Label};
 use crate::{app::state::AppState, framework::widgets::Dialog};
 
 // tried in order, raw takes anything so it's last
-const LOADERS: &[&dyn InstrumentLoader] = &[&WavLoader, &FlacLoader, &Mp3Loader, &RawLoader];
+const LOADERS: &[&dyn InstrumentLoader] =
+    &[&WavLoader, &FlacLoader, &Mp3Loader, &MshLoader, &RawLoader];
 
 // downsampling converts to the rate this note plays at, so it plays at its original pitch there.
 // the numbers are the engine's notes, counted from 1 = C-1 in semitones, so 13 = C-2 and 25 = C-3
@@ -50,14 +52,20 @@ fn load_with(state: &mut AppState, loaders: &[&dyn InstrumentLoader]) {
     };
     let decoded = match loader.decode(&bytes) {
         Ok(decoded) => decoded,
-        Err(error) => return state.notify(error.to_string()),
+        Err(error) => {
+            state.notify(error.to_string());
+            return;
+        }
     };
     let name = instrument_name(&path);
-    if loader.asks_for_settings() {
-        state.open_dialog(import_dialog(name, decoded));
-        return;
-    }
-    match decoded.to_instrument(&name, ImportSettings::default()) {
+    let decoded = match decoded {
+        Decoded::Sample(sample) if loader.asks_for_settings() => {
+            state.open_dialog(import_dialog(name, sample));
+            return;
+        }
+        decoded => decoded,
+    };
+    match decoded.into_instrument(&name, ImportSettings::default()) {
         Ok(instrument) => state.replace_instrument(state.active_instrument, instrument),
         Err(error) => state.notify(error.to_string()),
     }
@@ -100,7 +108,6 @@ fn import_dialog(name: String, decoded: DecodedSample) -> Dialog {
     });
 }
 
-// on the current machine
 fn note_rate(state: &AppState, note: u8) -> u32 {
     return state.video().clock().paula_clock / note_period(note, 0, 0) as u32;
 }
@@ -127,13 +134,15 @@ fn describe(decoded: &DecodedSample) -> String {
 #[cfg(test)]
 mod tests {
     use ggez::input::keyboard::{KeyCode, KeyMods};
-    use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
+    use octamedic_core::{
+        data::{instrument::InstrumentKind, project::OctamedicProject},
+        engine::handle::EngineHandle,
+    };
     use rustuition::gadget::Gadget;
 
     use super::*;
     use crate::framework::event::Event;
 
-    // a 16-bit PCM wav, `frames` of silence
     fn wav(channels: u16, sample_rate: u32, frames: u32) -> Vec<u8> {
         let block = channels * 2;
         let data_size = frames * block as u32;
@@ -186,6 +195,22 @@ mod tests {
     }
 
     #[test]
+    fn synth_sounds_load_straight_away() {
+        let mut msh = b"MSH\0".to_vec();
+        msh.extend_from_slice(&[0xff, 0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1]);
+        msh.extend_from_slice(&[0xff, 0xff]);
+        msh.extend_from_slice(&28u32.to_be_bytes());
+        msh.extend_from_slice(&[0, 1, 0x40, 0xc0]);
+        let (mut state, folder) = state_with_file("SynthOrgan", &msh);
+        load_selected_instrument(&mut state);
+        let _ = fs::remove_dir_all(&folder);
+        assert!(state.take_pending_dialogs().is_empty());
+        let instrument = state.song().instruments[0].clone().unwrap();
+        assert!(matches!(instrument.kind, InstrumentKind::Synth(_)));
+        assert_eq!(instrument.data_bytes(), 2);
+    }
+
+    #[test]
     fn unrecognized_files_load_as_raw() {
         let (mut state, folder) = state_with_file("bassdrum", &[0x00, 0x7F, 0x80]);
         load_selected_instrument(&mut state);
@@ -193,7 +218,7 @@ mod tests {
         assert!(state.take_pending_dialogs().is_empty());
         let instrument = state.song().instruments[0].clone().unwrap();
         assert_eq!(instrument.name, "bassdrum");
-        assert_eq!(instrument.sample.unwrap().data, [0, 127, -128]);
+        assert_eq!(instrument.sample().unwrap().data, [0, 127, -128]);
     }
 
     #[test]
@@ -233,7 +258,7 @@ mod tests {
         let instrument = state.song().instruments[2].clone().unwrap();
         assert_eq!(instrument.name, "pad.wav");
         let rate = note_rate(&state, 25) as usize;
-        assert_eq!(instrument.sample.unwrap().data.len(), rate);
+        assert_eq!(instrument.sample().unwrap().data.len(), rate);
         assert!(!state.is_saved());
     }
 
@@ -271,14 +296,13 @@ mod tests {
         fn decode(
             &self,
             bytes: &[u8],
-        ) -> Result<DecodedSample, octamedic_core::data::instrument_loader::InstrumentLoadError>
-        {
-            return Ok(DecodedSample {
+        ) -> Result<Decoded, octamedic_core::data::instrument_loader::InstrumentLoadError> {
+            return Ok(Decoded::Sample(DecodedSample {
                 rate: 8287,
                 bits: Some(8),
                 channels: vec![bytes[5..].iter().map(|&b| b as i8 as f32 / 128.0).collect()],
                 repeat: None,
-            });
+            }));
         }
 
         fn asks_for_settings(&self) -> bool {
@@ -294,6 +318,6 @@ mod tests {
         assert!(state.take_pending_dialogs().is_empty());
         let instrument = state.song().instruments[0].clone().unwrap();
         assert_eq!(instrument.name, "kick");
-        assert_eq!(instrument.sample.unwrap().data, [16, 32, 48]);
+        assert_eq!(instrument.sample().unwrap().data, [16, 32, 48]);
     }
 }

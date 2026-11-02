@@ -201,7 +201,6 @@ pub struct Dialog<S, E> {
 }
 
 impl<S: 'static, E: PointerEvent + TextEvent + 'static> Dialog<S, E> {
-    /// With no buttons yet.
     pub fn new(title: impl Into<String>) -> Self {
         return Self {
             window: Window::new(title),
@@ -589,7 +588,6 @@ impl<S, E> TextField<S, E> {
         return self;
     }
 
-    /// So it can be typed in straight away.
     pub fn focused(mut self) -> Self {
         self.textbox.set_focused(true);
         return self;
@@ -1018,7 +1016,6 @@ mod tests {
         }
     }
 
-    // what the callbacks saw
     #[derive(Default)]
     struct Log {
         button: Option<usize>,

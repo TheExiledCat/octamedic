@@ -1,7 +1,6 @@
 use crate::data::{
     audio_decode,
-    instrument_loader::{InstrumentLoadError, InstrumentLoader},
-    sample_import::DecodedSample,
+    instrument_loader::{Decoded, InstrumentLoadError, InstrumentLoader},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -12,8 +11,8 @@ impl InstrumentLoader for Mp3Loader {
         return bytes.starts_with(b"ID3") || is_frame_header(bytes);
     }
 
-    fn decode(&self, bytes: &[u8]) -> Result<DecodedSample, InstrumentLoadError> {
-        return audio_decode::decode(bytes, "mp3", "MP3");
+    fn decode(&self, bytes: &[u8]) -> Result<Decoded, InstrumentLoadError> {
+        return audio_decode::decode(bytes, "mp3", "MP3").map(Decoded::Sample);
     }
 }
 
@@ -49,7 +48,7 @@ mod tests {
     // 0.1s of a 440 Hz sine, 22050 Hz mono. MP3 pads the start and end, so the length isn't exact
     #[test]
     fn decodes() {
-        let decoded = Mp3Loader.decode(SINE).unwrap();
+        let decoded = Mp3Loader.decode(SINE).unwrap().into_sample().unwrap();
         assert_eq!(decoded.rate, 22_050);
         assert_eq!(decoded.bits, None);
         assert_eq!(decoded.channels.len(), 1);

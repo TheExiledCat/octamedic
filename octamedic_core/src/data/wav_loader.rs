@@ -1,7 +1,6 @@
 use crate::data::{
     audio_decode,
-    instrument_loader::{InstrumentLoadError, InstrumentLoader},
-    sample_import::DecodedSample,
+    instrument_loader::{Decoded, InstrumentLoadError, InstrumentLoader},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -13,8 +12,8 @@ impl InstrumentLoader for WavLoader {
         return bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WAVE";
     }
 
-    fn decode(&self, bytes: &[u8]) -> Result<DecodedSample, InstrumentLoadError> {
-        return audio_decode::decode(bytes, "wav", "WAV");
+    fn decode(&self, bytes: &[u8]) -> Result<Decoded, InstrumentLoadError> {
+        return audio_decode::decode(bytes, "wav", "WAV").map(Decoded::Sample);
     }
 }
 
@@ -25,7 +24,6 @@ mod tests {
     const PCM: u16 = 1;
     const FLOAT: u16 = 3;
 
-    // `data` already in the file's sample format
     fn wav(format: u16, channels: u16, bits: u16, data: &[u8]) -> Vec<u8> {
         let rate: u32 = 44_100;
         let block = channels * bits / 8;
@@ -64,7 +62,11 @@ mod tests {
     #[test]
     fn decodes_16_bit_stereo_into_channels() {
         let data = samples_16_bit(&[i16::MAX, 0, 0, i16::MIN]);
-        let decoded = WavLoader.decode(&wav(PCM, 2, 16, &data)).unwrap();
+        let decoded = WavLoader
+            .decode(&wav(PCM, 2, 16, &data))
+            .unwrap()
+            .into_sample()
+            .unwrap();
         assert_eq!((decoded.rate, decoded.bits), (44_100, Some(16)));
         assert_eq!(decoded.channels.len(), 2);
         assert!((decoded.channels[0][0] - 1.0).abs() < 1e-4);
@@ -74,14 +76,22 @@ mod tests {
     #[test]
     fn decodes_float() {
         let data = 0.5f32.to_le_bytes();
-        let decoded = WavLoader.decode(&wav(FLOAT, 1, 32, &data)).unwrap();
+        let decoded = WavLoader
+            .decode(&wav(FLOAT, 1, 32, &data))
+            .unwrap()
+            .into_sample()
+            .unwrap();
         assert_eq!(decoded.channels, [[0.5]]);
     }
 
     // 8-bit WAVs are unsigned, 128 is silence
     #[test]
     fn decodes_8_bit() {
-        let decoded = WavLoader.decode(&wav(PCM, 1, 8, &[64, 128, 192])).unwrap();
+        let decoded = WavLoader
+            .decode(&wav(PCM, 1, 8, &[64, 128, 192]))
+            .unwrap()
+            .into_sample()
+            .unwrap();
         assert_eq!(decoded.channels, [[-0.5, 0.0, 0.5]]);
     }
 

@@ -1,9 +1,9 @@
 use std::{collections::HashMap, fs::File, io::Write, path::PathBuf};
 
 use crate::{
-    mmd::error::{MmdError, MmdResult},
     mmd::{
         conversion::{BinarySize, BinaryWriter},
+        error::{MmdError, MmdResult},
         module::{
             OctamedMMD, OctamedMMD0Block, OctamedMMD0BlockHeader, OctamedMMD0Header,
             OctamedMMD0Song, OctamedMMD1Block, OctamedMMD1BlockHeader, OctamedMMDBlockTable,
@@ -373,8 +373,9 @@ impl OctamedMMDWriter {
                 // the page table is MMD2+ only
                 self.writer.write_bytes(&Offset(0))?;
                 self.writer.write_bytes(&info_blk.header.reserved)?;
-                //no highlight mask yet, all zeros
-                self.writer.write_bytes(&vec![ULong(0); count])?;
+                let mut mask = info_blk.highlight_mask.words.clone();
+                mask.resize(count, ULong(0));
+                self.writer.write_bytes(&mask)?;
                 self.writer.write_bytes(&info_blk.block_name)?;
             }
         }
