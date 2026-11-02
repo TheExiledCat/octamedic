@@ -52,6 +52,11 @@ by a right click nothing else takes, its gadget quits), `Header` (`app/header/mo
 `Footer` (info line and scopes) and `DebugConsole` (toggle with `~`). Most live in a file named
 after them in `app/`.
 
+The info line's memory numbers are the project's, not the PC's: first what has to fit in an
+Amiga's chip memory (sample data and synth waveforms, `OctamedicProject::chip_bytes`), then
+about what the project takes saved as an MMD1 module (`module_bytes`). Both are in
+`octamedic_core/src/data/memory.rs`.
+
 The mode buttons set two modes: `HeaderMode` (which panel the header shows) and `MainMode` (what
 fills the screen below). Each button's `ModeBinding` in `app/mode/buttons.rs` says which. Header
 panels are in `app/header/`, one file each (`misc.rs` is MISC), and `HeaderPanels::panel` maps

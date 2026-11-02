@@ -51,6 +51,10 @@ impl OctamedicProject {
         return self.songs.get_mut(id.0 as usize);
     }
 
+    pub fn songs(&self) -> &[OctamedicSong] {
+        return &self.songs;
+    }
+
     pub fn song_count(&self) -> usize {
         return self.songs.len();
     }

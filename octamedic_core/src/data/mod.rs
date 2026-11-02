@@ -1,5 +1,6 @@
 pub mod command;
 pub mod instrument;
+pub mod memory;
 pub mod notation;
 pub mod note;
 pub mod palette;
