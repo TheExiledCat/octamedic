@@ -9,11 +9,11 @@ A faithful clone of OctaMED Professional v4
 ## Features (Not finished)
 
 - Faithful recreation of the 8 bit sound engine written in Rust using ggez for rendering and cpal for audio playback
-- Works with original MMD0, MMD1, and MMD2 modules, configs and samples
-- All the original settings, keybinds and plugin support
+- Reads and Writes real MED modules
+- All the original settings and keybinds
 - Full Midi support
 - Original synthesiser and sample editor
-- Allows exporting modules back in the original MMD formats for playback on real Amigas/MOD players and exporting as wav
+- Song rendering as WAV files
 
 ## Quality of life goals
 
@@ -28,7 +28,7 @@ A faithful clone of OctaMED Professional v4
     - Includes midi in and out for audio interfaces, with both transport and clock sync capabilities
     - Track seperation support for sending up to 8 octamed channels out
     - Record master from Internal audio or from interface IO or both while rendering
-- Works in both 1080P HD and the original 640x201 (stretched or windowed) resolutions
+- Can simulate both PAL and NTSC clock speeds and views
 - original 12 bit amiga color pallete
 
 ## Contributing
@@ -41,21 +41,17 @@ A faithful clone of OctaMED Professional v4
 
 ## Documentation
 
-Theres a full manual shipped with the product (also in the /docs folder of the repo)
+For a manual, aqcuire the original OctaMED manual
 
-Additionally, theres a new config setting that allows on hover tooltips in the player itself. These are disabled by default for authenticity.
+There will be a tiny addendum that will specify all the changes made from the original.
 
 For questions about the documentation and or the project or bug / authenticity problems please make a github issue.
 
-See [Insert link here](example.com) for a video example of the editors functions
-
 ## Installation
 
-To install download a release or an installer from the right hand bar for your platform. (Recommend the installer)
+To install download a release from the [releases](https://github.com/TheExiledCat/octamedic/releases) page
 
 It is also possible to build from source using the rust cargo toolchain. This way you get the newest changes (but also the breaking ones!) immediately.
-
-When using the installer, automatic updates are also added. Whenever you startup OctaMEDIC it will check if there are any new versions available and give you an update prompt.
 
 ## In this repo
 - octamed
@@ -68,12 +64,14 @@ When using the installer, automatic updates are also added. Whenever you startup
     - full octamed clone made using ggez
 - octamedic_util
     - small helpers shared by the other crates
+- rustuition
+    - custom made UI toolkit to recreate the AmigaOS look from intution
 ## Roadmap
 - [X] Loading real mmd file's metadata, note and instrument data
 - [ ] Loading protracker/soundtracker supported modules
-- [ ] Loading extra metadata from mmd files
+- [X] Loading extra metadata from mmd files
 - [X] Initial engine iteration which can playback real mmd files with just note data (no commands yet)
-- [ ] Initial editor iteration that can edit notes and patterns of existing mmd files but cant edit instruments
+- [ ] Initial editor iteration that can edit notes and patterns of existing mmd files but cant edit instrument data
 - [ ] Write back modules to:
     - [ ] MMD0
     - [ ] MMD1 (No Instr)
@@ -81,7 +79,7 @@ When using the installer, automatic updates are also added. Whenever you startup
 - [ ] Sample Commands
 - [ ] Midi commands
 - [ ] Synth commands
-- [ ] Loading wav files as instruments
+- [X] Loading wav, mp3, flac files as instruments
 - [ ] Loading IFF files
 - [ ] Editing instruments
 - [ ] Keybind mapping
