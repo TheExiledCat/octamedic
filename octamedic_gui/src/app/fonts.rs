@@ -129,7 +129,7 @@ mod tests {
         assert_eq!(parse_glyphs(INTERFACE_GLYPHS, 8).unwrap().len(), 2);
         assert!(parse_glyphs(TITLE_GLYPHS, 9).is_ok());
         assert!(parse_glyphs(AUTHOR_GLYPHS, 5).is_ok());
-        assert_eq!(parse_glyphs(SMALL_GLYPHS, 5).unwrap().len(), 38);
+        assert_eq!(parse_glyphs(SMALL_GLYPHS, 5).unwrap().len(), 40);
         assert!(parse_glyphs(EDITOR_GLYPHS, 8).is_ok());
     }
 

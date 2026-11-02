@@ -4,11 +4,15 @@ use ggez::{
     Context, GameError, GameResult,
     event::{EventHandler, MouseButton},
     graphics::{Canvas, Color, DrawParam, Image, ImageFormat, Sampler},
-    input::{keyboard::KeyInput, mouse},
+    input::{
+        keyboard::{KeyCode, KeyInput, KeyMods},
+        mouse,
+    },
 };
 use octamedic_core::{
     amiga::clock::VideoStandard, data::project::OctamedicProject, engine::handle::EngineHandle,
 };
+use octamedic_util::primitives::Flip;
 use rustuition::{
     gadget::Gadget,
     painter::Painter,
@@ -23,6 +27,7 @@ use crate::{
         dialog_stack::DialogStack,
         event::{self, Event},
         key_repeat::KeyRepeat,
+        keymap::amiga_mods,
     },
 };
 
@@ -51,6 +56,8 @@ pub struct App {
     key_repeat: KeyRepeat,
     // the text event after a held back repeat gets dropped too
     repeat_held_back: bool,
+    // the modifiers don't say which Alt, and right Alt is the Amiga key
+    alts_held: [bool; 2],
 }
 
 impl App {
@@ -71,6 +78,7 @@ impl App {
             key_repeated: false,
             key_repeat: KeyRepeat::default(),
             repeat_held_back: false,
+            alts_held: [false; 2],
         };
         app.fit_viewport(ctx);
         return Ok(app);
@@ -111,6 +119,19 @@ impl App {
         self.video = self.state.video();
         self.screen = screen_image(ctx, self.video);
         self.fit_viewport(ctx);
+    }
+
+    fn follow_alts(&mut self, key: KeyCode, held: bool) {
+        match key {
+            KeyCode::LAlt => self.alts_held[0] = held,
+            KeyCode::RAlt => self.alts_held[1] = held,
+            _ => {}
+        }
+    }
+
+    fn mods(&self, mods: KeyMods) -> KeyMods {
+        let [left, right] = self.alts_held;
+        return amiga_mods(mods, left, right);
     }
 
     fn dispatch(&mut self, event: Event) -> bool {
@@ -261,6 +282,10 @@ impl EventHandler for App {
         let Some(key) = input.keycode else {
             return Ok(());
         };
+        self.follow_alts(key, true);
+        if key == KeyCode::Capital && !repeated {
+            self.state.caps_lock.flip();
+        }
         let now = Instant::now();
         let delay = self.state.video().clock().key_repeat_delay;
         self.repeat_held_back = repeated && !self.key_repeat.allows_repeat(key, now, delay);
@@ -272,7 +297,7 @@ impl EventHandler for App {
         }
         let event = Event::Key {
             key,
-            mods: input.mods,
+            mods: self.mods(input.mods),
             repeat: repeated,
         };
         self.dispatch(event);
@@ -282,6 +307,7 @@ impl EventHandler for App {
     fn key_up_event(&mut self, _ctx: &mut Context, input: KeyInput) -> GameResult {
         if let Some(key) = input.keycode {
             self.key_repeat.released(key);
+            self.follow_alts(key, false);
         }
         return Ok(());
     }
@@ -290,13 +316,26 @@ impl EventHandler for App {
         if self.repeat_held_back {
             return Ok(());
         }
+        let shift = ctx.keyboard.active_mods().contains(KeyMods::SHIFT);
+        if let Some(caps_lock) = caps_lock_from(character, shift) {
+            self.state.caps_lock = caps_lock;
+        }
         self.dispatch(Event::Text {
             character,
-            mods: ctx.keyboard.active_mods(),
+            mods: self.mods(ctx.keyboard.active_mods()),
             repeat: self.key_repeated,
         });
         return Ok(());
     }
+}
+
+// the key's toggle isn't in the modifiers, and it may already be on at startup, so a typed letter
+// tells: uppercase without shift, or lowercase with it, means it's on
+fn caps_lock_from(character: char, shift: bool) -> Option<bool> {
+    if !character.is_alphabetic() || character.is_uppercase() == character.is_lowercase() {
+        return None;
+    }
+    return Some(character.is_uppercase() != shift);
 }
 
 fn mouse_button(button: MouseButton) -> Option<event::MouseButton> {
@@ -370,5 +409,14 @@ mod tests {
         );
         // twice as wide as the sprite, like the GPU draws it
         assert!(changed.iter().any(|&(x, _)| x >= 10 + cursor.width));
+    }
+
+    #[test]
+    fn letters_tell_whether_caps_lock_is_on() {
+        assert_eq!(caps_lock_from('A', false), Some(true));
+        assert_eq!(caps_lock_from('a', false), Some(false));
+        assert_eq!(caps_lock_from('a', true), Some(true));
+        assert_eq!(caps_lock_from('A', true), Some(false));
+        assert_eq!(caps_lock_from('5', false), None);
     }
 }

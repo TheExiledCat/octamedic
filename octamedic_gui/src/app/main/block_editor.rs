@@ -47,6 +47,23 @@ const LINE_NUMBER_CHARS: i32 = 4;
 
 const NOTE_CHARS: i32 = 3;
 const HOLD_TEXT: &str = "-|-";
+// puts in a hold like Enter does
+const HOLD_KEY: char = 'a';
+const NUMBER_KEYS: [KeyCode; 10] = [
+    KeyCode::Key0,
+    KeyCode::Key1,
+    KeyCode::Key2,
+    KeyCode::Key3,
+    KeyCode::Key4,
+    KeyCode::Key5,
+    KeyCode::Key6,
+    KeyCode::Key7,
+    KeyCode::Key8,
+    KeyCode::Key9,
+];
+const ALT_DIGIT_ADD: u32 = 10;
+// the command's first digit, after the note and the instrument
+const FIRST_COMMAND_COLUMN: usize = 2;
 
 // track numbers end over the instrument's first digit
 const TRACK_NUMBER_END: i32 = NOTE_CHARS + 1;
@@ -88,6 +105,7 @@ pub enum EditorAction {
     ToggleEdit,
     // no note, just the instrument, which keeps a held note going
     Hold,
+    Highlight,
     // the bottom row of note keys; the top row plays the octave above
     Octave(u8),
 }
@@ -133,6 +151,7 @@ impl BlockEditor {
             .bind(Key::plain(KeyCode::Escape), ToggleEdit, "Edit")
             .bind(Key::plain(KeyCode::Return), Hold, "Hold")
             .bind(Key::plain(KeyCode::NumpadEnter), Hold, "Hold")
+            .bind(Key::plain(KeyCode::Tab), Highlight, "Highlight")
             .bind(Key::plain(KeyCode::F1), Octave(1), "Octave 1")
             .bind(Key::plain(KeyCode::F2), Octave(2), "Octave 2")
             .bind(Key::plain(KeyCode::F3), Octave(3), "Octave 3")
@@ -348,10 +367,11 @@ impl KeyActions for BlockEditor {
         });
         let block = state.active_pattern.0 as usize;
         let screen = self.visible_tracks as isize;
+        let step = state.line_step() as isize;
         let cursor = &mut state.cursor;
         match action {
-            Up => cursor.move_lines(-1, lines),
-            Down => cursor.move_lines(1, lines),
+            Up => cursor.move_lines(-step, lines),
+            Down => cursor.move_lines(step, lines),
             Left => cursor.move_columns(-1, tracks),
             Right => cursor.move_columns(1, tracks),
             FirstLine => cursor.set_line(0, lines),
@@ -365,6 +385,7 @@ impl KeyActions for BlockEditor {
             ScreenRight => cursor.move_tracks_clamped(screen, tracks),
             ToggleEdit => cursor.edit_mode.flip(),
             Hold => enter_hold(state),
+            Highlight => state.toggle_highlight(state.cursor.line),
             FirstBlock => state.select_block(0),
             LastBlock => state.select_block(usize::MAX),
             PreviousBlock => state.select_block(block.saturating_sub(1)),
@@ -395,6 +416,7 @@ impl KeyActions for BlockEditor {
             ScreenRight => "One screen right",
             ToggleEdit => "Switch edit mode on or off",
             Hold => "Enter a hold: no note, just the instrument",
+            Highlight => "Highlight the line, or take its highlight off",
             Octave(_) => "Play notes from this octave up",
         };
     }
@@ -428,6 +450,11 @@ impl Gadget<AppState, Event> for BlockEditor {
         if self.dispatch(state, event) || self.click(state, event) {
             return true;
         }
+        if let Some(digit) = alt_digit(event) {
+            let cursor = state.cursor;
+            let command_column = cursor.column >= FIRST_COMMAND_COLUMN;
+            return cursor.edit_mode && command_column && enter_digit(state, digit);
+        }
         let Event::Text {
             character, mods, ..
         } = *event
@@ -455,11 +482,26 @@ impl Gadget<AppState, Event> for BlockEditor {
         let center_y = area.y + center_row(area) * CHAR_HEIGHT;
         let band = active_band(area, center_y);
         painter.fill(band, Pen::SHADOW);
-        for row in 0..area.h / CHAR_HEIGHT {
-            let pen = if row == center_row(area) {
-                Pen::FILL
+        let rows = area.h / CHAR_HEIGHT;
+        let highlighted: Vec<bool> = (0..rows)
+            .map(|row| {
+                let line = line_at(cursor.line, row, area);
+                line.and_then(|line| pattern.lines.get(line))
+                    .is_some_and(|line| line.highlighted)
+            })
+            .collect();
+        for row in 0..rows {
+            let center = row == center_row(area);
+            let pen = if center { Pen::FILL } else { Pen::SHINE };
+            let pen = if highlighted[row as usize] {
+                if center {
+                    painter.fill(band, highlight(Pen::SHADOW));
+                } else {
+                    painter.fill(row_rect(area, row), highlight(Pen::BACKGROUND));
+                }
+                highlight(pen)
             } else {
-                Pen::SHINE
+                pen
             };
             self.render_row(pattern, cursor.line, row, &layout, area, pen, painter);
         }
@@ -468,8 +510,17 @@ impl Gadget<AppState, Event> for BlockEditor {
         for track in 1..layout.tracks {
             let x = layout.track_x(track) - 1;
             painter.fill(Rect::new(x, area.y, width, area.h), pens::PINK);
+            for row in (0..rows).filter(|&row| highlighted[row as usize]) {
+                let rect = row_rect(area, row);
+                painter.fill(Rect::new(x, rect.y, width, rect.h), highlight(pens::PINK));
+            }
             // OctaMED draws the band by flipping a bitplane, which turns the pink red
-            painter.fill(Rect::new(x, band.y, width, band.h), pens::RED);
+            let pen = if highlighted[center_row(area) as usize] {
+                highlight(pens::RED)
+            } else {
+                pens::RED
+            };
+            painter.fill(Rect::new(x, band.y, width, band.h), pen);
         }
         self.render_labels(pattern, &layout, area.y, painter);
         self.render_scopes(state, pattern, &layout, area, painter);
@@ -484,6 +535,20 @@ struct CursorBox {
     top: Rect,
     bottom: Rect,
     sides: [Rect; 2],
+}
+
+// OctaMED highlights a line by flipping the lowest bitplane under it, which swaps each pen for
+// its neighbour: black and light grey, the band's greys, pink and blush, red and rose
+fn highlight(pen: Pen) -> Pen {
+    return Pen(pen.0 ^ 1);
+}
+
+fn row_rect(area: Rect, row: i32) -> Rect {
+    return Rect::new(area.x, area.y + row * CHAR_HEIGHT, area.w, CHAR_HEIGHT);
+}
+
+fn line_at(cursor_line: usize, row: i32, area: Rect) -> Option<usize> {
+    return usize::try_from(cursor_line as isize + (row - center_row(area)) as isize).ok();
 }
 
 fn center_row(area: Rect) -> i32 {
@@ -546,6 +611,10 @@ fn enter_key(state: &mut AppState, key: char) -> bool {
     if !cursor.edit_mode {
         return state.play_key(cursor.track, key).is_some();
     }
+    if key.eq_ignore_ascii_case(&HOLD_KEY) {
+        enter_hold(state);
+        return true;
+    }
     if state.enter_key(cursor.track, cursor.line, key).is_none() {
         return false;
     }
@@ -563,6 +632,18 @@ fn enter_hold(state: &mut AppState) {
     }
     state.enter_note(cursor.track, cursor.line, OctamedicNote { value: 0 });
     move_down(state);
+}
+
+// Alt and a number key types 10 more, so A to F go in from the number row like OctaMED
+fn alt_digit(event: &Event) -> Option<char> {
+    let Event::Key { key, mods, .. } = *event else {
+        return None;
+    };
+    if mods != KeyMods::ALT {
+        return None;
+    }
+    let number = NUMBER_KEYS.iter().position(|&code| code == key)? as u32;
+    return char::from_digit(number + ALT_DIGIT_ADD, 16);
 }
 
 fn enter_digit(state: &mut AppState, key: char) -> bool {
@@ -585,7 +666,7 @@ fn move_down(state: &mut AppState) {
     let lines = state
         .active_pattern()
         .map_or(0, |pattern| pattern.line_count());
-    state.cursor.move_lines(state.line_add as isize, lines);
+    state.cursor.move_lines(state.line_step() as isize, lines);
 }
 
 // the instrument's right base 32 digit, then the command's and the value's two hex digits each.
@@ -831,12 +912,32 @@ mod tests {
     }
 
     #[test]
+    fn spacing_moves_by_the_line_add() {
+        let (mut editor, mut state) = (BlockEditor::new(), state());
+        state.line_add = 4;
+        press(&mut editor, &mut state, KeyCode::Down, KeyMods::NONE);
+        assert_eq!(state.cursor.line, 1);
+        state.spacing = true;
+        press(&mut editor, &mut state, KeyCode::Down, KeyMods::NONE);
+        assert_eq!(state.cursor.line, 5);
+        press(&mut editor, &mut state, KeyCode::Up, KeyMods::NONE);
+        assert_eq!(state.cursor.line, 1);
+        state.cursor.edit_mode = true;
+        editor.handle_event(&mut state, &Event::text('z'));
+        assert_eq!(state.cursor.line, 5);
+        // never 0, even if it's been set that way
+        state.line_add = 0;
+        assert_eq!(state.line_step(), 1);
+    }
+
+    #[test]
     fn notes_need_edit_mode() {
         let (mut editor, mut state) = (BlockEditor::new(), state());
         assert!(editor.handle_event(&mut state, &Event::text('z')));
         assert!(state.is_saved());
         state.cursor.edit_mode = true;
         state.line_add = 2;
+        state.spacing = true;
         assert!(editor.handle_event(&mut state, &Event::text('z')));
         let cell = *state.active_pattern().unwrap().track(0, 0).unwrap();
         // z is C on the bottom row, octave 1 to start with
@@ -883,6 +984,39 @@ mod tests {
     }
 
     #[test]
+    fn tab_highlights_the_line() {
+        let (mut editor, mut state) = (BlockEditor::new(), state());
+        state.cursor.line = 3;
+        press(&mut editor, &mut state, KeyCode::Tab, KeyMods::NONE);
+        assert!(state.active_pattern().unwrap().lines[3].highlighted);
+        assert!(!state.is_saved());
+        press(&mut editor, &mut state, KeyCode::Tab, KeyMods::NONE);
+        assert!(!state.active_pattern().unwrap().lines[3].highlighted);
+        assert_eq!(highlight(Pen::BACKGROUND), Pen::SHINE);
+        assert_eq!(highlight(pens::PINK), pens::BLUSH);
+    }
+
+    #[test]
+    fn alt_numbers_type_a_to_f() {
+        let (mut editor, mut state) = (BlockEditor::new(), state());
+        state.cursor.edit_mode = true;
+        state.cursor.column = 2;
+        press(&mut editor, &mut state, KeyCode::Key3, KeyMods::ALT);
+        let cell = *state.active_pattern().unwrap().track(0, 0).unwrap();
+        assert_eq!(cell.command_id, CommandId(0xD0));
+        // past F there's no digit, and the instrument column doesn't take it
+        let alt = |key| Event::Key {
+            key,
+            mods: KeyMods::ALT,
+            repeat: false,
+        };
+        state.cursor.column = 3;
+        assert!(!editor.handle_event(&mut state, &alt(KeyCode::Key7)));
+        state.cursor.column = 1;
+        assert!(!editor.handle_event(&mut state, &alt(KeyCode::Key1)));
+    }
+
+    #[test]
     fn typing_commands_in_edit_mode() {
         let (mut editor, mut state) = (BlockEditor::new(), state());
         state.cursor.column = 2;
@@ -907,10 +1041,13 @@ mod tests {
         assert_eq!((cell.note.value, cell.instrument_id), (0, InstrumentId(5)));
         assert_eq!(track_text(&cell), "-|- 50000");
         assert_eq!(state.cursor.line, 1);
+        // A does it too
+        assert!(editor.handle_event(&mut state, &Event::text('A')));
+        assert_eq!(state.cursor.line, 2);
         // only in the note column
         state.cursor.column = 2;
         press(&mut editor, &mut state, KeyCode::Return, KeyMods::NONE);
-        assert_eq!(state.cursor.line, 1);
+        assert_eq!(state.cursor.line, 2);
     }
 
     #[test]

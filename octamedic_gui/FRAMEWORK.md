@@ -44,12 +44,19 @@ Implement `KeyActions` (`keymap`, `perform`, `describe`) on the gadget and call
 
 ## The app
 
-`MainView` (`app/main_view.rs`) is the whole screen and handles global keys like Ctrl+Q. Inside
-it: `TitleBar` (timer, title, author), `CopyrightBar` (the screen title over the title bar, toggled
-by a right click nothing else takes, its gadget quits), `Header` (`app/header/mod.rs`),
+`MainView` (`app/main_view.rs`) is the whole screen and handles global keys like Ctrl+Q, and last of
+all Space (stop) and Shift+Space (continue the song), so a text field gets them first. The other
+play keys are OctaMED's: Amiga+P and Shift+Alt+Space play the song, Amiga+Space the block, Alt+Space
+continues the block. The Amiga key is right Alt, where it was on the real keyboard next to right
+Ctrl; the Windows key (Cmd on a Mac) counts too. `App` tells the two Alts apart itself
+(`keymap::amiga_mods`), since the modifiers don't, and shortcuts use `Key::amiga`. Ctrl and the
+keypad edit the play sequence like OctaMED's: 7 and 1 go to the top and end, 8 and 2 move up and
+down, 4 and 6 change the block number, 5 inserts the current block, 0 inserts block 0 and . deletes.
+Inside it: `TitleBar` (timer, title, author), `CopyrightBar` (the screen title over the title bar,
+toggled by a right click nothing else takes, its gadget quits), `Header` (`app/header/mod.rs`),
 `ModeButtons`, `StatusBar` (song position, block, instrument, song), the `BlockEditor`
 (`app/main/block_editor.rs`, with track numbers and the block's `TrackCount` over its top rows),
-`Footer` (info line and scopes) and `DebugConsole` (toggle with `~`). Most live in a file named
+`Footer` (info line and scopes) and `DebugConsole` (toggle with Ctrl+`). Most live in a file named
 after them in `app/`.
 
 The info line's memory numbers are the project's, not the PC's: first what has to fit in an
@@ -69,6 +76,12 @@ updates and events while it's showing. Main screens are in `app/main/` and `Main
 does the same for `MainMode`. To add one: write the gadget, add a field for it, return it from
 `panel` or `screen`.
 
+FILES, PLAY, VOL and MISC's palette work. INSTR (`header/instrument.rs`) shows the active instrument
+and edits its name, transpose, finetune and volume (`AppState::edit_active_instrument`), the rest of
+it is ghosted. The rest of MISC and the SLIST screen (`main/song_list.rs`) are laid out like OctaMED
+with their buttons ghosted, ready to be hooked up. `main/list_scroller.rs` is the slider with arrows
+that the FILES and SLIST lists share.
+
 Change project data through `AppState` methods like `enter_note` and `edit_track`, not directly.
 They track which blocks changed and send them to the engine in `AppState::update`, so you hear
 edits while it's playing.
@@ -87,13 +100,29 @@ repeats it like a new press.
 
 In edit mode the block editor types into whichever column the cursor is on: a note key in the
 note column, a base 32 digit (0-9, A-V) in the instrument's right column, and a hex digit in the
-command's and the value's. Each moves the cursor down by the line add, like a note. Like OctaMED,
+command's and the value's. Each moves the cursor down a line, like a note. Like OctaMED,
 the cursor skips the instrument's left digit, so instruments past 0V go in by entering a note with
 the instrument selected.
 
-Enter in the note column puts in a hold: no note, just the selected instrument, shown as `-|-` like
-any cell with an instrument and no note. It keeps a note held past its instrument's hold length
+SP in the status bar (or the ~ key) switches spacing on: then entering anything and the up and down
+arrows move by the line add (`AppState::line_step`) instead of one line. The line add is never below
+1.
+
+With Caps Lock on the keypad edits the play sequence without Ctrl. The modifiers don't carry Caps
+Lock, so `App` flips `AppState::caps_lock` on the key and corrects it from typed letters. Alt and
+the keypad go through the instrument list like OctaMED's (7 and 1 first and last, 8 and 2 one up and
+down, 9 and 3 a page of 8), Alt+Shift+Left/Right jump 16, Amiga+I opens INSTR with its name box
+selected and Amiga+Shift+I clears it first. Amiga+F switches the filter. In the command and value
+columns Alt and a number key types 10 more, so Alt+0 to Alt+5 are A to F.
+
+Enter or A in the note column puts in a hold: no note, just the selected instrument, shown as `-|-`
+like any cell with an instrument and no note. It keeps a note held past its instrument's hold length
 (see [docs/PLAYER.md](../docs/PLAYER.md)).
+
+Tab highlights the cursor line, or takes the highlight off; it's saved in MMD1 modules. OctaMED
+highlights by flipping a bitplane under the line, so every pen there swaps for its neighbour
+(black and light grey, pink and blush, the band's greys); `highlight` in the block editor does
+the same.
 
 `app/files/mod.rs` knows the folders: the config folder (`config.toml`, `keybinds.toml`) and the
 projects folder inside the music folder. `initialize` creates them at startup.
@@ -102,16 +131,16 @@ The FILES screen is `FileBrowser` (`app/main/file_browser.rs`): the current fold
 (`(dir) / Parent Dir`, then `(dir) name` for each folder, then the files with their sizes), and
 shortcuts on the right (AmigaOS showed its assigns and devices there; we show the usual folders like
 Music and Documents, then the drives, from `files::get_shortcuts`). Each list has a scroller, a
-slider with up/down arrows. Where it is lives in `AppState::browser` (`app/files/browser.rs`), since the
-FILES header panel (`app/header/files.rs`) uses it too: its DIR box shows the current path, and
+slider with up/down arrows. Where it is lives in `AppState::browser` (`app/files/browser.rs`), since
+the FILES header panel (`app/header/files.rs`) uses it too: its DIR box shows the current path, and
 opens what's typed when it loses focus, going back to the old path if that can't be read. The lists
 scroll with their arrows and sliders, and go back to the top for a new folder. Clicking a folder,
 the parent entry or a shortcut opens it, and clicking a file selects it, which FILE shows (typing in
 FILE selects that name). LOAD SONG loads the selected file with `files::load_module` and
 `AppState::load_project`, asking first if the song has unsaved changes. LOAD INSTR loads it into the
-active instrument (`app/files/load_instrument.rs`, see [docs/FILES.md](../docs/FILES.md)), and DEL FILE
-deletes it after asking. Buttons that don't do anything yet are disabled, so they're ghosted like on
-the Amiga.
+active instrument (`app/files/load_instrument.rs`, see [docs/FILES.md](../docs/FILES.md)), and DEL
+FILE deletes it after asking. Buttons that don't do anything yet are disabled, so they're ghosted
+like on the Amiga.
 
 ## Tests
 

@@ -1,4 +1,5 @@
 use ggez::input::keyboard::{KeyCode, KeyMods};
+use octamedic_core::data::pattern::PatternId;
 use rustuition::{
     gadget::Gadget,
     painter::{Align, CHAR_HEIGHT, Painter, Pen},
@@ -15,7 +16,7 @@ use crate::{
         main::MainScreens,
         mode::MainMode,
         screen_filters::open_filters_dialog,
-        state::AppState,
+        state::{AppState, PlayStart},
         title_bar::TitleBar,
     },
     framework::{
@@ -38,9 +39,55 @@ pub enum MainAction {
     Quit,
     ToggleVideo,
     ScreenFilters,
+    Play(PlayStart),
+    Sequence(SequenceAction),
+    ToggleFilter,
 }
 
-impl Action for MainAction {}
+// the play sequence list's keys, on the keypad like OctaMED's
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SequenceAction {
+    Top,
+    End,
+    Up,
+    Down,
+    DecreaseBlock,
+    IncreaseBlock,
+    InsertCurrent,
+    InsertZero,
+    Delete,
+}
+
+const SEQUENCE_KEYS: [(KeyCode, SequenceAction, &str); 9] = [
+    (KeyCode::Numpad7, SequenceAction::Top, "Seq top"),
+    (KeyCode::Numpad1, SequenceAction::End, "Seq end"),
+    (KeyCode::Numpad8, SequenceAction::Up, "Seq up"),
+    (KeyCode::Numpad2, SequenceAction::Down, "Seq down"),
+    (
+        KeyCode::Numpad4,
+        SequenceAction::DecreaseBlock,
+        "Seq block -",
+    ),
+    (
+        KeyCode::Numpad6,
+        SequenceAction::IncreaseBlock,
+        "Seq block +",
+    ),
+    (
+        KeyCode::Numpad5,
+        SequenceAction::InsertCurrent,
+        "Seq ins cur",
+    ),
+    (KeyCode::Numpad0, SequenceAction::InsertZero, "Seq ins 0"),
+    (KeyCode::NumpadDecimal, SequenceAction::Delete, "Seq del"),
+];
+
+impl Action for MainAction {
+    // starting again while held would keep restarting
+    fn repeats(self) -> bool {
+        return !matches!(self, MainAction::Play(_));
+    }
+}
 
 pub struct MainView {
     keys: Keymap<MainAction>,
@@ -54,16 +101,43 @@ pub struct MainView {
 
 impl MainView {
     pub fn new() -> Self {
+        let keys = Keymap::new("main")
+            .bind(Key::ctrl(KeyCode::Q), MainAction::Quit, "Quit")
+            // temporary, until there's a setting for it
+            .bind(Key::ctrl(KeyCode::F12), MainAction::ToggleVideo, "PAL/NTSC")
+            .bind(
+                Key::ctrl(KeyCode::F11),
+                MainAction::ScreenFilters,
+                "Filters",
+            )
+            .bind(
+                Key::amiga(KeyCode::P),
+                MainAction::Play(PlayStart::Song),
+                "Play song",
+            )
+            .bind(
+                Key::new(KeyCode::Space, KeyMods::SHIFT | KeyMods::ALT),
+                MainAction::Play(PlayStart::Song),
+                "Play song",
+            )
+            .bind(
+                Key::amiga(KeyCode::Space),
+                MainAction::Play(PlayStart::Block),
+                "Play block",
+            )
+            .bind(
+                Key::alt(KeyCode::Space),
+                MainAction::Play(PlayStart::ContinueBlock),
+                "Cont. block",
+            );
+        let keys = keys.bind(Key::amiga(KeyCode::F), MainAction::ToggleFilter, "Filter");
+        let keys = SEQUENCE_KEYS
+            .into_iter()
+            .fold(keys, |keys, (code, action, name)| {
+                keys.bind(Key::ctrl(code), MainAction::Sequence(action), name)
+            });
         return Self {
-            keys: Keymap::new("main")
-                .bind(Key::ctrl(KeyCode::Q), MainAction::Quit, "Quit")
-                // temporary, until there's a setting for it
-                .bind(Key::ctrl(KeyCode::F12), MainAction::ToggleVideo, "PAL/NTSC")
-                .bind(
-                    Key::ctrl(KeyCode::F11),
-                    MainAction::ScreenFilters,
-                    "Filters",
-                ),
+            keys,
             title: TitleBar::new(),
             header: Header::new(),
             screens: MainScreens::new(),
@@ -94,6 +168,7 @@ impl Gadget<AppState, Event> for MainView {
         let taken = self.console.handle_event(state, event)
             || self.copyright.handle_event(state, event)
             || self.dispatch(state, event)
+            || caps_lock_keypad(state, event)
             || self
                 .widgets(state.main_mode())
                 .into_iter()
@@ -109,9 +184,14 @@ impl Gadget<AppState, Event> for MainView {
             state.displays_off = !state.displays_off;
             return true;
         }
-        // last, so a text field being typed in gets its space first
-        if !taken && is_space(event) {
-            state.stop();
+        // last, so a text field being typed in gets its space first. space stops, shift+space
+        // continues the song, like the STOP and CONT. SONG buttons
+        if let Some(shifted) = space(event).filter(|_| !taken) {
+            if shifted {
+                state.start(PlayStart::ContinueSong);
+            } else {
+                state.stop();
+            }
             return true;
         }
         return taken;
@@ -151,15 +231,57 @@ impl Gadget<AppState, Event> for MainView {
     }
 }
 
-fn is_space(event: &Event) -> bool {
-    return match *event {
-        Event::Text {
-            character: ' ',
-            mods,
-            ..
-        } => !mods.intersects(KeyMods::CTRL | KeyMods::ALT | KeyMods::LOGO),
-        _ => false,
+// with caps lock on the keypad does the sequence list without Ctrl
+fn caps_lock_keypad(state: &mut AppState, event: &Event) -> bool {
+    let Event::Key { key, mods, .. } = *event else {
+        return false;
     };
+    if !state.caps_lock || !mods.is_empty() {
+        return false;
+    }
+    let Some(&(_, action, _)) = SEQUENCE_KEYS.iter().find(|(code, ..)| *code == key) else {
+        return false;
+    };
+    sequence(state, action);
+    return true;
+}
+
+fn sequence(state: &mut AppState, action: SequenceAction) {
+    match action {
+        SequenceAction::Top => {
+            state.set_sequence(0);
+        }
+        SequenceAction::End => {
+            state.set_sequence(usize::MAX);
+        }
+        SequenceAction::Up => {
+            state.prev_sequence();
+        }
+        SequenceAction::Down => {
+            state.next_sequence();
+        }
+        SequenceAction::DecreaseBlock => state.decrement_sequence_pattern(),
+        SequenceAction::IncreaseBlock => state.increment_sequence_pattern(),
+        SequenceAction::InsertCurrent => state.insert_sequence(state.active_pattern),
+        SequenceAction::InsertZero => state.insert_sequence(PatternId::ZERO),
+        SequenceAction::Delete => state.delete_sequence(state.active_sequence_index),
+    }
+}
+
+// whether shift's held, for a space without other shortcut keys
+fn space(event: &Event) -> Option<bool> {
+    let Event::Text {
+        character: ' ',
+        mods,
+        ..
+    } = *event
+    else {
+        return None;
+    };
+    if mods.intersects(KeyMods::CTRL | KeyMods::ALT | KeyMods::LOGO) {
+        return None;
+    }
+    return Some(mods.contains(KeyMods::SHIFT));
 }
 
 impl KeyActions for MainView {
@@ -174,6 +296,9 @@ impl KeyActions for MainView {
             MainAction::Quit => state.request_exit(),
             MainAction::ToggleVideo => state.set_video(state.video().other()),
             MainAction::ScreenFilters => open_filters_dialog(state),
+            MainAction::Play(start) => state.start(start),
+            MainAction::Sequence(action) => sequence(state, action),
+            MainAction::ToggleFilter => state.set_filter(!state.song().flags.filter_on),
         }
     }
 
@@ -182,6 +307,20 @@ impl KeyActions for MainView {
             MainAction::Quit => "Quit OctaMEDIC",
             MainAction::ToggleVideo => "Switch between PAL and NTSC",
             MainAction::ScreenFilters => "Scanlines and other screen filters",
+            MainAction::Play(PlayStart::Song) => "Play the song from the start",
+            MainAction::Play(PlayStart::ContinueSong) => "Continue playing the song",
+            MainAction::Play(PlayStart::Block) => "Play the block from the start",
+            MainAction::Play(PlayStart::ContinueBlock) => "Continue playing the block",
+            MainAction::ToggleFilter => "Switch the low pass filter on or off",
+            MainAction::Sequence(SequenceAction::Top) => "Go to the top of the play sequence",
+            MainAction::Sequence(SequenceAction::End) => "Go to the end of the play sequence",
+            MainAction::Sequence(SequenceAction::Up) => "Scroll the play sequence up",
+            MainAction::Sequence(SequenceAction::Down) => "Scroll the play sequence down",
+            MainAction::Sequence(SequenceAction::DecreaseBlock) => "Decrease the block number",
+            MainAction::Sequence(SequenceAction::IncreaseBlock) => "Increase the block number",
+            MainAction::Sequence(SequenceAction::InsertCurrent) => "Insert the current block",
+            MainAction::Sequence(SequenceAction::InsertZero) => "Insert block 0",
+            MainAction::Sequence(SequenceAction::Delete) => "Delete the block number",
         };
     }
 }
@@ -198,6 +337,116 @@ mod tests {
             button: MouseButton::Right,
         };
         return view.handle_event(state, &event);
+    }
+
+    #[test]
+    fn play_keys() {
+        use crate::framework::keymap::AMIGA;
+
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        let mut view = MainView::new();
+        let mut press = |state: &mut AppState, key, mods| {
+            let event = Event::Key {
+                key,
+                mods,
+                repeat: false,
+            };
+            assert!(view.handle_event(state, &event));
+            return state.started();
+        };
+        let space = KeyCode::Space;
+        assert_eq!(press(&mut state, KeyCode::P, AMIGA), Some(PlayStart::Song));
+        assert_eq!(press(&mut state, space, AMIGA), Some(PlayStart::Block));
+        let alt = KeyMods::ALT;
+        assert_eq!(
+            press(&mut state, space, alt),
+            Some(PlayStart::ContinueBlock)
+        );
+        let shift_alt = KeyMods::SHIFT | KeyMods::ALT;
+        assert_eq!(press(&mut state, space, shift_alt), Some(PlayStart::Song));
+    }
+
+    #[test]
+    fn amiga_f_switches_the_filter() {
+        use crate::framework::keymap::AMIGA;
+
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        let mut view = MainView::new();
+        let before = state.song().flags.filter_on;
+        let event = Event::Key {
+            key: KeyCode::F,
+            mods: AMIGA,
+            repeat: false,
+        };
+        assert!(view.handle_event(&mut state, &event));
+        assert_eq!(state.song().flags.filter_on, !before);
+    }
+
+    #[test]
+    fn keypad_edits_the_sequence() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        state.song_mut().ensure_pattern(PatternId(2));
+        let mut view = MainView::new();
+        let mut press = |state: &mut AppState, key| {
+            let event = Event::Key {
+                key,
+                mods: KeyMods::CTRL,
+                repeat: false,
+            };
+            assert!(view.handle_event(state, &event));
+        };
+        let blocks = |state: &AppState| {
+            let sequence = state.song().sequence();
+            sequence.iter().map(|block| block.0).collect::<Vec<_>>()
+        };
+        press(&mut state, KeyCode::Numpad5);
+        press(&mut state, KeyCode::Numpad6);
+        press(&mut state, KeyCode::Numpad6);
+        assert_eq!(blocks(&state), [0, 2]);
+        assert_eq!(state.active_sequence_index, 1);
+        press(&mut state, KeyCode::Numpad8);
+        press(&mut state, KeyCode::Numpad0);
+        assert_eq!(blocks(&state), [0, 0, 2]);
+        press(&mut state, KeyCode::Numpad2);
+        press(&mut state, KeyCode::Numpad4);
+        assert_eq!(blocks(&state), [0, 0, 1]);
+        press(&mut state, KeyCode::Numpad7);
+        assert_eq!(state.active_sequence_index, 0);
+        press(&mut state, KeyCode::NumpadDecimal);
+        assert_eq!(blocks(&state), [0, 1]);
+        press(&mut state, KeyCode::Numpad1);
+        assert_eq!(state.active_sequence_index, 1);
+    }
+
+    #[test]
+    fn caps_lock_keypad_needs_no_ctrl() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        let mut view = MainView::new();
+        let keypad_5 = Event::Key {
+            key: KeyCode::Numpad5,
+            mods: KeyMods::NONE,
+            repeat: false,
+        };
+        assert!(!view.handle_event(&mut state, &keypad_5));
+        assert_eq!(state.song().sequence().len(), 1);
+        state.caps_lock = true;
+        assert!(view.handle_event(&mut state, &keypad_5));
+        assert_eq!(state.song().sequence().len(), 2);
+    }
+
+    #[test]
+    fn shift_space_continues_the_song() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        let mut view = MainView::new();
+        let shift_space = Event::Text {
+            character: ' ',
+            mods: KeyMods::SHIFT,
+            repeat: false,
+        };
+        assert!(view.handle_event(&mut state, &shift_space));
+        assert_eq!(state.started(), Some(PlayStart::ContinueSong));
+        assert!(view.handle_event(&mut state, &Event::text(' ')));
+        assert_eq!(state.started(), None);
     }
 
     #[test]

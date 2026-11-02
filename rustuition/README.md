@@ -192,11 +192,11 @@ let button = Button::new("FILES")
     .on_click(|state, click| state.show_files());
 ```
 
-`Button::new` takes any `ButtonContent`: `&str`, `String`, `Line`, a `Triangle` (`.with_bar()`
-puts a bar across the point, like jump to start/end), an `ArrowLabel` or an `IncDec` (plus or
-minus). A closure taking `(ContentArea, Pen, &mut Painter)` works too, for a one-off picture.
-Your own content types implement `render`, plus `index_at` if it matters which part got clicked.
-`set_text` / `set_content` change it later.
+`Button::new` takes any `ButtonContent`: `&str`, `String`, `Line`, a `Triangle` (`.with_bar()` puts
+a bar across the point, like jump to start/end, and `.bar_gap(n)` spaces it off), an `ArrowLabel` or
+an `IncDec` (plus or minus). A closure taking `(ContentArea, Pen, &mut Painter)` works too, for a
+one-off picture. Your own content types implement `render`, plus `index_at` if it matters which part
+got clicked. `set_text` / `set_content` change it later.
 
 It clicks the moment it's pressed, like Intuition's `GACT_IMMEDIATE` gadgets. The handler gets the
 state and a `ButtonClick` with the mouse button and `char_index` (the label character under the
