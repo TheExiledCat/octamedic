@@ -1,9 +1,9 @@
 use std::time::{Duration, Instant};
 
 use ggez::{
-    Context, GameResult,
+    Context, GameError, GameResult,
     event::{EventHandler, MouseButton},
-    graphics::{Canvas, Color, DrawParam, Image, Sampler},
+    graphics::{Canvas, Color, DrawParam, Image, ImageFormat, Sampler},
     input::{keyboard::KeyInput, mouse},
 };
 use octamedic_core::{
@@ -12,9 +12,9 @@ use octamedic_core::{
 use rustuition::{
     gadget::Gadget,
     painter::Painter,
-    rect::Point,
+    rect::{Point, Rect},
     screen::{ScaleMode, Viewport},
-    target::BatchedCanvas,
+    target::{BatchedCanvas, Framebuffer, RenderTarget, Rgba},
 };
 
 use crate::{
@@ -39,6 +39,8 @@ pub struct App {
     screen: Image,
     video: VideoStandard,
     cursor: Image,
+    // painted into the screen in memory when it's filtered
+    cursor_pixels: CursorPixels,
     scale_mode: ScaleMode,
     viewport: Viewport,
     // in screen pixels
@@ -61,6 +63,7 @@ impl App {
             screen: screen_image(ctx, DEFAULT_VIDEO),
             video: DEFAULT_VIDEO,
             cursor: Image::from_bytes(ctx, CURSOR)?,
+            cursor_pixels: CursorPixels::decode(CURSOR)?,
             scale_mode: ScaleMode::default(),
             viewport: Viewport::default(),
             pointer: [0, 0],
@@ -120,11 +123,40 @@ impl App {
         self.dispatch(event(self.pointer));
     }
 
+    // painted in memory instead of straight onto the GPU, so the filters get the finished pixels
+    fn filtered_screen(&mut self, ctx: &Context, area: Rect) -> Image {
+        let mut frame = Framebuffer::new(area.w, area.h);
+        {
+            let mut painter = Painter::new(&mut frame, &self.state.palette);
+            self.main.render(&self.state, area, &mut painter);
+            self.dialogs.render(&self.state, area, &mut painter);
+        }
+        self.cursor_pixels.paint(&mut frame, self.pointer);
+        self.state.screen_filters.apply(&mut frame);
+        let rgba: Vec<u8> = frame
+            .pixels()
+            .iter()
+            .flat_map(|&[r, g, b]| [r, g, b, u8::MAX])
+            .collect();
+        return Image::from_pixels(
+            ctx,
+            &rgba,
+            ImageFormat::Rgba8UnormSrgb,
+            area.w as u32,
+            area.h as u32,
+        );
+    }
+
     fn render_screen(&mut self, ctx: &mut Context) -> GameResult {
         let mut canvas = Canvas::from_image(ctx, self.screen.clone(), Color::BLACK);
         canvas.set_sampler(Sampler::nearest_clamp());
+        let area = screen(self.video).rect();
+        if self.state.screen_filters.is_active() {
+            let filtered = self.filtered_screen(ctx, area);
+            canvas.draw(&filtered, DrawParam::new());
+            return canvas.finish(ctx);
+        }
         {
-            let area = screen(self.video).rect();
             let mut target = BatchedCanvas::new(&ctx.gfx, &mut canvas, area);
             let mut painter = Painter::new(&mut target, &self.state.palette);
             self.main.render(&self.state, area, &mut painter);
@@ -145,6 +177,7 @@ impl EventHandler for App {
         ctx.gfx
             .set_window_title(&format!("OctaMEDIC ({:.02} FPS) ", ctx.time.fps()));
         self.state.update();
+        self.state.screen_filters.advance_frame();
         self.main.update(&mut self.state);
         self.dialogs.update(&mut self.state);
         self.follow_video(ctx);
@@ -274,6 +307,36 @@ fn mouse_button(button: MouseButton) -> Option<event::MouseButton> {
     };
 }
 
+// the pointer sprite as RGBA pixels, so it can go through the filters with the rest of the screen
+struct CursorPixels {
+    width: i32,
+    rgba: Vec<[u8; 4]>,
+}
+
+impl CursorPixels {
+    fn decode(png: &[u8]) -> GameResult<Self> {
+        let decoded = image::load_from_memory(png)
+            .map_err(|error| GameError::ResourceLoadError(error.to_string()))?
+            .to_rgba8();
+        return Ok(Self {
+            width: decoded.width() as i32,
+            rgba: decoded.pixels().map(|pixel| pixel.0).collect(),
+        });
+    }
+
+    fn paint(&self, frame: &mut Framebuffer, [x, y]: Point) {
+        let [scale_x, scale_y] = CURSOR_SCALE.map(|scale| scale as i32);
+        for (index, &[r, g, b, a]) in self.rgba.iter().enumerate() {
+            if a == 0 {
+                continue;
+            }
+            let (column, row) = (index as i32 % self.width, index as i32 / self.width);
+            let pixel = Rect::new(x + column * scale_x, y + row * scale_y, scale_x, scale_y);
+            frame.fill(pixel, Rgba { r, g, b, a });
+        }
+    }
+}
+
 fn screen_image(ctx: &Context, video: VideoStandard) -> Image {
     let screen = screen(video);
     return Image::new_canvas_image(
@@ -283,4 +346,29 @@ fn screen_image(ctx: &Context, video: VideoStandard) -> Image {
         screen.height as u32,
         1,
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cursor_paints_into_the_framebuffer() {
+        let cursor = CursorPixels::decode(CURSOR).unwrap();
+        let mut frame = Framebuffer::new(64, 32);
+        cursor.paint(&mut frame, [10, 5]);
+        let changed: Vec<(i32, i32)> = (0..32)
+            .flat_map(|y| (0..64).map(move |x| (x, y)))
+            .filter(|&(x, y)| frame.pixel(x, y) != Some([0, 0, 0]))
+            .collect();
+        assert!(!changed.is_empty());
+        let width = cursor.width * CURSOR_SCALE[0] as i32;
+        assert!(
+            changed
+                .iter()
+                .all(|&(x, y)| (10..10 + width).contains(&x) && y >= 5)
+        );
+        // twice as wide as the sprite, like the GPU draws it
+        assert!(changed.iter().any(|&(x, _)| x >= 10 + cursor.width));
+    }
 }

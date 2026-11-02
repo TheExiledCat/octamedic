@@ -1,9 +1,13 @@
-use std::{any::Any, marker::PhantomData};
+use std::{any::Any, marker::PhantomData, time::Duration};
 
 use crate::{
     event::{EditKey, MouseButton, MouseEvent, PointerEvent, TextEvent, TextInput},
     gadget::Gadget,
-    gadgets::{button::Button, textbox::Textbox, window::Window},
+    gadgets::{
+        button::{Button, DEFAULT_REPEAT_DELAY, DEFAULT_REPEAT_INTERVAL, IncDec},
+        textbox::Textbox,
+        window::Window,
+    },
     painter::{CHAR_HEIGHT, CHAR_WIDTH, Painter, Pen, text_width, text_y},
     rect::Rect,
 };
@@ -11,33 +15,39 @@ use crate::{
 const DEFAULT_WIDTH: i32 = 320;
 // around the components and buttons, inside the window
 const PADDING: [i32; 2] = [8, 4];
-const COMPONENT_GAP: i32 = 3;
+pub(crate) const COMPONENT_GAP: i32 = 3;
 const BUTTONS_GAP: i32 = 6;
 const BUTTON_HEIGHT: i32 = CHAR_HEIGHT + 4;
-const BUTTON_LABEL_PADDING: i32 = 8;
-const FIELD_HEIGHT: i32 = CHAR_HEIGHT + 3;
+pub(crate) const BUTTON_LABEL_PADDING: i32 = 8;
+pub(crate) const FIELD_HEIGHT: i32 = CHAR_HEIGHT + 3;
 // tall pixels, so it's about square
 const CHECKBOX_SIZE: [i32; 2] = [26, FIELD_HEIGHT];
-const POPUP_ROW_HEIGHT: i32 = CHAR_HEIGHT + 2;
-// the arrow at the right of a popup list's button, rows of 6, 4 and 2
-const POPUP_ARROW_WIDTH: i32 = 6;
-const POPUP_ARROW_SPACE: i32 = POPUP_ARROW_WIDTH + 6;
+pub(crate) const DROPDOWN_ROW_HEIGHT: i32 = CHAR_HEIGHT + 2;
+// the arrow at the right of a dropdown's button, rows of 6, 4 and 2
+const DROPDOWN_ARROW_WIDTH: i32 = 6;
+const DROPDOWN_ARROW_SPACE: i32 = DROPDOWN_ARROW_WIDTH + 6;
 
 /// Something stacked in a dialog, top to bottom, as wide as the dialog.
 #[allow(unused_variables)]
 pub trait DialogComponent<S, E>: Gadget<S, E> {
     fn height(&self) -> i32;
 
-    /// Drawn after everything else, like an open popup list.
+    /// Drawn after everything else, like an open dropdown.
     fn render_overlay(&mut self, state: &S, painter: &mut Painter) {}
 
-    /// Whether it gets every event first, like an open popup list.
+    /// Whether it gets every event first, like an open dropdown.
     fn captures_events(&self) -> bool {
         return false;
     }
 
     /// Ghosts it and stops it taking input. Only the gadget, not its label, like GadTools.
     fn set_enabled(&mut self, enabled: bool) {}
+
+    /// Whether its value changed in `update` since this was last asked, like a held button
+    /// repeating, so the dialog's `on_change` runs.
+    fn take_change(&mut self) -> bool {
+        return false;
+    }
 }
 
 /// A component with a value, which comes back in the [`DialogResult`].
@@ -491,8 +501,14 @@ impl<S: 'static, E: PointerEvent + TextEvent + 'static> Dialog<S, E> {
 
 impl<S: 'static, E: PointerEvent + TextEvent + 'static> Gadget<S, E> for Dialog<S, E> {
     fn update(&mut self, state: &mut S) {
+        let mut changed = false;
         for slot in &mut self.slots {
-            slot.component().update(state);
+            let component = slot.component();
+            component.update(state);
+            changed |= component.take_change();
+        }
+        if changed {
+            self.changed(state);
         }
         if !self.opened {
             self.opened = true;
@@ -777,6 +793,171 @@ impl<S, E: PointerEvent> DialogInput<S, E> for Toggle<S, E> {
     }
 }
 
+/// A number from `min` to `max` with its label in front, typed in or stepped by `step` with its
+/// minus and plus buttons. Typing takes effect as soon as it's a number, clamped to the range, and
+/// the box shows the number tidied up once it's left. Its value is the number.
+pub struct NumberField<S, E> {
+    label: String,
+    value: f32,
+    min: f32,
+    max: f32,
+    step: f32,
+    textbox: Textbox<S, E>,
+    down: Button<S, E>,
+    up: Button<S, E>,
+    // stepped by a held button since the dialog last asked
+    repeated: bool,
+}
+
+impl<S, E> NumberField<S, E> {
+    pub fn new(label: &str, min: f32, max: f32, step: f32) -> Self {
+        let mut field = Self {
+            label: label.to_owned(),
+            value: min,
+            min,
+            max,
+            step,
+            textbox: Textbox::new().padding(CHAR_WIDTH / 2),
+            down: step_button(false, DEFAULT_REPEAT_DELAY),
+            up: step_button(true, DEFAULT_REPEAT_DELAY),
+            repeated: false,
+        };
+        field.set(min);
+        return field;
+    }
+
+    /// How long - or + is held before it starts stepping again.
+    pub fn repeat_delay(mut self, delay: Duration) -> Self {
+        self.down = step_button(false, delay);
+        self.up = step_button(true, delay);
+        return self;
+    }
+
+    fn step_by(&mut self, step: f32) {
+        self.textbox.set_focused(false);
+        self.set(self.value + step);
+    }
+
+    pub fn value(mut self, value: f32) -> Self {
+        self.set(value);
+        return self;
+    }
+
+    fn set(&mut self, value: f32) {
+        self.value = value.clamp(self.min, self.max);
+        self.textbox.set_text(format_number(self.value, self.step));
+    }
+
+    fn typed(&mut self) {
+        if let Ok(value) = self.textbox.text().trim().parse::<f32>() {
+            self.value = value.clamp(self.min, self.max);
+        }
+    }
+
+    // wide enough for the longest of min and max, the cursor after it, and the frame
+    fn box_width(&self) -> i32 {
+        let widest = [self.min, self.max].map(|value| text_width(&format_number(value, self.step)));
+        return widest[0].max(widest[1]) + 3 * CHAR_WIDTH;
+    }
+}
+
+impl<S, E: PointerEvent + TextEvent> Gadget<S, E> for NumberField<S, E> {
+    fn update(&mut self, state: &mut S) {
+        self.down.update(state);
+        self.up.update(state);
+        let step = match (self.down.clicked(), self.up.clicked()) {
+            (Some(_), _) => -self.step,
+            (_, Some(_)) => self.step,
+            _ => return,
+        };
+        self.step_by(step);
+        self.repeated = true;
+    }
+
+    fn handle_event(&mut self, state: &mut S, event: &E) -> bool {
+        let was_focused = self.textbox.is_focused();
+        let typed = self.textbox.handle_event(state, event);
+        if typed {
+            self.typed();
+            return true;
+        }
+        if was_focused && !self.textbox.is_focused() {
+            self.set(self.value);
+        }
+        let step = if self.down.handle_event(state, event) {
+            self.down.clicked().map(|_| -self.step)
+        } else if self.up.handle_event(state, event) {
+            self.up.clicked().map(|_| self.step)
+        } else {
+            return false;
+        };
+        if let Some(step) = step {
+            self.step_by(step);
+        }
+        return true;
+    }
+
+    fn render(&mut self, state: &S, area: Rect, painter: &mut Painter) {
+        painter.text(
+            area.x,
+            text_y(area, CHAR_HEIGHT),
+            &self.label,
+            Pen::BACKGROUND,
+        );
+        let label_width = text_width(&self.label) + CHAR_WIDTH;
+        let number = Rect::new(area.x + label_width, area.y, self.box_width(), area.h);
+        self.textbox.render(state, number, painter);
+        let button_width = 2 * CHAR_WIDTH;
+        let down = Rect::new(number.right(), area.y, button_width, area.h);
+        let up = Rect::new(down.right(), area.y, button_width, area.h);
+        self.down.render(state, down, painter);
+        self.up.render(state, up, painter);
+    }
+}
+
+impl<S, E: PointerEvent + TextEvent> DialogComponent<S, E> for NumberField<S, E> {
+    fn height(&self) -> i32 {
+        return FIELD_HEIGHT;
+    }
+
+    fn take_change(&mut self) -> bool {
+        return std::mem::take(&mut self.repeated);
+    }
+
+    fn set_enabled(&mut self, enabled: bool) {
+        self.textbox.set_enabled(enabled);
+        self.down.set_enabled(enabled);
+        self.up.set_enabled(enabled);
+    }
+}
+
+impl<S, E: PointerEvent + TextEvent> DialogInput<S, E> for NumberField<S, E> {
+    type Value = f32;
+
+    fn value(&self) -> f32 {
+        return self.value;
+    }
+
+    fn set_value(&mut self, value: f32) {
+        self.set(value);
+    }
+}
+
+fn step_button<S, E>(plus: bool, delay: Duration) -> Button<S, E> {
+    return Button::new(IncDec::new(plus, 6, 5, 1)).repeat(delay, DEFAULT_REPEAT_INTERVAL);
+}
+
+// as many decimals as the step has
+fn format_number(value: f32, step: f32) -> String {
+    let mut decimals = 0;
+    let mut step = step.abs();
+    while decimals < 3 && (step - step.round()).abs() > 1e-4 {
+        step *= 10.0;
+        decimals += 1;
+    }
+    return format!("{value:.decimals$}");
+}
+
 /// Steps through its options on each click, like Intuition's cycle gadget, with its label in
 /// front: a left click goes to the next one, a right click back. Its value is the chosen
 /// option's index.
@@ -880,7 +1061,7 @@ impl<S, E: PointerEvent> DialogInput<S, E> for Cycle<S, E> {
 /// Shows the chosen option, and pressing it opens a list of all of them to pick from, like
 /// ReAction's chooser. A click outside the list closes it as it was. Its value is the chosen
 /// option's index.
-pub struct PopupList<S, E> {
+pub struct Dropdown<S, E> {
     label: String,
     options: Vec<String>,
     chosen: usize,
@@ -890,7 +1071,7 @@ pub struct PopupList<S, E> {
     list_area: Rect,
 }
 
-impl<S, E> PopupList<S, E> {
+impl<S, E> Dropdown<S, E> {
     pub fn new(label: &str, options: &[&str]) -> Self {
         let options: Vec<String> = options.iter().map(|option| option.to_string()).collect();
         let first = options.first().cloned().unwrap_or_default();
@@ -927,9 +1108,9 @@ impl<S, E> PopupList<S, E> {
         return text_width(&self.label) + CHAR_WIDTH;
     }
 
-    fn button_width(&self) -> i32 {
+    pub(crate) fn button_width(&self) -> i32 {
         let widest = self.options.iter().map(|option| text_width(option)).max();
-        return widest.unwrap_or(0) + 2 * BUTTON_LABEL_PADDING + POPUP_ARROW_SPACE;
+        return widest.unwrap_or(0) + 2 * BUTTON_LABEL_PADDING + DROPDOWN_ARROW_SPACE;
     }
 
     // a press in the open list picks the option under it, anywhere else just closes it
@@ -938,14 +1119,14 @@ impl<S, E> PopupList<S, E> {
             return;
         };
         if self.list_area.contains(pos) {
-            let row = (pos[1] - self.list_area.y - 1) / POPUP_ROW_HEIGHT;
+            let row = (pos[1] - self.list_area.y - 1) / DROPDOWN_ROW_HEIGHT;
             self.choose(row.max(0) as usize);
         }
         self.open = false;
     }
 }
 
-impl<S, E: PointerEvent> Gadget<S, E> for PopupList<S, E> {
+impl<S, E: PointerEvent> Gadget<S, E> for Dropdown<S, E> {
     fn handle_event(&mut self, state: &mut S, event: &E) -> bool {
         if self.open {
             if let Some(mouse) = event.mouse() {
@@ -972,11 +1153,11 @@ impl<S, E: PointerEvent> Gadget<S, E> for PopupList<S, E> {
         );
         let button = Rect::new(rest.x, rest.y, self.button_width(), rest.h);
         self.button.render(state, button, painter);
-        render_popup_arrow(painter, button);
+        render_dropdown_arrow(painter, button);
     }
 }
 
-impl<S, E: PointerEvent> DialogComponent<S, E> for PopupList<S, E> {
+impl<S, E: PointerEvent> DialogComponent<S, E> for Dropdown<S, E> {
     fn height(&self) -> i32 {
         return FIELD_HEIGHT;
     }
@@ -987,16 +1168,16 @@ impl<S, E: PointerEvent> DialogComponent<S, E> for PopupList<S, E> {
             return;
         }
         let button = self.button.area();
-        let height = self.options.len() as i32 * POPUP_ROW_HEIGHT + 2;
+        let height = self.options.len() as i32 * DROPDOWN_ROW_HEIGHT + 2;
         self.list_area = Rect::new(button.x, button.bottom(), button.w, height);
         painter.fill(self.list_area, Pen::FILL);
         let inside = painter.frame(self.list_area, 1);
         for (index, option) in self.options.iter().enumerate() {
             let row = Rect::new(
                 inside.x,
-                inside.y + index as i32 * POPUP_ROW_HEIGHT,
+                inside.y + index as i32 * DROPDOWN_ROW_HEIGHT,
                 inside.w,
-                POPUP_ROW_HEIGHT,
+                DROPDOWN_ROW_HEIGHT,
             );
             let text = if index == self.chosen {
                 painter.fill(row, Pen::SHADOW);
@@ -1019,7 +1200,7 @@ impl<S, E: PointerEvent> DialogComponent<S, E> for PopupList<S, E> {
     }
 }
 
-impl<S, E: PointerEvent> DialogInput<S, E> for PopupList<S, E> {
+impl<S, E: PointerEvent> DialogInput<S, E> for Dropdown<S, E> {
     type Value = usize;
 
     fn value(&self) -> usize {
@@ -1032,11 +1213,11 @@ impl<S, E: PointerEvent> DialogInput<S, E> for PopupList<S, E> {
 }
 
 // a small arrow pointing down, at the button's right
-fn render_popup_arrow(painter: &mut Painter, button: Rect) {
-    let x = button.right() - POPUP_ARROW_SPACE;
+fn render_dropdown_arrow(painter: &mut Painter, button: Rect) {
+    let x = button.right() - DROPDOWN_ARROW_SPACE;
     let y = button.y + (button.h - 3) / 2;
     for row in 0..3 {
-        let width = POPUP_ARROW_WIDTH - 2 * row;
+        let width = DROPDOWN_ARROW_WIDTH - 2 * row;
         painter.fill(Rect::new(x + row, y + row, width, 1), Pen::BACKGROUND);
     }
 }
@@ -1390,6 +1571,87 @@ mod tests {
         assert_eq!(seen.get(), Some(false));
     }
 
+    fn number_dialog() -> (TestDialog, Field<f32>) {
+        let mut dialog = Dialog::new("Filter").submit_button("OK");
+        let strength = dialog.add_field(NumberField::new("Strength", 0.0, 1.0, 0.25).value(0.5));
+        return (dialog, strength);
+    }
+
+    // the number box and the + button, past the label
+    fn number_parts(dialog: &TestDialog) -> ([i32; 2], [i32; 2]) {
+        let content = TestWindow::content_area(dialog.window_rect(SCREEN));
+        let field = NumberField::<Log, TestEvent>::new("Strength", 0.0, 1.0, 0.25);
+        let x = content.x + PADDING[0] + text_width("Strength") + CHAR_WIDTH;
+        let y = content.y + PADDING[1] + 5;
+        return ([x + 4, y], [x + field.box_width() + 3 * CHAR_WIDTH, y]);
+    }
+
+    #[test]
+    fn number_field_steps_within_its_range() {
+        let mut log = Log::default();
+        let (dialog, strength) = number_dialog();
+        let mut dialog = dialog.on_submit(move |log: &mut Log, result| {
+            log.text = Some(result.get(strength).to_string());
+        });
+        render(&mut dialog, &log);
+        let (_, plus) = number_parts(&dialog);
+        for _ in 0..3 {
+            click(&mut dialog, &mut log, plus);
+        }
+        key(&mut dialog, &mut log, EditKey::Enter);
+        assert_eq!(log.text.as_deref(), Some("1"));
+        assert_eq!(format_number(0.5, 0.25), "0.50");
+        assert_eq!(format_number(64.0, 4.0), "64");
+    }
+
+    #[test]
+    fn holding_plus_keeps_stepping() {
+        let mut log = Log::default();
+        let mut dialog = Dialog::new("Filter").submit_button("OK");
+        let field = NumberField::new("Strength", 0.0, 1.0, 0.25)
+            .value(0.0)
+            .repeat_delay(Duration::ZERO);
+        let strength = dialog.add_field(field);
+        let seen = std::rc::Rc::new(std::cell::Cell::new(0.0));
+        let changes = seen.clone();
+        let mut dialog = dialog.on_change(move |_: &mut Log, fields| {
+            changes.set(fields.get(strength));
+        });
+        dialog.update(&mut log);
+        render(&mut dialog, &log);
+        let (_, plus) = number_parts(&dialog);
+        click(&mut dialog, &mut log, plus);
+        assert_eq!(seen.get(), 0.25);
+        dialog.update(&mut log);
+        assert_eq!(seen.get(), 0.5);
+    }
+
+    #[test]
+    fn number_field_takes_typing() {
+        let mut log = Log::default();
+        let (dialog, strength) = number_dialog();
+        let seen = std::rc::Rc::new(std::cell::Cell::new(0.0));
+        let changes = seen.clone();
+        let mut dialog = dialog.on_change(move |_: &mut Log, fields| {
+            changes.set(fields.get(strength));
+        });
+        render(&mut dialog, &log);
+        let (number, plus) = number_parts(&dialog);
+        click(&mut dialog, &mut log, number);
+        key(&mut dialog, &mut log, EditKey::SelectAll);
+        type_text(&mut dialog, &mut log, "0.3");
+        assert_eq!(seen.get(), 0.3);
+        // out of range is clamped, and something that isn't a number leaves it as it was
+        key(&mut dialog, &mut log, EditKey::SelectAll);
+        type_text(&mut dialog, &mut log, "7");
+        assert_eq!(seen.get(), 1.0);
+        type_text(&mut dialog, &mut log, "x");
+        assert_eq!(seen.get(), 1.0);
+        click(&mut dialog, &mut log, [1, 1]);
+        click(&mut dialog, &mut log, plus);
+        assert_eq!(seen.get(), 1.0);
+    }
+
     #[test]
     fn cycle_right_click_goes_back() {
         let mut log = Log::default();
@@ -1405,16 +1667,16 @@ mod tests {
         assert_eq!(log.button, Some(2));
     }
 
-    fn popup_dialog() -> (TestDialog, Field<usize>) {
+    fn dropdown_dialog() -> (TestDialog, Field<usize>) {
         let mut dialog = Dialog::new("Format").submit_button("OK");
-        let format = dialog.add_field(PopupList::new("Format:", &["MMD0", "MMD1", "MMD2"]));
+        let format = dialog.add_field(Dropdown::new("Format:", &["MMD0", "MMD1", "MMD2"]));
         return (dialog, format);
     }
 
     #[test]
-    fn popup_list_picks_an_option() {
+    fn dropdown_picks_an_option() {
         let mut log = Log::default();
-        let (dialog, format) = popup_dialog();
+        let (dialog, format) = dropdown_dialog();
         let mut dialog = dialog.on_submit(move |log: &mut Log, result| {
             log.button = Some(*result.get(format));
         });
@@ -1424,16 +1686,16 @@ mod tests {
         render(&mut dialog, &log);
         // the list opens under the button, a row per option
         let list = Rect::new(0, at[1] - 5 + FIELD_HEIGHT, 0, 0);
-        let third = [at[0], list.y + 1 + 2 * POPUP_ROW_HEIGHT + 3];
+        let third = [at[0], list.y + 1 + 2 * DROPDOWN_ROW_HEIGHT + 3];
         click(&mut dialog, &mut log, third);
         key(&mut dialog, &mut log, EditKey::Enter);
         assert_eq!(log.button, Some(2));
     }
 
     #[test]
-    fn popup_list_takes_events_while_open() {
+    fn dropdown_takes_events_while_open() {
         let mut log = Log::default();
-        let (dialog, _) = popup_dialog();
+        let (dialog, _) = dropdown_dialog();
         let mut dialog = logged(dialog);
         render(&mut dialog, &log);
         let at = first_row(&dialog, "Format:");

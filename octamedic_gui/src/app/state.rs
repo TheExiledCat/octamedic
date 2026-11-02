@@ -26,6 +26,7 @@ use crate::{
         cursor::EditCursor,
         files::browser::Browser,
         mode::{HeaderMode, MainMode},
+        screen_filters::ScreenFilters,
     },
     framework::widgets::Dialog,
 };
@@ -96,6 +97,7 @@ pub struct AppState {
     pub play_on_note: bool,
     pub meters: Meters,
     pub browser: Browser,
+    pub screen_filters: ScreenFilters,
     // opened since the dialog stack last looked
     pending_dialogs: Vec<Dialog>,
     // right click: the title bar shows and the meters and scrolling stop
@@ -148,6 +150,7 @@ impl AppState {
             play_on_note: false,
             meters: Meters::default(),
             browser: Browser::new(),
+            screen_filters: ScreenFilters::default(),
             pending_dialogs: Vec::new(),
             displays_off: false,
             video: DEFAULT_VIDEO,
