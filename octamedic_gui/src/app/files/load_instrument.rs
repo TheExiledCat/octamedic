@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, rc::Rc};
 
 use octamedic_core::{
     engine::period::note_period,
@@ -13,9 +13,12 @@ use octamedic_core::{
         wav::WavLoader,
     },
 };
-use rustuition::gadgets::dialog::{Checkbox, Cycle, Label};
+use rustuition::gadgets::dialog::{Checkbox, Cycle, DialogResult, Field, Label, Toggle};
 
-use crate::{app::state::AppState, framework::widgets::Dialog};
+use crate::{
+    app::state::AppState,
+    framework::widgets::{Dialog, DialogFields},
+};
 
 // tried in order, raw takes anything so it's last
 const LOADERS: &[&dyn InstrumentLoader] =
@@ -86,27 +89,78 @@ fn import_dialog(name: String, decoded: DecodedSample) -> Dialog {
     let channel_names = CHANNELS.map(|(name, _)| name);
     let channel = (decoded.channels.len() > 1)
         .then(|| dialog.add_field(Cycle::new("Channel:", &channel_names).chosen(DEFAULT_CHANNEL)));
+    let preview = dialog.add_field(Toggle::new("Preview", "Stop"));
+
+    let decoded = Rc::new(decoded);
+    let name = Rc::new(name);
     let original_rate = decoded.rate;
+    let settings = move |state: &AppState, fields: &Fields| {
+        let channel = channel.map_or(DEFAULT_CHANNEL, |field| fields.get(field));
+        let (_, note) = NOTES[fields.get(note)];
+        return ImportSettings {
+            channel: CHANNELS[channel].1,
+            downsample_to: fields.get(downsample).then(|| note_rate(state, note)),
+            allow_aliasing: fields.get(allow_aliasing),
+        };
+    };
+
+    // what's playing, so it only starts again when something changes
+    let mut previewing = None;
+    let (preview_sample, preview_name) = (decoded.clone(), name.clone());
     let dialog = dialog.on_change(move |state, fields| {
         let (_, target) = NOTES[fields.get(note)];
-        let target = note_rate(state, target);
-        let text = rate_text(fields.get(downsample), target, original_rate);
+        let text = rate_text(
+            fields.get(downsample),
+            note_rate(state, target),
+            original_rate,
+        );
         fields.set(new_rate, text);
-    });
-    return dialog.on_submit_checked(move |state, result| {
-        let channel = channel.map_or(DEFAULT_CHANNEL, |field| *result.get(field));
-        let (_, note) = NOTES[*result.get(note)];
-        let settings = ImportSettings {
-            channel: CHANNELS[channel].1,
-            downsample_to: result.get(downsample).then(|| note_rate(state, note)),
-            allow_aliasing: *result.get(allow_aliasing),
+
+        let wanted = fields
+            .get(preview)
+            .then(|| (settings(state, &Fields::Open(fields)), target));
+        if wanted == previewing {
+            return;
+        }
+        previewing = wanted;
+        let Some((settings, note)) = wanted else {
+            state.stop_preview();
+            return;
         };
-        let instrument = decoded
-            .to_instrument(&name, settings)
-            .map_err(|error| error.to_string())?;
-        state.replace_instrument(state.active_instrument, instrument);
-        return Ok(());
+        match preview_sample.to_instrument(&preview_name, settings) {
+            Ok(instrument) => state.preview(&instrument, note),
+            Err(error) => {
+                state.notify(error.to_string());
+                fields.set(preview, false);
+                previewing = None;
+            }
+        }
     });
+    return dialog
+        .on_cancel(|state| state.stop_preview())
+        .on_submit_checked(move |state, result| {
+            state.stop_preview();
+            let instrument = decoded
+                .to_instrument(&name, settings(state, &Fields::Result(result)))
+                .map_err(|error| error.to_string())?;
+            state.replace_instrument(state.active_instrument, instrument);
+            return Ok(());
+        });
+}
+
+// the dialog's values while it's open, or once it's submitted
+enum Fields<'a> {
+    Open(&'a DialogFields<'a>),
+    Result(&'a DialogResult),
+}
+
+impl Fields<'_> {
+    fn get<T: Copy + 'static>(&self, field: Field<T>) -> T {
+        return match self {
+            Fields::Open(fields) => fields.get(field),
+            Fields::Result(result) => *result.get(field),
+        };
+    }
 }
 
 fn note_rate(state: &AppState, note: u8) -> u32 {

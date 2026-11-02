@@ -191,6 +191,11 @@ impl OctamedicEngine {
                 instrument,
             } => self.note_on(track, note, Some(instrument)),
             EngineCommand::ReleaseNote { track } => self.release(track),
+            EngineCommand::Preview(Some((sample, note))) => {
+                let period = note_period(note.value, 0, 0);
+                self.trigger(0, sample, period, MAX_INSTRUMENT_VOLUME);
+            }
+            EngineCommand::Preview(None) => self.release(0),
         }
     }
 
@@ -722,6 +727,26 @@ mod tests {
             .filter(|(channel, _)| *channel == 0)
             .map(|(_, write)| write.clone())
             .collect();
+    }
+
+    #[test]
+    fn preview_plays_without_an_instrument() {
+        let (mut engine, commands, recorder) = recording_engine();
+        let sample = instrument().sample().cloned().unwrap();
+        let note = OctamedicNote { value: 13 };
+        commands
+            .send(EngineCommand::Preview(Some((sample, note))))
+            .unwrap();
+        commands.send(EngineCommand::Preview(None)).unwrap();
+        run(&mut engine, 1);
+        let writes = recorder.writes.lock().unwrap();
+        let channel_0: Vec<&PaulaWrite> = writes
+            .iter()
+            .filter(|(channel, _)| *channel == 0)
+            .map(|(_, write)| write)
+            .collect();
+        assert!(channel_0.contains(&&PaulaWrite::Period(note_period(13, 0, 0))));
+        assert_eq!(channel_0.last(), Some(&&PaulaWrite::DmaOff));
     }
 
     #[test]

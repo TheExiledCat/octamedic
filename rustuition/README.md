@@ -172,8 +172,9 @@ let button = Button::new("FILES")
 
 `Button::new` takes any `ButtonContent`: `&str`, `String`, `Line`, a `Triangle` (`.with_bar()`
 puts a bar across the point, like jump to start/end), an `ArrowLabel` or an `IncDec` (plus or
-minus). Your own content types implement `render`, plus `index_at` if it matters which part got
-clicked. `set_text` / `set_content` change it later.
+minus). A closure taking `(ContentArea, Pen, &mut Painter)` works too, for a one-off picture.
+Your own content types implement `render`, plus `index_at` if it matters which part got clicked.
+`set_text` / `set_content` change it later.
 
 It clicks the moment it's pressed, like Intuition's `GACT_IMMEDIATE` gadgets. The handler gets the
 state and a `ButtonClick` with the mouse button and `char_index` (the label character under the
@@ -233,8 +234,8 @@ let dialog = dialog.on_submit(move |state, result| state.rename(result.get(name)
 ```
 
 `with` adds something that only shows (a `Label`), `add_field` something with a value
-(`TextField`, `Checkbox`, `Cycle`, `PopupList`, or a `Label` whose text changes) and gives back a
-`Field` that reads it from the `DialogResult`, already the right type. Each button submits or
+(`TextField`, `Checkbox`, `Cycle`, `PopupList`, `Toggle`, or a `Label` whose text changes) and
+gives back a `Field` that reads it from the `DialogResult`, already the right type. Each button submits or
 cancels; Enter presses the first submit button, and Escape and the close gadget cancel unless
 `cancellable(false)`. `on_submit_checked` can refuse with a message, which keeps the dialog open.
 `on_change` runs when it opens and whenever a component takes an event, and its `DialogFields`

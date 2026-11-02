@@ -11,8 +11,8 @@ adds on top, in `src/framework/`, and how OctaMED's screens in `src/app/` are pu
 - `framework/widgets/mod.rs`: `Button` and `Slider` aliases with `AppState` and `Event` filled in.
   Use these rather than rustuition's, so handlers know they get an `AppState`. App gadgets
   implement `Gadget<AppState, Event>`.
-- `framework/widgets/symbols.rs`: OctaMED's picture button contents (`Blocks`, `MusicSymbol`), and
-  `audio_view.rs` the scopes and VU meters.
+- `framework/widgets/symbols.rs`: OctaMED's picture button contents (`blocks`, `MusicSymbol`,
+  `stacked_text`), and `audio_view.rs` the scopes and VU meters.
 - `app/fonts.rs`: OctaMED's own fonts, redrawn by hand in `assets/fonts/` since the originals
   aren't around anywhere. `INTERFACE` (OctaMED's own 8x8, for numbers and names like the status
   row, Topaz for anything it doesn't have), `PANEL` (gadget labels like `FILES`, 6 lines, capitals

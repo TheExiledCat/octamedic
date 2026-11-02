@@ -7,7 +7,7 @@ use octamedic_core::data::{
 use rustuition::{
     gadget::Gadget,
     gadgets::{
-        button::{ArrowLabel, ButtonContent, ContentArea, IncDec, Triangle},
+        button::{ArrowLabel, ContentArea, IncDec, Triangle},
         slider::SliderDirection,
     },
     painter::{
@@ -355,30 +355,26 @@ fn set_tempo_value(state: &mut AppState, index: usize, value: u16) {
 }
 
 // OctaMED doesn't centre this, and spaces the slash wider than the status row does
-struct TempoReadout([u16; 2]);
+const TEMPO_INDENT: i32 = 3;
+const TEMPO_SLASH_GAPS: [i32; 2] = [1, 2];
 
-impl TempoReadout {
-    const INDENT: i32 = 3;
-    const SLASH_GAPS: [i32; 2] = [1, 2];
-}
-
-impl ButtonContent for TempoReadout {
-    fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter) {
-        let [primary, secondary] = self.0;
-        let parts = [
-            format!("{primary:03}"),
-            POSITION_SLASH.to_string(),
-            format!("{secondary:02}"),
-        ];
-        let gaps = [0, Self::SLASH_GAPS[0], Self::SLASH_GAPS[1]];
-        let mut x = area.inside.x + Self::INDENT;
+// the two tempo numbers with the narrow slash between them
+fn tempo_readout([primary, secondary]: [u16; 2]) -> impl Fn(ContentArea, Pen, &mut Painter) {
+    let parts = [
+        format!("{primary:03}"),
+        POSITION_SLASH.to_string(),
+        format!("{secondary:02}"),
+    ];
+    return move |area, pen, painter| {
+        let gaps = [0, TEMPO_SLASH_GAPS[0], TEMPO_SLASH_GAPS[1]];
+        let mut x = area.inside.x + TEMPO_INDENT;
         let y = text_y(area.padded, fonts::INTERFACE.height());
         for (part, gap) in parts.iter().zip(gaps) {
             x += gap;
             painter.text_in_font(x, y, part, pen, fonts::INTERFACE);
             x += fonts::INTERFACE.width(part);
         }
-    }
+    };
 }
 
 fn left_clicked(button: &mut Button) -> bool {
@@ -440,7 +436,7 @@ impl Playback {
             }),
             slid: [1; 2],
             tempo_mode: Button::new("BPM"),
-            tempo: Button::new(TempoReadout([1; 2])),
+            tempo: Button::new(tempo_readout([1; 2])),
             hex: label_button("HEX"),
             dec: label_button("DEC"),
             filter: label_button("FILTER"),
@@ -506,7 +502,7 @@ impl Playback {
         }
         self.tempo_mode
             .set_text(if tempo.is_bpm_mode { "BPM" } else { "SPD" });
-        self.tempo.set_content(TempoReadout(values));
+        self.tempo.set_content(tempo_readout(values));
     }
 
     fn update_meters(&mut self, state: &mut AppState) {

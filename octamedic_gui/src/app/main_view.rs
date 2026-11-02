@@ -1,4 +1,4 @@
-use ggez::input::keyboard::KeyCode;
+use ggez::input::keyboard::{KeyCode, KeyMods};
 use rustuition::{
     gadget::Gadget,
     painter::{Align, CHAR_HEIGHT, Painter, Pen},
@@ -102,6 +102,11 @@ impl Gadget<AppState, Event> for MainView {
             state.displays_off = !state.displays_off;
             return true;
         }
+        // last, so a text field being typed in gets its space first
+        if !taken && is_space(event) {
+            state.stop();
+            return true;
+        }
         return taken;
     }
 
@@ -139,6 +144,17 @@ impl Gadget<AppState, Event> for MainView {
     }
 }
 
+fn is_space(event: &Event) -> bool {
+    return match *event {
+        Event::Text {
+            character: ' ',
+            mods,
+            ..
+        } => !mods.intersects(KeyMods::CTRL | KeyMods::ALT | KeyMods::LOGO),
+        _ => false,
+    };
+}
+
 impl KeyActions for MainView {
     type Action = MainAction;
 
@@ -173,6 +189,30 @@ mod tests {
             button: MouseButton::Right,
         };
         return view.handle_event(state, &event);
+    }
+
+    #[test]
+    fn space_stops_unless_typing() {
+        use rustuition::target::Framebuffer;
+
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        state.set_song_name("ab");
+        let mut view = MainView::new();
+        assert!(view.handle_event(&mut state, &Event::text(' ')));
+        view.update(&mut state);
+        let mut screen = Framebuffer::new(640, 256);
+        view.render(
+            &state,
+            screen.bounds(),
+            &mut Painter::new(&mut screen, &state.palette),
+        );
+        let song_name = Event::MouseDown {
+            pos: [600, 200],
+            button: MouseButton::Left,
+        };
+        assert!(view.handle_event(&mut state, &song_name));
+        assert!(view.handle_event(&mut state, &Event::text(' ')));
+        assert_eq!(state.song().name(), "ab ");
     }
 
     #[test]

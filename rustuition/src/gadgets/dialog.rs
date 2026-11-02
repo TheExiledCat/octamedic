@@ -709,6 +709,74 @@ impl<S, E: PointerEvent> DialogInput<S, E> for Checkbox<S, E> {
     }
 }
 
+/// A push button that stays in or out, showing `off` or `on` to say which, like a play button
+/// that turns into stop. Its value is whether it's in.
+pub struct Toggle<S, E> {
+    labels: [String; 2],
+    on: bool,
+    button: Button<S, E>,
+}
+
+impl<S, E> Toggle<S, E> {
+    pub fn new(off: &str, on: &str) -> Self {
+        return Self {
+            labels: [off.to_owned(), on.to_owned()],
+            on: false,
+            button: Button::new(off.to_owned()),
+        };
+    }
+
+    fn set_on(&mut self, on: bool) {
+        self.on = on;
+        self.button.set_text(self.labels[on as usize].clone());
+    }
+
+    // the wider label, so it doesn't change size
+    fn button_width(&self) -> i32 {
+        let widest = self.labels.iter().map(|label| text_width(label)).max();
+        return widest.unwrap_or(0) + 2 * BUTTON_LABEL_PADDING;
+    }
+}
+
+impl<S, E: PointerEvent> Gadget<S, E> for Toggle<S, E> {
+    fn handle_event(&mut self, state: &mut S, event: &E) -> bool {
+        if !self.button.handle_event(state, event) {
+            return false;
+        }
+        if self.button.clicked().is_some() {
+            self.set_on(!self.on);
+        }
+        return true;
+    }
+
+    fn render(&mut self, state: &S, area: Rect, painter: &mut Painter) {
+        let button = Rect::new(area.x, area.y, self.button_width(), area.h);
+        self.button.render(state, button, painter);
+    }
+}
+
+impl<S, E: PointerEvent> DialogComponent<S, E> for Toggle<S, E> {
+    fn height(&self) -> i32 {
+        return FIELD_HEIGHT;
+    }
+
+    fn set_enabled(&mut self, enabled: bool) {
+        self.button.set_enabled(enabled);
+    }
+}
+
+impl<S, E: PointerEvent> DialogInput<S, E> for Toggle<S, E> {
+    type Value = bool;
+
+    fn value(&self) -> bool {
+        return self.on;
+    }
+
+    fn set_value(&mut self, on: bool) {
+        self.set_on(on);
+    }
+}
+
 /// Steps through its options on each click, like Intuition's cycle gadget, with its label in
 /// front: a left click goes to the next one, a right click back. Its value is the chosen
 /// option's index.
@@ -1299,6 +1367,27 @@ mod tests {
         let content = TestWindow::content_area(dialog.window_rect(SCREEN));
         let x = content.x + PADDING[0] + text_width(label) + CHAR_WIDTH + 5;
         return [x, content.y + PADDING[1] + 5];
+    }
+
+    #[test]
+    fn toggle_flips_and_stays_open() {
+        let mut log = Log::default();
+        let mut dialog = Dialog::new("Sample").submit_button("OK");
+        let preview = dialog.add_field(Toggle::new("Preview", "Stop"));
+        let seen = std::rc::Rc::new(std::cell::Cell::new(None));
+        let changes = seen.clone();
+        let mut dialog = dialog.on_change(move |_: &mut Log, fields| {
+            changes.set(Some(fields.get(preview)));
+        });
+        render(&mut dialog, &log);
+        dialog.update(&mut log);
+        assert_eq!(seen.get(), Some(false));
+        let button = first_row(&dialog, "");
+        click(&mut dialog, &mut log, button);
+        assert_eq!(seen.get(), Some(true));
+        assert!(!dialog.is_closed());
+        click(&mut dialog, &mut log, button);
+        assert_eq!(seen.get(), Some(false));
     }
 
     #[test]

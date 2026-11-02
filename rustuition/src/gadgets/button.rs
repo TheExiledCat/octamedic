@@ -48,6 +48,14 @@ pub trait ButtonContent {
     }
 }
 
+/// A closure that does the drawing itself, for one-off pictures:
+/// `Button::new(|area: ContentArea, pen, painter: &mut Painter| painter.fill(area.inside, pen))`.
+impl<F: Fn(ContentArea, Pen, &mut Painter)> ButtonContent for F {
+    fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter) {
+        self(area, pen, painter);
+    }
+}
+
 impl ButtonContent for Line<'static> {
     fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter) {
         let (line, x) = place_line(self, area);
@@ -738,5 +746,21 @@ mod tests {
         assert_eq!(top_edge(Highlight::Complement, true), shine);
         assert_eq!(top_edge(Highlight::Recess, false), shine);
         assert_eq!(top_edge(Highlight::Recess, true), shadow);
+    }
+
+    #[test]
+    fn closure_content_draws_itself() {
+        let palette =
+            IntuitionColorPalette::new([Color(0x000), Color(0xFFF), Color(0x666), Color(0xAAA)]);
+        let mut button = Button::<()>::new(|area: ContentArea, pen, painter: &mut Painter| {
+            painter.fill(area.inside, pen);
+        });
+        let mut screen = Framebuffer::new(20, 10);
+        button.render(
+            &(),
+            screen.bounds(),
+            &mut Painter::new(&mut screen, &palette),
+        );
+        assert_eq!(screen.pixel(10, 5), Some([0, 0, 0]));
     }
 }

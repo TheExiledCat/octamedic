@@ -3,10 +3,7 @@ use std::array;
 use rustuition::{
     font::Font,
     gadget::Gadget,
-    gadgets::{
-        button::{ButtonContent, ContentArea},
-        dialog::Label,
-    },
+    gadgets::dialog::Label,
     painter::{Painter, Pen},
     rect::Rect,
 };
@@ -15,7 +12,7 @@ use crate::{
     app::{files::load_module, fonts, pens, state::AppState},
     framework::{
         event::Event,
-        widgets::{Button, Dialog, Textbox},
+        widgets::{Button, Dialog, Textbox, symbols::stacked_text},
     },
 };
 
@@ -84,7 +81,7 @@ impl Files {
                 label_button("LOAD INSTR"),
                 unhooked(label_button("SAVE INSTR")),
             ],
-            del_file: Button::new(StackedText(&DEL_FILE_LINES)),
+            del_file: Button::new(stacked_text(&DEL_FILE_LINES)),
             msg: array::from_fn(|_| unhooked(label_button("MSG"))),
             map: array::from_fn(|_| unhooked(label_button("MAP"))),
             dir: name_box(),
@@ -247,17 +244,6 @@ fn render_stacked_pair(
 ) {
     for (button, rect) in buttons.iter_mut().zip(rect.split_rows(2)) {
         button.render(state, rect, painter);
-    }
-}
-
-struct StackedText(&'static [(&'static str, [i32; 2])]);
-
-impl ButtonContent for StackedText {
-    fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter) {
-        for (text, [x, y]) in self.0 {
-            let (x, y) = (area.inside.x + x, area.inside.y + y);
-            painter.text_in_font(x, y, text, pen, fonts::SMALL);
-        }
     }
 }
 

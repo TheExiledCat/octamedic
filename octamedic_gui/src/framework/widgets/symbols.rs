@@ -4,34 +4,38 @@ use rustuition::{
     rect::Rect,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Blocks {
-    pub count: i32,
-}
+use crate::app::fonts;
 
-impl Blocks {
-    pub fn new(count: i32) -> Self {
-        return Self { count };
-    }
+const BLOCK_WIDTH: i32 = 8;
+const BLOCK_GAP: i32 = 6;
+const BLOCK_STRIPES: i32 = 3;
 
-    const WIDTH: i32 = 8;
-    const GAP: i32 = 6;
-    const STRIPES: i32 = 3;
-}
-
-impl ButtonContent for Blocks {
-    fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter) {
+// a row of striped blocks, the block editor's picture
+pub fn blocks(count: i32) -> impl Fn(ContentArea, Pen, &mut Painter) {
+    return move |area, pen, painter| {
         let inside = area.inside;
-        let width = self.count * Self::WIDTH + (self.count - 1).max(0) * Self::GAP;
+        let width = count * BLOCK_WIDTH + (count - 1).max(0) * BLOCK_GAP;
         let x = aligned_text_x(inside, width, Align::Center);
-        for block in 0..self.count {
-            let block_x = x + block * (Self::WIDTH + Self::GAP);
-            for stripe in 0..Self::STRIPES {
-                let line = Rect::new(block_x, inside.y + 1 + 2 * stripe, Self::WIDTH, 1);
+        for block in 0..count {
+            let block_x = x + block * (BLOCK_WIDTH + BLOCK_GAP);
+            for stripe in 0..BLOCK_STRIPES {
+                let line = Rect::new(block_x, inside.y + 1 + 2 * stripe, BLOCK_WIDTH, 1);
                 painter.fill(line, pen);
             }
         }
-    }
+    };
+}
+
+// small capitals placed by hand, for labels squeezed onto more than one line
+pub fn stacked_text(
+    lines: &'static [(&'static str, [i32; 2])],
+) -> impl Fn(ContentArea, Pen, &mut Painter) {
+    return move |area, pen, painter| {
+        for (text, [x, y]) in lines {
+            let (x, y) = (area.inside.x + x, area.inside.y + y);
+            painter.text_in_font(x, y, text, pen, fonts::SMALL);
+        }
+    };
 }
 
 // copied off OctaMED's picture button. each has its spacing built in so a row of them comes

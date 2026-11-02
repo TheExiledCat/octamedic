@@ -15,7 +15,7 @@ use crate::{
         event::Event,
         widgets::{
             Button,
-            symbols::{Blocks, MusicSymbol, MusicSymbols},
+            symbols::{MusicSymbol, MusicSymbols, blocks},
         },
     },
 };
@@ -66,9 +66,7 @@ impl ModeButtons {
             .iter()
             .map(|&(label, binding)| {
                 let button = match binding {
-                    ModeBinding::Main(MainMode::BlockEditor) => {
-                        Button::new(Blocks::new(PICTURE_BLOCKS))
-                    }
+                    ModeBinding::Main(MainMode::BlockEditor) => Button::new(blocks(PICTURE_BLOCKS)),
                     ModeBinding::Main(MainMode::NotationEditor) => Button::new(MusicSymbols([
                         MusicSymbol::Note,
                         MusicSymbol::BassClef,

@@ -44,6 +44,10 @@ the sample plays at its original pitch on that note. Paula can't play faster tha
 (about 31 kHz, and its DMA tops out around 28.6 kHz), so a 44.1 kHz sample can never play at its
 original speed; downsampling is how you get it to.
 
+Preview plays the sample on the first track the way it would come out with the dialog's
+settings, at the chosen note, and turns into Stop. Changing a setting while it plays starts it
+again with the new one, and closing the dialog stops it.
+
 ## Multi-octave samples
 
 MMD instrument types 1 to 6 (`IFF5OCT`, `IFF3OCT`, `IFF2OCT`, `IFF4OCT`, `IFF6OCT`, `IFF7OCT`) are

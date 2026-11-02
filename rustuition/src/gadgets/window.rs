@@ -1,7 +1,7 @@
 use crate::{
     event::PointerEvent,
     gadget::Gadget,
-    gadgets::button::{Button, ButtonContent, ContentArea},
+    gadgets::button::{Button, ContentArea},
     painter::{CHAR_HEIGHT, Painter, Pen, inside_frame, text_y},
     rect::Rect,
 };
@@ -26,14 +26,14 @@ impl<S, E> Window<S, E> {
     pub fn new(title: impl Into<String>) -> Self {
         return Self {
             title: title.into(),
-            close_gadget: Some(Button::new(CloseGadget)),
+            close_gadget: Some(Button::new(close_gadget)),
             close_clicked: false,
         };
     }
 
     /// With a close gadget or not. New windows have one.
     pub fn closable(mut self, closable: bool) -> Self {
-        self.close_gadget = closable.then(|| Button::new(CloseGadget));
+        self.close_gadget = closable.then(|| Button::new(close_gadget));
         return self;
     }
 
@@ -97,20 +97,17 @@ impl<S, E: PointerEvent> Gadget<S, E> for Window<S, E> {
     }
 }
 
-struct CloseGadget;
-
-impl ButtonContent for CloseGadget {
-    fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter) {
-        let [w, h] = CLOSE_GADGET_KNOB;
-        let inside = area.inside;
-        let knob = Rect::new(
-            inside.x + (inside.w - w) / 2,
-            inside.y + (inside.h - h) / 2,
-            w,
-            h,
-        );
-        painter.fill(knob, pen);
-    }
+// the small square knob in the middle
+fn close_gadget(area: ContentArea, pen: Pen, painter: &mut Painter) {
+    let [w, h] = CLOSE_GADGET_KNOB;
+    let inside = area.inside;
+    let knob = Rect::new(
+        inside.x + (inside.w - w) / 2,
+        inside.y + (inside.h - h) / 2,
+        w,
+        h,
+    );
+    painter.fill(knob, pen);
 }
 
 #[cfg(test)]

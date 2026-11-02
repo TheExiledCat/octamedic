@@ -14,6 +14,7 @@ use octamedic_core::{
         project::OctamedicProject,
         song::{OctamedicSong, SongId},
         tempo::OctamedicTempo,
+        volume::MAX_VOLUME,
     },
     engine::{engine::PlayMode, handle::EngineHandle},
 };
@@ -388,6 +389,18 @@ impl AppState {
         self.queued_sequence_index = None;
     }
 
+    // plays at `note`, without it going in the song
+    pub fn preview(&self, instrument: &OctamedicInstrument, note: u8) {
+        if let Some(sample) = instrument.sample() {
+            self.engine
+                .preview(sample.clone(), OctamedicNote { value: note });
+        }
+    }
+
+    pub fn stop_preview(&self) {
+        self.engine.stop_preview();
+    }
+
     pub fn replace_instrument(&mut self, id: InstrumentId, instrument: OctamedicInstrument) {
         let Some(index) = id.index() else {
             return;
@@ -509,6 +522,29 @@ impl AppState {
 
     pub fn set_song_name(&mut self, name: &str) {
         self.song_mut().set_name(name);
+    }
+
+    pub fn set_track_volume(&mut self, track: usize, volume: u8) {
+        let volume = volume.min(MAX_VOLUME);
+        let current = self
+            .song()
+            .track_volumes
+            .get(track)
+            .map(|volume| volume.get());
+        if current.is_none_or(|current| current == volume) {
+            return;
+        }
+        self.song_mut().track_volumes[track].set(volume);
+        self.engine.set_track_volume(track, volume);
+    }
+
+    pub fn set_master_volume(&mut self, volume: u8) {
+        let volume = volume.min(MAX_VOLUME);
+        if self.song().master_volume.get() == volume {
+            return;
+        }
+        self.song_mut().master_volume.set(volume);
+        self.engine.set_master_volume(volume);
     }
 
     pub fn set_volumes_hex(&mut self, hex: bool) {
