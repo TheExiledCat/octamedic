@@ -46,12 +46,10 @@ impl<S, E> Window<S, E> {
         return std::mem::take(&mut self.close_clicked);
     }
 
-    /// How tall a window is with `content_height` pixels of contents.
     pub fn height_for(content_height: i32) -> i32 {
         return 2 * FRAME_THICKNESS + TITLE_BAR_HEIGHT + content_height;
     }
 
-    /// Where the contents go in a window drawn at `area`.
     pub fn content_area(area: Rect) -> Rect {
         let (_, content) = inside_frame(area, FRAME_THICKNESS).split_top(TITLE_BAR_HEIGHT);
         return content;

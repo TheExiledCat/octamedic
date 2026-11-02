@@ -2,7 +2,10 @@ use std::fs;
 
 use octamedic_core::{
     data::{
+        flac_loader::FlacLoader,
         instrument_loader::{InstrumentLoader, find_loader, instrument_name},
+        mp3_loader::Mp3Loader,
+        raw_loader::RawLoader,
         sample_import::{DecodedSample, ImportSettings, SampleChannel},
         wav_loader::WavLoader,
     },
@@ -12,8 +15,8 @@ use rustuition::gadgets::dialog::{Checkbox, Cycle, Label};
 
 use crate::{app::state::AppState, framework::widgets::Dialog};
 
-// every format LOAD INSTR knows, tried in order
-const LOADERS: &[&dyn InstrumentLoader] = &[&WavLoader];
+// tried in order, raw takes anything so it's last
+const LOADERS: &[&dyn InstrumentLoader] = &[&WavLoader, &FlacLoader, &Mp3Loader, &RawLoader];
 
 // downsampling converts to the rate this note plays at, so it plays at its original pitch there.
 // the numbers are the engine's notes, counted from 1 = C-1 in semitones, so 13 = C-2 and 25 = C-3
@@ -26,8 +29,7 @@ const CHANNELS: [(&str, SampleChannel); 3] = [
 ];
 const DEFAULT_CHANNEL: usize = 2;
 
-/// Loads the file selected in the browser into the active instrument, asking how first if its
-/// format wants to.
+/// Into the active instrument, asking how first if the format wants to.
 pub fn load_selected_instrument(state: &mut AppState) {
     load_with(state, LOADERS);
 }
@@ -98,12 +100,11 @@ fn import_dialog(name: String, decoded: DecodedSample) -> Dialog {
     });
 }
 
-// in Hz, on the machine it's running as
+// on the current machine
 fn note_rate(state: &AppState, note: u8) -> u32 {
     return state.video().clock().paula_clock / note_period(note, 0, 0) as u32;
 }
 
-// what rate it ends up at, downsampling never goes up
 fn rate_text(downsample: bool, target: u32, original: u32) -> String {
     if downsample && target < original {
         return format!("New rate: {target} Hz");
@@ -117,7 +118,10 @@ fn describe(decoded: &DecodedSample) -> String {
         2 => "stereo".to_owned(),
         count => format!("{count} channels"),
     };
-    return format!("{} Hz, {} bit, {channels}", decoded.rate, decoded.bits);
+    return match decoded.bits {
+        Some(bits) => format!("{} Hz, {bits} bit, {channels}", decoded.rate),
+        None => format!("{} Hz, {channels}", decoded.rate),
+    };
 }
 
 #[cfg(test)]
@@ -182,12 +186,22 @@ mod tests {
     }
 
     #[test]
-    fn other_files_arent_samples() {
-        let (mut state, folder) = state_with_file("song.mmd0", b"not a sample");
+    fn unrecognized_files_load_as_raw() {
+        let (mut state, folder) = state_with_file("bassdrum", &[0x00, 0x7F, 0x80]);
         load_selected_instrument(&mut state);
         let _ = fs::remove_dir_all(&folder);
-        assert_eq!(state.notification.as_deref(), Some("Not a sample"));
         assert!(state.take_pending_dialogs().is_empty());
+        let instrument = state.song().instruments[0].clone().unwrap();
+        assert_eq!(instrument.name, "bassdrum");
+        assert_eq!(instrument.sample.unwrap().data, [0, 127, -128]);
+    }
+
+    #[test]
+    fn nothing_recognizes_it_without_raw() {
+        let (mut state, folder) = state_with_file("song.mmd0", b"not a wav");
+        load_with(&mut state, &[&WavLoader]);
+        let _ = fs::remove_dir_all(&folder);
+        assert_eq!(state.notification.as_deref(), Some("Not a sample"));
     }
 
     #[test]
@@ -234,14 +248,19 @@ mod tests {
     fn describes_the_file() {
         let decoded = DecodedSample {
             rate: 44_100,
-            bits: 16,
+            bits: Some(16),
             channels: vec![vec![], vec![]],
             repeat: None,
         };
         assert_eq!(describe(&decoded), "44100 Hz, 16 bit, stereo");
+        let mp3 = DecodedSample {
+            bits: None,
+            channels: vec![vec![]],
+            ..decoded
+        };
+        assert_eq!(describe(&mp3), "44100 Hz, mono");
     }
 
-    // already what Paula plays, so it doesn't ask
     struct ReadyLoader;
 
     impl InstrumentLoader for ReadyLoader {
@@ -256,7 +275,7 @@ mod tests {
         {
             return Ok(DecodedSample {
                 rate: 8287,
-                bits: 8,
+                bits: Some(8),
                 channels: vec![bytes[5..].iter().map(|&b| b as i8 as f32 / 128.0).collect()],
                 repeat: None,
             });

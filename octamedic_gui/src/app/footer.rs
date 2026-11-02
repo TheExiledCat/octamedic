@@ -104,7 +104,7 @@ impl Footer {
         return Self {
             block_name,
             song_name,
-            mode: Button::new("NRM"),
+            mode: Button::new("NRM").enabled(false),
             instruments: [MeterLevel::default(); INSTRUMENT_SLOTS],
             notes: [MeterLevel::default(); NOTE_SLOTS],
             seen: [0; MAX_TRACKS],

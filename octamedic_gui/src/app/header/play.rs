@@ -420,6 +420,10 @@ impl Playback {
         let mut channel_modes: [Button; CHANNEL_MODES_COUNT] =
             array::from_fn(|mode| label_button(CHANNEL_MODE_LABELS[mode]));
         channel_modes[0].set_toggled(true);
+        // STS, HQ and the channel modes don't do anything yet
+        for mode in &mut channel_modes {
+            mode.set_enabled(false);
+        }
         return Self {
             sliders: [
                 Slider::new(SliderDirection::Horizontal, false, MAX_BPM as u16),
@@ -442,8 +446,8 @@ impl Playback {
             dec: label_button("DEC"),
             filter: label_button("FILTER"),
             meters: ["E1", "E2", "E3"].map(label_button),
-            sts: toggled("STS"),
-            hq: label_button("HQ"),
+            sts: toggled("STS").enabled(false),
+            hq: label_button("HQ").enabled(false),
             channel_modes,
             stop: label_button("STOP").bold(),
             starts: PlayStart::ALL.map(|start| {
@@ -536,22 +540,6 @@ impl Playback {
         self.filter.set_toggled(state.song().flags.filter_on);
     }
 
-    // these don't affect playback yet
-    fn update_switches(&mut self) {
-        let switches = [&mut self.sts, &mut self.hq];
-        for button in switches {
-            if left_clicked(button) {
-                button.toggle();
-            }
-        }
-        let chosen = self.channel_modes.iter_mut().position(left_clicked);
-        if let Some(chosen) = chosen {
-            for (mode, button) in self.channel_modes.iter_mut().enumerate() {
-                button.set_toggled(mode == chosen);
-            }
-        }
-    }
-
     fn update_playing(&mut self, state: &mut AppState) {
         if left_clicked(&mut self.stop) {
             state.stop();
@@ -578,7 +566,6 @@ impl Gadget<AppState, Event> for Playback {
         self.update_volume_base(state);
         self.update_filter(state);
         self.update_meters(state);
-        self.update_switches();
         self.update_playing(state);
     }
 

@@ -3,7 +3,10 @@ use std::array;
 use rustuition::{
     font::Font,
     gadget::Gadget,
-    gadgets::button::{ButtonContent, ContentArea},
+    gadgets::{
+        button::{ButtonContent, ContentArea},
+        dialog::Label,
+    },
     painter::{Painter, Pen},
     rect::Rect,
 };
@@ -68,15 +71,23 @@ impl Files {
                 .pens(Pen::BACKGROUND, Pen::SHINE, Pen::FILL, pens::RED)
                 .padding(0)
         };
+        // ghosted until they're hooked up
+        let unhooked = |button: Button| button.enabled(false);
         return Self {
-            formats: FORMAT_LABELS.map(|(label, font)| Button::new(label).font(font)),
-            info: label_button("INFO"),
-            icon: label_button("ICON"),
-            song: ["LOAD SONG", "SAVE SONG"].map(label_button),
-            instr: ["LOAD INSTR", "SAVE INSTR"].map(label_button),
+            formats: FORMAT_LABELS.map(|(label, font)| unhooked(Button::new(label).font(font))),
+            info: unhooked(label_button("INFO")),
+            icon: unhooked(label_button("ICON")),
+            song: [
+                label_button("LOAD SONG"),
+                unhooked(label_button("SAVE SONG")),
+            ],
+            instr: [
+                label_button("LOAD INSTR"),
+                unhooked(label_button("SAVE INSTR")),
+            ],
             del_file: Button::new(StackedText(&DEL_FILE_LINES)),
-            msg: array::from_fn(|_| label_button("MSG")),
-            map: array::from_fn(|_| label_button("MAP")),
+            msg: array::from_fn(|_| unhooked(label_button("MSG"))),
+            map: array::from_fn(|_| unhooked(label_button("MAP"))),
             dir: name_box(),
             file: name_box(),
             dir_was_focused: false,
@@ -116,6 +127,9 @@ impl Gadget<AppState, Event> for Files {
         let [load_instrument, _] = &mut self.instr;
         if load_instrument.clicked().is_some() {
             crate::app::load_instrument::load_selected_instrument(state);
+        }
+        if self.del_file.clicked().is_some() {
+            delete_selected_file(state);
         }
         if !self.dir.is_focused() {
             self.dir.set_text(state.browser.path().to_string_lossy());
@@ -176,7 +190,8 @@ fn load_selected_song(state: &mut AppState) {
         load_song(state, &path);
         return;
     }
-    let dialog = Dialog::confirm("Load song", "The song has unsaved changes.\nLoad anyway?")
+    let dialog = Dialog::new("Load song")
+        .with(Label::new("The song has unsaved changes.\nLoad anyway?"))
         .submit_button("Load")
         .cancel_button("Cancel")
         .on_submit_checked(move |state, _| {
@@ -184,6 +199,23 @@ fn load_selected_song(state: &mut AppState) {
             state.load_project(project);
             return Ok(());
         });
+    state.open_dialog(dialog);
+}
+
+fn delete_selected_file(state: &mut AppState) {
+    let Some(name) = state.browser.selected_file() else {
+        state.notify("Select a file to delete first");
+        return;
+    };
+    let path = state.browser.path().join(name);
+    let dialog = Dialog::confirm("Delete file", &format!("Delete {name}?")).on_submit_checked(
+        move |state, _| {
+            std::fs::remove_file(&path).map_err(|_| "Can't delete it".to_owned())?;
+            let folder = state.browser.path().to_path_buf();
+            let _ = state.browser.open(folder);
+            return Ok(());
+        },
+    );
     state.open_dialog(dialog);
 }
 
@@ -340,6 +372,68 @@ mod tests {
         click_load_song(&mut files, &mut state);
         assert_eq!(state.take_pending_dialogs().len(), 1);
         assert_eq!(state.song().name(), "edited");
+    }
+
+    fn folder_with_file(name: &str) -> (AppState, std::path::PathBuf) {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        let folder =
+            std::env::temp_dir().join(format!("octamedic-del-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join(name), b"x").unwrap();
+        state.browser.open(&folder).unwrap();
+        state.browser.select_file(Some(name.to_owned()));
+        return (state, folder);
+    }
+
+    fn key(key: ggez::input::keyboard::KeyCode) -> Event {
+        return Event::Key {
+            key,
+            mods: ggez::input::keyboard::KeyMods::NONE,
+            repeat: false,
+        };
+    }
+
+    #[test]
+    fn del_file_asks_then_deletes() {
+        let (mut state, folder) = folder_with_file("old.wav");
+        delete_selected_file(&mut state);
+        let mut dialogs = state.take_pending_dialogs();
+        dialogs[0].handle_event(&mut state, &key(ggez::input::keyboard::KeyCode::Return));
+        let gone = !folder.join("old.wav").exists();
+        let _ = std::fs::remove_dir_all(&folder);
+        assert!(gone);
+        assert!(state.browser.files().is_empty());
+        assert_eq!(state.browser.selected_file(), None);
+    }
+
+    #[test]
+    fn del_file_cancelled_keeps_it() {
+        let (mut state, folder) = folder_with_file("keep.wav");
+        delete_selected_file(&mut state);
+        let mut dialogs = state.take_pending_dialogs();
+        dialogs[0].handle_event(&mut state, &key(ggez::input::keyboard::KeyCode::Escape));
+        let kept = folder.join("keep.wav").exists();
+        let _ = std::fs::remove_dir_all(&folder);
+        assert!(kept);
+    }
+
+    #[test]
+    fn del_file_needs_a_selection() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        delete_selected_file(&mut state);
+        assert_eq!(
+            state.notification.as_deref(),
+            Some("Select a file to delete first")
+        );
+        assert!(state.take_pending_dialogs().is_empty());
+    }
+
+    #[test]
+    fn unhooked_buttons_are_ghosted() {
+        let files = Files::new();
+        assert!(!files.info.is_enabled() && !files.song[1].is_enabled());
+        assert!(files.song[0].is_enabled() && files.del_file.is_enabled());
     }
 
     #[test]

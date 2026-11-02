@@ -5,18 +5,14 @@ use crate::data::{
     sample_import::{DecodedSample, ImportSettings},
 };
 
-/// Reads one audio file format. Each format gets its own, and [`find_loader`] picks one by
-/// looking at the file's header, since plenty of files, especially old Amiga ones, have no
-/// extension. Making it into an instrument is the same for every format, see
-/// [`DecodedSample::to_instrument`].
+/// One audio file format. Picked by the file's header, not its extension, since old Amiga files
+/// often have none.
 pub trait InstrumentLoader {
-    /// Whether the file's bytes start the way this format does.
     fn recognizes(&self, bytes: &[u8]) -> bool;
 
     fn decode(&self, bytes: &[u8]) -> Result<DecodedSample, InstrumentLoadError>;
 
-    /// Whether to ask about channel and downsampling before importing. A format that's already
-    /// what Paula plays doesn't need to.
+    /// Whether to ask about channel and downsampling first.
     fn asks_for_settings(&self) -> bool {
         return true;
     }
@@ -30,7 +26,6 @@ pub enum InstrumentLoadError {
     Malformed(String),
 }
 
-// short, it's shown in a notification or a dialog
 impl Display for InstrumentLoadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         return match self {
@@ -43,7 +38,6 @@ impl Display for InstrumentLoadError {
 
 impl std::error::Error for InstrumentLoadError {}
 
-/// The first of `loaders` that recognizes `bytes`.
 pub fn find_loader<'a>(
     bytes: &[u8],
     loaders: &[&'a dyn InstrumentLoader],
@@ -62,7 +56,6 @@ pub fn instrument_name(path: &Path) -> String {
         .unwrap_or_default();
 }
 
-/// Loads `path` with the first of `loaders` that recognizes it, named after the file.
 pub fn load_instrument(
     path: &Path,
     loaders: &[&dyn InstrumentLoader],
@@ -95,7 +88,7 @@ mod tests {
             let samples = &bytes[RAW_HEADER.len()..];
             return Ok(DecodedSample {
                 rate: 8000,
-                bits: 8,
+                bits: Some(8),
                 channels: vec![
                     samples
                         .iter()

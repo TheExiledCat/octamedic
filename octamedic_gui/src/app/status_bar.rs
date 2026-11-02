@@ -1,3 +1,4 @@
+use ggez::input::keyboard::KeyCode;
 use octamedic_util::{base32, core_extensions::Boxed, primitives::Flip};
 use rustuition::{
     gadget::Gadget,
@@ -17,6 +18,7 @@ use crate::{
     },
     framework::{
         event::{Event, MouseButton},
+        keymap::{Action, Key, KeyActions, Keymap},
         widgets::Button,
     },
 };
@@ -41,7 +43,16 @@ const SONG: usize = 11;
 const GAUGE_COLUMNS: usize = 8;
 const GAUGE_ROWS: usize = 2;
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum StatusBarAction {
+    NextInstrument,
+    PrevInstrument,
+}
+
+impl Action for StatusBarAction {}
+
 pub struct StatusBar {
+    keys: Keymap<StatusBarAction>,
     boxes: Vec<Button>,
     gauge: Grid<Button>,
 }
@@ -89,8 +100,9 @@ impl StatusBar {
                 state.select_block(target);
             }
         });
-        boxes[PREVIOUS_SONG] = Button::new(Triangle::arrow(Direction::Left));
-        boxes[NEXT_SONG] = Button::new(Triangle::arrow(Direction::Right));
+        // there's only ever one song for now
+        boxes[PREVIOUS_SONG] = Button::new(Triangle::arrow(Direction::Left)).enabled(false);
+        boxes[NEXT_SONG] = Button::new(Triangle::arrow(Direction::Right)).enabled(false);
         boxes[SONG] = Button::new("").align(Align::Right).font(fonts::INTERFACE);
         let flags: [(usize, &str, i32, Option<Box<dyn ButtonHandler<AppState>>>); 3] = [
             (
@@ -108,8 +120,9 @@ impl StatusBar {
                 .align(Align::Left)
                 .font(fonts::SMALL)
                 .padding_xy(padding, 1);
-            if let Some(handler) = handler {
-                button.set_on_click(handler);
+            match handler {
+                Some(handler) => button.set_on_click(handler),
+                None => button.set_enabled(false),
             }
             boxes[index] = button;
         }
@@ -141,6 +154,17 @@ impl StatusBar {
 
         let gauge_boxes = (0..GAUGE_COLUMNS * GAUGE_ROWS).map(track_button).collect();
         return Self {
+            keys: Keymap::new("status")
+                .bind(
+                    Key::shift(KeyCode::Right),
+                    StatusBarAction::NextInstrument,
+                    "Next instrument",
+                )
+                .bind(
+                    Key::shift(KeyCode::Left),
+                    StatusBarAction::PrevInstrument,
+                    "Prev instrument",
+                ),
             boxes,
             gauge: Grid::new(GAUGE_COLUMNS, GAUGE_ROWS, gauge_boxes),
         };
@@ -193,7 +217,8 @@ impl Gadget<AppState, Event> for StatusBar {
     }
 
     fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
-        return self.gauge.handle_event(state, event)
+        return self.dispatch(state, event)
+            || self.gauge.handle_event(state, event)
             || self
                 .boxes
                 .iter_mut()
@@ -221,6 +246,28 @@ fn track_button(track: usize) -> Button {
                 state.toggle_track_mute(track);
             }
         });
+}
+
+impl KeyActions for StatusBar {
+    type Action = StatusBarAction;
+
+    fn keymap(&self) -> &Keymap<StatusBarAction> {
+        return &self.keys;
+    }
+
+    fn perform(&mut self, action: StatusBarAction, state: &mut AppState) {
+        match action {
+            StatusBarAction::NextInstrument => state.next_instrument(),
+            StatusBarAction::PrevInstrument => state.prev_instrument(),
+        };
+    }
+
+    fn describe(action: StatusBarAction) -> &'static str {
+        return match action {
+            StatusBarAction::NextInstrument => "Next instrument",
+            StatusBarAction::PrevInstrument => "Previous instrument",
+        };
+    }
 }
 
 #[cfg(test)]
@@ -253,5 +300,27 @@ mod tests {
             .collect();
         assert_eq!(muted, [9]);
         assert!(!status.gauge.cells()[9].is_toggled());
+    }
+
+    #[test]
+    fn shift_arrows_change_instrument() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        let mut status = StatusBar::new();
+        let shift = |key| Event::Key {
+            key,
+            mods: ggez::input::keyboard::KeyMods::SHIFT,
+            repeat: false,
+        };
+        assert!(status.handle_event(&mut state, &shift(KeyCode::Right)));
+        assert!(status.handle_event(&mut state, &shift(KeyCode::Right)));
+        assert_eq!(state.active_instrument.0, 3);
+        status.handle_event(&mut state, &shift(KeyCode::Left));
+        assert_eq!(state.active_instrument.0, 2);
+        let plain = Event::Key {
+            key: KeyCode::Left,
+            mods: ggez::input::keyboard::KeyMods::NONE,
+            repeat: false,
+        };
+        assert!(!status.handle_event(&mut state, &plain));
     }
 }

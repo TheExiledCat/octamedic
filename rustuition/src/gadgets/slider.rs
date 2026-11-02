@@ -38,6 +38,7 @@ pub struct Slider<S, E = MouseEvent> {
     value: u16,
     on_slide: Option<Rc<dyn SlideHandler<S>>>,
     drag: Option<Drag>,
+    enabled: bool,
     // from the last render
     area: Rect,
     events: PhantomData<fn(&E)>,
@@ -54,6 +55,7 @@ impl<S, E> Slider<S, E> {
             value: 0,
             on_slide: None,
             drag: None,
+            enabled: true,
             area: Rect::default(),
             events: PhantomData,
         };
@@ -85,6 +87,18 @@ impl<S, E> Slider<S, E> {
     /// Changes what's called when it's dragged.
     pub fn set_on_slide(&mut self, handler: impl Fn(&mut S, Slide) + 'static) {
         self.on_slide = Some(Rc::new(handler));
+    }
+
+    /// A disabled slider is ghosted and can't be dragged.
+    pub fn set_enabled(&mut self, enabled: bool) {
+        self.enabled = enabled;
+        if !enabled {
+            self.drag = None;
+        }
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        return self.enabled;
     }
 
     /// The value it's at.
@@ -183,6 +197,9 @@ impl<S, E> Clone for Slider<S, E> {
 
 impl<S, E: PointerEvent> Gadget<S, E> for Slider<S, E> {
     fn handle_event(&mut self, state: &mut S, event: &E) -> bool {
+        if !self.enabled {
+            return false;
+        }
         let Some(event) = event.mouse() else {
             return false;
         };
@@ -237,6 +254,9 @@ impl<S, E: PointerEvent> Gadget<S, E> for Slider<S, E> {
                 Pen::SHADOW,
             );
         }
+        if !self.enabled {
+            painter.ghost(area, Pen::BACKGROUND);
+        }
     }
 }
 
@@ -260,6 +280,21 @@ mod tests {
             SliderDirection::Vertical => Rect::new(10, 20, 8, 128),
         };
         return slider;
+    }
+
+    #[test]
+    fn disabled_ignores_drags() {
+        let mut slider = slider(SliderDirection::Horizontal, false);
+        slider.set_enabled(false);
+        let press = MouseEvent::Down {
+            pos: [100, 22],
+            button: MouseButton::Left,
+        };
+        assert!(!slider.handle_event(&mut (), &press));
+        assert_eq!(slider.value(), 0);
+        slider.set_enabled(true);
+        assert!(slider.handle_event(&mut (), &press));
+        assert!(slider.value() > 0);
     }
 
     #[test]

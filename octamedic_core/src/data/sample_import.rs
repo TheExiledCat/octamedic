@@ -5,12 +5,12 @@ use crate::data::{
     instrument_loader::InstrumentLoadError,
 };
 
-/// A sample as a format loader read it, before it's made into what Paula plays.
+/// A sample as a loader read it, before it's made into what Paula plays.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DecodedSample {
     pub rate: u32,
-    /// The file's own bit depth, to show before importing.
-    pub bits: u16,
+    /// `None` for formats without one, like MP3.
+    pub bits: Option<u16>,
     /// One list per channel, -1.0..1.0.
     pub channels: Vec<Vec<f32>>,
     /// Loop start..end in frames, for formats that store one.
@@ -25,14 +25,12 @@ pub enum SampleChannel {
     Mixed,
 }
 
-/// How a decoded sample gets made into an instrument.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ImportSettings {
-    /// Only matters for samples with more than one channel.
     pub channel: SampleChannel,
-    /// Converts it to this rate, if that's lower than its own. Never upsamples.
+    /// Never upsamples.
     pub downsample_to: Option<u32>,
-    /// Downsamples by picking the nearest sample instead of averaging, which keeps the aliasing.
+    /// Picks the nearest sample instead of averaging, which keeps the aliasing.
     pub allow_aliasing: bool,
 }
 
@@ -47,7 +45,7 @@ impl Default for ImportSettings {
 }
 
 impl DecodedSample {
-    /// 8-bit mono at the rate the settings ask for, which is all Paula plays.
+    /// 8-bit mono, which is all Paula plays.
     pub fn to_instrument(
         &self,
         name: &str,
@@ -125,7 +123,6 @@ fn average_over(samples: &[f32], start: f64, end: f64) -> f32 {
     return (sum / (end - start)) as f32;
 }
 
-// the old sample at the new one's start, the rest are dropped
 fn nearest(samples: &[f32], position: f64) -> f32 {
     return samples.get(position as usize).copied().unwrap_or(0.0);
 }
@@ -142,7 +139,7 @@ mod tests {
     fn decoded(rate: u32, channels: Vec<Vec<f32>>) -> DecodedSample {
         return DecodedSample {
             rate,
-            bits: 16,
+            bits: Some(16),
             channels,
             repeat: None,
         };

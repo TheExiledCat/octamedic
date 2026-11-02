@@ -28,18 +28,19 @@ const POPUP_ARROW_SPACE: i32 = POPUP_ARROW_WIDTH + 6;
 pub trait DialogComponent<S, E>: Gadget<S, E> {
     fn height(&self) -> i32;
 
-    /// Draws on top of the whole dialog, after everything else, like an open popup list.
+    /// Drawn after everything else, like an open popup list.
     fn render_overlay(&mut self, state: &S, painter: &mut Painter) {}
 
-    /// Whether it gets every event, before the dialog's own keys and buttons, like a popup list
-    /// while it's open.
+    /// Whether it gets every event first, like an open popup list.
     fn captures_events(&self) -> bool {
         return false;
     }
+
+    /// Ghosts it and stops it taking input. Only the gadget, not its label, like GadTools.
+    fn set_enabled(&mut self, enabled: bool) {}
 }
 
-/// A component with a value: one the user fills in, or one [`Dialog::on_change`] sets. Its value
-/// comes back in the [`DialogResult`].
+/// A component with a value, which comes back in the [`DialogResult`].
 pub trait DialogInput<S, E>: DialogComponent<S, E> {
     type Value: 'static;
 
@@ -84,8 +85,7 @@ impl DialogResult {
     }
 }
 
-/// A dialog's fields while it's open, handed to [`Dialog::on_change`]. Any field can be read, and
-/// set, so one can follow another, like a label showing what a cycle is on.
+/// The fields while the dialog is open, for [`Dialog::on_change`] to read and set.
 pub struct DialogFields<'a, S, E> {
     slots: &'a mut [Box<dyn Slot<S, E>>],
 }
@@ -100,6 +100,10 @@ impl<S, E> DialogFields<'_, S, E> {
 
     pub fn set<T: 'static>(&mut self, field: Field<T>, value: T) {
         self.slots[field.index].set_value(Box::new(value));
+    }
+
+    pub fn set_enabled<T>(&mut self, field: Field<T>, enabled: bool) {
+        self.slots[field.index].component().set_enabled(enabled);
     }
 }
 
@@ -188,7 +192,7 @@ pub struct Dialog<S, E> {
     on_submit: Option<OnSubmit<S>>,
     on_cancel: Option<OnCancel<S>>,
     on_change: Option<OnChange<S, E>>,
-    // on_change runs on the first update, so whatever follows another field starts out right
+    // on_change also runs on the first update
     opened: bool,
     // from the last submit that was refused
     error: Option<String>,
@@ -219,6 +223,7 @@ impl<S: 'static, E: PointerEvent + TextEvent + 'static> Dialog<S, E> {
         return Self::new(title).with(Label::new(text)).submit_button("OK");
     }
 
+    /// With OK and Cancel. For other buttons, start from [`Dialog::new`].
     pub fn confirm(title: impl Into<String>, text: &str) -> Self {
         return Self::new(title)
             .with(Label::new(text))
@@ -352,7 +357,6 @@ impl<S: 'static, E: PointerEvent + TextEvent + 'static> Dialog<S, E> {
         self.on_change = Some(handler);
     }
 
-    // a component that captures events gets them all, while it does
     fn handle_captured(&mut self, state: &mut S, event: &E) -> bool {
         let captured = self
             .slots
@@ -620,6 +624,10 @@ impl<S, E: PointerEvent + TextEvent> DialogComponent<S, E> for TextField<S, E> {
     fn height(&self) -> i32 {
         return FIELD_HEIGHT;
     }
+
+    fn set_enabled(&mut self, enabled: bool) {
+        self.textbox.set_enabled(enabled);
+    }
 }
 
 impl<S, E: PointerEvent + TextEvent> DialogInput<S, E> for TextField<S, E> {
@@ -684,6 +692,10 @@ impl<S, E: PointerEvent> Gadget<S, E> for Checkbox<S, E> {
 impl<S, E: PointerEvent> DialogComponent<S, E> for Checkbox<S, E> {
     fn height(&self) -> i32 {
         return FIELD_HEIGHT;
+    }
+
+    fn set_enabled(&mut self, enabled: bool) {
+        self.button.set_enabled(enabled);
     }
 }
 
@@ -780,6 +792,10 @@ impl<S, E: PointerEvent> Gadget<S, E> for Cycle<S, E> {
 impl<S, E: PointerEvent> DialogComponent<S, E> for Cycle<S, E> {
     fn height(&self) -> i32 {
         return FIELD_HEIGHT;
+    }
+
+    fn set_enabled(&mut self, enabled: bool) {
+        self.button.set_enabled(enabled);
     }
 }
 
@@ -929,6 +945,11 @@ impl<S, E: PointerEvent> DialogComponent<S, E> for PopupList<S, E> {
 
     fn captures_events(&self) -> bool {
         return self.open;
+    }
+
+    fn set_enabled(&mut self, enabled: bool) {
+        self.button.set_enabled(enabled);
+        self.open &= enabled;
     }
 }
 
@@ -1374,6 +1395,26 @@ mod tests {
         let result = dialog.result(0);
         assert_eq!(result.get(name), "kick");
         assert!(*result.get(looped));
+    }
+
+    #[test]
+    fn disabled_fields_ignore_clicks() {
+        let mut log = Log::default();
+        let mut dialog = Dialog::new("Options").submit_button("OK");
+        let looped = dialog.add_field(Checkbox::new("Loop"));
+        let mut dialog = dialog
+            .on_change(move |_: &mut Log, fields| fields.set_enabled(looped, false))
+            .on_submit(move |log: &mut Log, result| log.checked = Some(*result.get(looped)));
+        dialog.update(&mut log);
+        render(&mut dialog, &log);
+        let content = TestWindow::content_area(dialog.window_rect(SCREEN));
+        click(
+            &mut dialog,
+            &mut log,
+            [content.x + PADDING[0] + 5, content.y + PADDING[1] + 5],
+        );
+        key(&mut dialog, &mut log, EditKey::Enter);
+        assert_eq!(log.checked, Some(false));
     }
 
     #[test]

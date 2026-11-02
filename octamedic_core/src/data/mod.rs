@@ -1,10 +1,14 @@
+pub mod audio_decode;
 pub mod command;
+pub mod flac_loader;
 pub mod instrument;
 pub mod instrument_loader;
+pub mod mp3_loader;
 pub mod note;
 pub mod palette;
 pub mod pattern;
 pub mod project;
+pub mod raw_loader;
 pub mod sample_import;
 pub mod song;
 pub mod tempo;

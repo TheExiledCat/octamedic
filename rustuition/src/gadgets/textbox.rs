@@ -41,6 +41,7 @@ pub struct Textbox<S, E = MouseEvent> {
     cursor_pen: Pen,
     selection_pen: Pen,
     on_update: Option<Rc<dyn TextHandler<S>>>,
+    enabled: bool,
     // from the last render
     area: Rect,
     events: PhantomData<fn(&E)>,
@@ -66,6 +67,7 @@ impl<S, E> Textbox<S, E> {
             cursor_pen: Pen::FILL,
             selection_pen: Pen::SHADOW,
             on_update: None,
+            enabled: true,
             area: Rect::default(),
             events: PhantomData,
         };
@@ -124,6 +126,18 @@ impl<S, E> Textbox<S, E> {
     pub fn cursor_to_end(&mut self) {
         self.cursor = self.len();
         self.anchor = None;
+    }
+
+    /// A disabled text box is ghosted, can't be focused and doesn't take typing.
+    pub fn set_enabled(&mut self, enabled: bool) {
+        self.enabled = enabled;
+        if !enabled {
+            self.set_focused(false);
+        }
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        return self.enabled;
     }
 
     pub fn is_focused(&self) -> bool {
@@ -388,6 +402,9 @@ impl<S, E> Clone for Textbox<S, E> {
 
 impl<S, E: PointerEvent + TextEvent> Gadget<S, E> for Textbox<S, E> {
     fn handle_event(&mut self, state: &mut S, event: &E) -> bool {
+        if !self.enabled {
+            return false;
+        }
         if let Some(input) = event.text_input() {
             return self.focused && self.type_text(state, input);
         }
@@ -454,6 +471,15 @@ impl<S, E: PointerEvent + TextEvent> Gadget<S, E> for Textbox<S, E> {
                 }
             }
         });
+        if !self.enabled {
+            // black dots wouldn't show on a black box
+            let dots = if self.fill == Pen::BACKGROUND {
+                Pen::FILL
+            } else {
+                Pen::BACKGROUND
+            };
+            painter.ghost(area, dots);
+        }
     }
 }
 
@@ -505,6 +531,20 @@ mod tests {
     // topaz is 8 wide, the text starts 4 in: the frame's 2 and the padding's 2
     fn char_x(index: i32) -> i32 {
         return 4 + index * 8 + 1;
+    }
+
+    #[test]
+    fn disabled_ignores_clicks_and_typing() {
+        let mut textbox = textbox("hello");
+        textbox.set_focused(true);
+        textbox.set_enabled(false);
+        assert!(!textbox.is_focused());
+        let down = MouseEvent::Down {
+            pos: [char_x(2), 5],
+            button: MouseButton::Left,
+        };
+        assert!(!textbox.handle_event(&mut (), &down));
+        assert!(!textbox.is_focused());
     }
 
     #[test]
