@@ -1,5 +1,6 @@
-// the note, then two digits each for the instrument, command and value
-pub const TRACK_COLUMNS: usize = 7;
+// the note, the instrument's right digit (its left one can't be typed, so the cursor skips it),
+// then two digits each for the command and value
+pub const TRACK_COLUMNS: usize = 6;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct EditCursor {

@@ -5,6 +5,7 @@ use octamed::utility::note::SEMITONES_PER_OCTAVE;
 use octamedic_core::{
     amiga::paula::SCOPE_CHANNELS,
     data::{
+        instrument::InstrumentId,
         pattern::{OctamedicPattern, OctamedicPatternTrack},
         track_count::TrackCount,
     },
@@ -243,7 +244,7 @@ impl BlockEditor {
         let index = cursor.track.checked_sub(self.first_track)?;
         let (offset, width) = match cursor.column {
             0 => (0, NOTE_CHARS),
-            digit => (NOTE_CHARS + digit as i32 - 1, 1),
+            digit => (NOTE_CHARS + digit as i32, 1),
         };
         let x = layout.x + (layout.track_column(index) + offset) * layout.char_width;
         let width = width * layout.char_width;
@@ -527,11 +528,12 @@ impl Layout {
     }
 }
 
-// in edit mode a note key also writes the note and moves down by the line add
+// in edit mode a note key also writes the note and moves down by the line add, and so does a
+// digit in the instrument, command and value columns
 fn enter_key(state: &mut AppState, key: char) -> bool {
     let cursor = state.cursor;
     if cursor.column != 0 {
-        return false;
+        return cursor.edit_mode && enter_digit(state, key);
     }
     if !cursor.edit_mode {
         return state.play_key(cursor.track, key).is_some();
@@ -542,11 +544,59 @@ fn enter_key(state: &mut AppState, key: char) -> bool {
     if state.play_on_note && !state.is_playing() {
         state.start(PlayStart::Block);
     }
+    move_down(state);
+    return true;
+}
+
+fn enter_digit(state: &mut AppState, key: char) -> bool {
+    let cursor = state.cursor;
+    let Some(&cell) = state
+        .active_pattern()
+        .and_then(|pattern| pattern.track(cursor.line, cursor.track))
+    else {
+        return false;
+    };
+    let Some(typed) = with_digit(cell, cursor.column, key) else {
+        return false;
+    };
+    state.edit_track(cursor.line, cursor.track, |cell| *cell = typed);
+    move_down(state);
+    return true;
+}
+
+fn move_down(state: &mut AppState) {
     let lines = state
         .active_pattern()
         .map_or(0, |pattern| pattern.line_count());
     state.cursor.move_lines(state.line_add as isize, lines);
-    return true;
+}
+
+// the instrument's right base 32 digit, then the command's and the value's two hex digits each.
+// like OctaMED the instrument's left digit can't be typed, so typing gives 0 to V and higher ones
+// come from entering a note with that instrument selected. None if `key` isn't a digit there
+fn with_digit(
+    mut cell: OctamedicPatternTrack,
+    column: usize,
+    key: char,
+) -> Option<OctamedicPatternTrack> {
+    match column {
+        1 => cell.instrument_id = InstrumentId(base32::digit_value(key)? as u8),
+        2..=5 => {
+            let digit = key.to_digit(16)? as u8;
+            let high = column % 2 == 0;
+            let byte = match column {
+                2 | 3 => &mut cell.command_id.0,
+                _ => &mut cell.command_value,
+            };
+            *byte = if high {
+                digit << 4 | *byte & 0x0F
+            } else {
+                *byte & 0xF0 | digit
+            };
+        }
+        _ => return None,
+    }
+    return Some(cell);
 }
 
 fn note_text(note: u8) -> String {
@@ -772,6 +822,54 @@ mod tests {
     }
 
     #[test]
+    fn digits_go_where_the_cursor_is() {
+        let cell = OctamedicPatternTrack::new();
+        let typed = |cell, column, key| with_digit(cell, column, key).unwrap();
+        let cell = typed(cell, 1, 'v');
+        assert_eq!(cell.instrument_id, InstrumentId(31));
+        let cell = typed(cell, 2, 'c');
+        let cell = typed(cell, 5, '7');
+        assert_eq!(
+            (cell.command_id, cell.command_value),
+            (CommandId(0xC0), 0x07)
+        );
+        let cell = typed(cell, 3, 'F');
+        let cell = typed(cell, 4, '4');
+        assert_eq!(
+            (cell.command_id, cell.command_value),
+            (CommandId(0xCF), 0x47)
+        );
+        assert_eq!(track_text(&cell), "--- VCF47");
+    }
+
+    #[test]
+    fn digits_that_dont_fit() {
+        let mut cell = OctamedicPatternTrack::new();
+        // 0 to 9 and A to V for the instrument
+        assert!(with_digit(cell, 1, 'w').is_none());
+        // typing replaces a higher instrument
+        cell.instrument_id = InstrumentId(40);
+        let typed = with_digit(cell, 1, '3').unwrap();
+        assert_eq!(typed.instrument_id, InstrumentId(3));
+        assert!(with_digit(cell, 2, 'g').is_none());
+        assert!(with_digit(cell, 6, '1').is_none());
+        assert!(with_digit(cell, 0, '1').is_none());
+    }
+
+    #[test]
+    fn typing_commands_in_edit_mode() {
+        let (mut editor, mut state) = (BlockEditor::new(), state());
+        state.cursor.column = 2;
+        assert!(!editor.handle_event(&mut state, &Event::text('9')));
+        state.cursor.edit_mode = true;
+        assert!(editor.handle_event(&mut state, &Event::text('9')));
+        let cell = *state.active_pattern().unwrap().track(0, 0).unwrap();
+        assert_eq!(cell.command_id, CommandId(0x90));
+        assert_eq!(state.cursor.line, 1);
+        assert!(!state.is_saved());
+    }
+
+    #[test]
     fn play_on_note_starts_block() {
         let (mut editor, mut state) = (BlockEditor::new(), state());
         state.play_on_note = true;
@@ -813,9 +911,9 @@ mod tests {
         press(&mut editor, &mut state, KeyCode::Up, KeyMods::NONE);
         assert_eq!(state.cursor.line, 63);
         press(&mut editor, &mut state, KeyCode::Left, KeyMods::NONE);
-        assert_eq!((state.cursor.track, state.cursor.column), (3, 6));
+        assert_eq!((state.cursor.track, state.cursor.column), (3, 5));
         press(&mut editor, &mut state, KeyCode::Right, KeyMods::ALT);
-        assert_eq!((state.cursor.track, state.cursor.column), (0, 6));
+        assert_eq!((state.cursor.track, state.cursor.column), (0, 5));
         editor.visible_tracks = 4;
         press(&mut editor, &mut state, KeyCode::Right, KeyMods::CTRL);
         assert_eq!(state.cursor.track, 3);

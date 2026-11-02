@@ -85,6 +85,12 @@ row's, in hex like OctaMED: 12 up to 9A. Clicking it goes up (right click down) 
 F1 to F5 only go up to 5. Shift+Left and Shift+Right change the instrument. Holding a note key
 repeats it like a new press.
 
+In edit mode the block editor types into whichever column the cursor is on: a note key in the
+note column, a base 32 digit (0-9, A-V) in the instrument's right column, and a hex digit in the
+command's and the value's. Each moves the cursor down by the line add, like a note. Like OctaMED,
+the cursor skips the instrument's left digit, so instruments past 0V go in by entering a note with
+the instrument selected.
+
 `app/files/mod.rs` knows the folders: the config folder (`config.toml`, `keybinds.toml`) and the
 projects folder inside the music folder. `initialize` creates them at startup.
 

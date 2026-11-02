@@ -18,6 +18,7 @@ A faithful clone of OctaMED Professional v4
 ## Quality of life goals
 
 - Undo buffer, for fixing accidental deletions
+- Optional setting to let the block editor's cursor onto the instrument's left digit, so instruments above 0V can be typed in directly (the original skips it, so only 0 to V can be typed)
 - Extra keybinds for block selection, creation, UI highlighting etc (Full mouseless possibilities)
 - Support for importing modern WAV, MP3, FLAC formats (in mono, converted to 8 bit)
 - Support for rendering as WAV and MP3
