@@ -110,6 +110,12 @@ the song's filter flag. It keeps running while off, so switching it doesn't clic
 
 16-bit and stereo samples become 8-bit mono at load time, since that's all Paula plays.
 
+Multi-octave samples (MMD instrument types 1 to 6, and IFF 8SVX files with more than one octave)
+play the octave copy and period the tables in [FILES.md](FILES.md) pick for each note
+(`period::sample_note`), and `OctamedicSample::octave_copy` finds that copy and its loop in the
+data. ExtSample (type 7) plays two octaves under the table. The 16-bit wrap on very long copies
+isn't copied.
+
 ## Not done yet
 
 - Effects (the command column). `tick` has a spot for them.
@@ -119,8 +125,6 @@ the song's filter flag. It keeps running while off, so switching it doesn't clic
   middle.
 - The A500's fixed RC low-pass (about 4.4kHz, always on, unlike the LED filter).
 - Paula can't fetch faster than a period of about 124 allows, the renderer doesn't limit that.
-- Multi-octave samples (MMD instrument types 1 to 6) play as one long sample. The player picks one
-  of the octave copies for each note and a period for it; [FILES.md](FILES.md) has the tables.
 - MIDI and synth instruments.
 - Hold and decay. An instrument with a hold length plays each note for that many ticks and then
   fades out by its decay. A line after the note with no note but the same instrument (shown as

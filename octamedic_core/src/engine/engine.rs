@@ -4,7 +4,7 @@ use octamed::mmd::module::SONG_TRACKS;
 
 use super::{
     handle::{EngineCommand, EngineStatus},
-    period::note_period,
+    period::sample_note,
 };
 use crate::{
     amiga::{
@@ -192,8 +192,8 @@ impl OctamedicEngine {
             } => self.note_on(track, note, Some(instrument)),
             EngineCommand::ReleaseNote { track } => self.release(track),
             EngineCommand::Preview(Some((sample, note))) => {
-                let period = note_period(note.value, 0, 0);
-                self.trigger(0, sample, period, MAX_INSTRUMENT_VOLUME);
+                let (copy, period) = sample_note(note.value, 0, 0, sample.octaves);
+                self.trigger(0, sample, copy, period, MAX_INSTRUMENT_VOLUME);
             }
             EngineCommand::Preview(None) => self.release(0),
         }
@@ -430,7 +430,8 @@ impl OctamedicEngine {
             return;
         };
         let transpose = instrument.transpose.wrapping_add(self.global_transpose);
-        let period = note_period(note.value, transpose, instrument.finetune);
+        let (copy, period) =
+            sample_note(note.value, transpose, instrument.finetune, sample.octaves);
         let max = MAX_INSTRUMENT_VOLUME as u32;
         let volume = instrument.volume as u32 * self.track_volumes[track] as u32 / max
             * self.master_volume as u32
@@ -440,23 +441,31 @@ impl OctamedicEngine {
             self.status
                 .note_triggered(track, note.value, instrument, volume as u8);
         }
-        self.trigger(track, sample, period, volume as u8);
+        self.trigger(track, sample, copy, period, volume as u8);
     }
 
     // same order the 68k player does it: dma off, sample, period, volume, dma on, then the
-    // repeat range, which is the loop or silence
-    fn trigger(&mut self, channel: usize, sample: Arc<OctamedicSample>, period: u16, volume: u8) {
-        let (first, repeat) = match sample.repeat {
-            Some((start, end)) => (
-                end,
+    // repeat range, which is the loop or silence. `copy` is the octave copy, 0 for plain samples
+    fn trigger(
+        &mut self,
+        channel: usize,
+        sample: Arc<OctamedicSample>,
+        copy: u32,
+        period: u16,
+        volume: u8,
+    ) {
+        let copy = sample.octave_copy(copy);
+        let (end, repeat) = match copy.repeat {
+            Some(repeat) => (
+                repeat.end,
                 PaulaWrite::Sample {
                     sample: sample.clone(),
-                    start,
-                    len: end - start,
+                    start: repeat.start,
+                    len: repeat.len(),
                 },
             ),
             None => (
-                sample.data.len(),
+                copy.data.end,
                 PaulaWrite::Sample {
                     sample: SILENCE.clone(),
                     start: 0,
@@ -468,8 +477,8 @@ impl OctamedicEngine {
             PaulaWrite::DmaOff,
             PaulaWrite::Sample {
                 sample,
-                start: 0,
-                len: first,
+                start: copy.data.start,
+                len: end - copy.data.start,
             },
             PaulaWrite::Period(period),
             PaulaWrite::Volume(volume),
@@ -523,7 +532,10 @@ mod tests {
     };
 
     use super::*;
-    use crate::data::instrument::{InstrumentKind, SampleOctaves};
+    use crate::{
+        data::instrument::{InstrumentKind, SampleOctaves},
+        engine::period::note_period,
+    };
 
     const SAMPLE_RATE: u32 = 1000;
 
@@ -747,6 +759,27 @@ mod tests {
             .collect();
         assert!(channel_0.contains(&&PaulaWrite::Period(note_period(13, 0, 0))));
         assert_eq!(channel_0.last(), Some(&&PaulaWrite::DmaOff));
+    }
+
+    #[test]
+    fn multi_octave_notes_play_their_copy() {
+        let mut instrument = OctamedicInstrument::new("bass");
+        instrument.kind = InstrumentKind::Sample(Arc::new(OctamedicSample {
+            data: (0..14).collect(),
+            repeat: None,
+            octaves: SampleOctaves::Three,
+        }));
+        // C-1 on a 3 octave sample is the longest copy, 8 bytes from byte 6, at C-1's period
+        let writes = note_writes(instrument, 1);
+        assert!(writes.iter().any(|write| matches!(
+            write,
+            PaulaWrite::Sample {
+                start: 6,
+                len: 8,
+                ..
+            }
+        )));
+        assert!(writes.contains(&PaulaWrite::Period(856)));
     }
 
     #[test]

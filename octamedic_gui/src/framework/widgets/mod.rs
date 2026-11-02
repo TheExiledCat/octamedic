@@ -1,4 +1,4 @@
-use rustuition::gadgets::{button, dialog, slider, textbox};
+use rustuition::gadgets::{button, dialog, slider, stepped_slider, textbox};
 
 use crate::{app::state::AppState, framework::event::Event};
 
@@ -10,4 +10,5 @@ pub type Button = button::Button<AppState, Event>;
 pub type Dialog = dialog::Dialog<AppState, Event>;
 pub type DialogFields<'a> = dialog::DialogFields<'a, AppState, Event>;
 pub type Slider = slider::Slider<AppState, Event>;
+pub type SteppedSlider = stepped_slider::SteppedSlider<AppState, Event>;
 pub type Textbox = textbox::Textbox<AppState, Event>;

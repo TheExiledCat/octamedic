@@ -81,7 +81,7 @@ It is also possible to build from source using the rust cargo toolchain. This wa
 - [ ] Midi commands
 - [ ] Synth commands
 - [X] Loading wav, mp3, flac files as instruments
-- [ ] Loading IFF files
+- [X] Loading IFF files
 - [ ] Editing instruments
 - [ ] Keybind mapping
 - [ ] Midi in support

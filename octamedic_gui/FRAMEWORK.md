@@ -77,10 +77,11 @@ does the same for `MainMode`. To add one: write the gadget, add a field for it, 
 `panel` or `screen`.
 
 FILES, PLAY, VOL and MISC's palette work. INSTR (`header/instrument.rs`) shows the active instrument
-and edits its name, transpose, finetune and volume (`AppState::edit_active_instrument`), the rest of
-it is ghosted. The rest of MISC and the SLIST screen (`main/song_list.rs`) are laid out like OctaMED
-with their buttons ghosted, ready to be hooked up. `main/list_scroller.rs` is the slider with arrows
-that the FILES and SLIST lists share.
+and edits its name, transpose, finetune and volume (`AppState::edit_active_instrument`); its arrows
+go to the first, previous, next and last instrument and FLUSH empties it: no sample, no name, and
+every value 0, volume included. The rest of it is ghosted. The rest of MISC and the SLIST screen
+(`main/song_list.rs`) are laid out like OctaMED with their buttons ghosted, ready to be hooked up.
+`main/list_scroller.rs` is the slider with arrows that the FILES and SLIST lists share.
 
 Change project data through `AppState` methods like `enter_note` and `edit_track`, not directly.
 They track which blocks changed and send them to the engine in `AppState::update`, so you hear

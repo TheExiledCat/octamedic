@@ -5,16 +5,17 @@ documentation) covers, and how OctaMED's own files and samples work.
 
 ## Loading instruments
 
-LOAD INSTR (`octamedic_gui/src/app/files/load_instrument.rs`) tries the formats in its `LOADERS` list in
-order, and the first `InstrumentLoader` (`octamedic_core/src/import/mod.rs`) that
-recognizes the file takes it. Loaders go by the file's header, never its extension: plenty of
-files, especially old Amiga ones, don't have one.
+LOAD INSTR (`octamedic_gui/src/app/files/load_instrument.rs`) tries the formats in its `LOADERS`
+list in order, and the first `InstrumentLoader` (`octamedic_core/src/import/mod.rs`) that recognizes
+the file takes it. Loaders go by the file's header, never its extension: plenty of files, especially
+old Amiga ones, don't have one.
 
 | Loader | Recognizes | Asks first |
 |---|---|---|
 | `WavLoader` | `RIFF` at 0 and `WAVE` at 8 | yes |
 | `FlacLoader` | `fLaC` at 0 | yes |
 | `Mp3Loader` | `ID3` at 0, or an MPEG Layer III frame header | yes |
+| `IffLoader` | `FORM` at 0 and `8SVX` at 8, an IFF sample | no |
 | `MshLoader` | `MSH\0` at 0, a synth or hybrid sound | no |
 | `RawLoader` | anything | no |
 
@@ -36,6 +37,13 @@ format, with `ImportSettings`:
 - the 8-bit conversion scales by 128 and clamps, so 8-bit data comes out byte for byte as it went
   in;
 - loop points scale with the rate.
+
+`IffLoader` and `MshLoader` skip all that: an 8SVX sample is already what Paula plays, so it
+comes back as a finished instrument (`Decoded::Ready`) with its octave copies, loop (`VHDR`'s
+one-shot and repeat lengths, of the shortest copy) and volume (`VHDR`'s, out of 0x10000). A
+`BODY` packed with Fibonacci-delta (compression 1) is unpacked: after a pad byte and the first
+sample, each 4-bit nibble picks a step from -34, -21, -13, -8, -5, -3, -2, -1, 0, 1, 2, 3, 5, 8,
+13, 21.
 
 If the loader asks first, the import dialog shows the file's rate, bit depth and channels and asks
 about downsampling, to which note (C-1, C-2 or C-3) and the channel. Downsampling to a note means
@@ -111,9 +119,10 @@ the period table gets two extra-low rows (3424 down to 1812, then 1712 down to 9
 that came with it only know types 1 and 2 (the first 12 entries of each table) and play every other
 non-zero type as IFF5OCT. OctaMEDIC goes by the full tables.
 
-Once the engine plays them, imported samples with a high enough rate could be made into 5 octave
-samples instead of being downsampled to one rate: each octave's copy is the sound downsampled to
-half the rate of the one below it, so the source has to be at least as fast as the longest copy.
+The engine plays them (see [PLAYER.md](PLAYER.md)). Imported samples with a high enough rate could
+be made into 5 octave samples instead of being downsampled to one rate: each octave's copy is the
+sound downsampled to half the rate of the one below it, so the source has to be at least as fast as
+the longest copy.
 
 ## Synth sounds
 

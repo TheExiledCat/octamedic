@@ -82,7 +82,7 @@ impl Gadget<AppState, Event> for FileBrowser {
         }
         let totals = [file_entry_count(browser), browser.shortcuts().len()];
         for (scroller, total) in self.scrollers.iter_mut().zip(totals) {
-            scroller.update(total);
+            scroller.update(state, total);
         }
     }
 

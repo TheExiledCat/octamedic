@@ -75,9 +75,9 @@ impl SongList {
 }
 
 impl Gadget<AppState, Event> for SongList {
-    fn update(&mut self, _state: &mut AppState) {
+    fn update(&mut self, state: &mut AppState) {
         for scroller in &mut self.scrollers {
-            scroller.update(0);
+            scroller.update(state, 0);
         }
     }
 

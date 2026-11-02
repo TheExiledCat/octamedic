@@ -326,7 +326,7 @@ pub enum Highlight {
 /// How long a button's held before it starts clicking again, when it repeats.
 pub const DEFAULT_REPEAT_DELAY: Duration = Duration::from_millis(400);
 /// How often a held button clicks once it's repeating.
-pub const DEFAULT_REPEAT_INTERVAL: Duration = Duration::from_millis(60);
+pub const DEFAULT_REPEAT_INTERVAL: Duration = Duration::from_millis(150);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Repeat {

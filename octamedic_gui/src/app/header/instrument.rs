@@ -1,6 +1,9 @@
+use std::sync::Arc;
+
 use octamed::mmd::module::INSTRUMENT_NAME_LENGTH;
 use octamedic_core::data::instrument::{
     InstrumentKind, MAX_FINETUNE, MAX_INSTRUMENT_VOLUME, MIN_FINETUNE, OctamedicInstrument,
+    OctamedicSample,
 };
 use octamedic_util::base32;
 use rustuition::{
@@ -19,7 +22,7 @@ use crate::{
     framework::{
         event::Event,
         widgets::{
-            Button, Slider, Textbox,
+            Button, SteppedSlider, Textbox,
             symbols::{draw_rows, picture},
         },
     },
@@ -71,8 +74,9 @@ const TYPES: [(&str, Rect); 3] = [
     ("HYBRID", Rect::new(135, 32, 48, 13)),
 ];
 const VOLUME: Rect = Rect::new(224, 32, 50, 13);
-const VOLUME_SLIDER: Rect = Rect::new(274, 32, 138, 13);
-const VOLUME_STEPS: [Rect; 2] = [Rect::new(412, 32, 18, 13), Rect::new(430, 32, 18, 13)];
+// the slider and its arrows
+const VOLUME_SLIDER: Rect = Rect::new(274, 32, 174, 13);
+const VOLUME_ARROW_WIDTH: i32 = 18;
 
 const TRANSPORT_ARROW: [i32; 2] = [8, 7];
 const BAR_GAP: i32 = 2;
@@ -115,34 +119,31 @@ pub struct Instrument {
     repeats: [Textbox; 2],
     types: [Button; 3],
     volume: Button,
-    volume_slider: Slider,
-    volume_steps: [Button; 2],
-    // the level last set on the slider, so a drag shows up as a change
-    slider_level: u16,
+    volume_slider: SteppedSlider,
 }
 
 impl Instrument {
     pub fn new() -> Self {
         let [w, h] = TRANSPORT_ARROW;
+        // first, previous, next and last instrument, then one nobody's worked out yet
         let transport = [
             Button::new(Triangle::new(Left, w, h).with_bar().bar_gap(BAR_GAP)),
-            Button::new(Triangle::new(Left, w, h)),
-            Button::new(Triangle::new(Right, w, h)),
+            repeating(Button::new(Triangle::new(Left, w, h))),
+            repeating(Button::new(Triangle::new(Right, w, h))),
             Button::new(Triangle::new(Right, w, h).with_bar().bar_gap(BAR_GAP)),
-            Button::new(picture(RANGE_PICTURE)),
+            unhooked(Button::new(picture(RANGE_PICTURE))),
         ];
         let name = Textbox::new()
             .max_length(INSTRUMENT_NAME_LENGTH - 1)
             .on_update(|state: &mut AppState, name| {
                 state.edit_active_instrument(|instrument| instrument.name = name.to_owned());
             });
-        let steps = MAX_INSTRUMENT_VOLUME as u16 + 1;
         return Self {
             number: Button::new("01").font(fonts::INTERFACE),
             name,
             length: Button::new("-").align(Align::Right),
-            transport: transport.map(unhooked),
-            flush: label_button("FLUSH"),
+            transport,
+            flush: Button::new("FLUSH").font(fonts::LABEL),
             load: unhooked(Button::new(load)),
             stepped: [
                 Stepper::new(i8::MIN as i32, i8::MAX as i32),
@@ -152,34 +153,46 @@ impl Instrument {
             repeats: std::array::from_fn(|_| Textbox::new()),
             types: TYPES.map(|(label, _)| label_button(label)),
             volume: Button::new("00/00").font(fonts::INTERFACE),
-            volume_slider: Slider::new(SliderDirection::Horizontal, false, steps),
-            volume_steps: [Left, Right]
-                .map(|direction| repeating(Button::new(Triangle::new(direction, w, h)))),
-            slider_level: 0,
+            volume_slider: SteppedSlider::new(
+                SliderDirection::Horizontal,
+                0,
+                MAX_INSTRUMENT_VOLUME as u16,
+                TRANSPORT_ARROW,
+                VOLUME_ARROW_WIDTH,
+            ),
         };
     }
 
+    fn update_buttons(&mut self, state: &mut AppState) {
+        let [first, previous, next, last, _] = &mut self.transport;
+        for button in [&mut *previous, &mut *next] {
+            button.update(state);
+        }
+        if first.clicked().is_some() {
+            state.set_instrument(1);
+        }
+        if previous.clicked().is_some() {
+            state.prev_instrument();
+        }
+        if next.clicked().is_some() {
+            state.next_instrument();
+        }
+        if last.clicked().is_some() {
+            state.set_instrument(u8::MAX);
+        }
+        // everything back to nothing, volume included
+        if self.flush.clicked().is_some() {
+            let mut flushed = OctamedicInstrument::new("");
+            flushed.volume = 0;
+            state.replace_instrument(state.active_instrument, flushed);
+        }
+    }
+
     fn update_volume(&mut self, state: &mut AppState, volume: u8) {
-        for step in &mut self.volume_steps {
-            step.update(state);
-        }
-        let [down, up] = &mut self.volume_steps;
-        let mut wanted = None;
-        if down.clicked().is_some() {
-            wanted = Some(volume.saturating_sub(1));
-        }
-        if up.clicked().is_some() {
-            wanted = Some(volume.saturating_add(1).min(MAX_INSTRUMENT_VOLUME));
-        }
-        if self.volume_slider.value() != self.slider_level {
-            wanted = Some(self.volume_slider.value() as u8);
-        }
-        if let Some(wanted) = wanted.filter(|&wanted| wanted != volume) {
-            state.edit_active_instrument(|instrument| instrument.volume = wanted);
+        if let Some(wanted) = self.volume_slider.update(state, volume as u16) {
+            state.edit_active_instrument(|instrument| instrument.volume = wanted as u8);
         }
         let volume = active(state).map_or(0, |instrument| instrument.volume);
-        self.volume_slider.set_value(volume as u16);
-        self.slider_level = self.volume_slider.value();
         self.volume.set_text(format!("{volume:02}/{volume:02X}"));
     }
 }
@@ -234,12 +247,21 @@ impl Stepper {
     }
 }
 
+// no sample and an empty one both show as -
+fn length_text(sample: Option<&Arc<OctamedicSample>>) -> String {
+    return match sample.map_or(0, |sample| sample.data.len()) {
+        0 => "-".to_owned(),
+        length => length.to_string(),
+    };
+}
+
 fn active(state: &AppState) -> Option<&OctamedicInstrument> {
     return state.song().instrument(state.active_instrument);
 }
 
 impl Gadget<AppState, Event> for Instrument {
     fn update(&mut self, state: &mut AppState) {
+        self.update_buttons(state);
         if let Some(clear) = state.name_edit_request.take() {
             if clear {
                 self.name.set_text("");
@@ -268,8 +290,7 @@ impl Gadget<AppState, Event> for Instrument {
             self.name.set_text(name);
         }
         let sample = instrument.and_then(OctamedicInstrument::sample);
-        let length = sample.map_or("-".to_owned(), |sample| sample.data.len().to_string());
-        self.length.set_text(length);
+        self.length.set_text(length_text(sample));
         let [hold, decay] = &mut self.sunken;
         hold.set_text(
             instrument
@@ -286,8 +307,12 @@ impl Gadget<AppState, Event> for Instrument {
         repeat.set_text(start.to_string());
         repeat_length.set_text((end - start).to_string());
         let kind = instrument.map(|instrument| &instrument.kind);
+        // an empty slot is a sample with nothing in it yet
         let toggled = [
-            matches!(kind, Some(InstrumentKind::Sample(_))),
+            matches!(
+                kind,
+                None | Some(InstrumentKind::Sample(_) | InstrumentKind::Empty)
+            ),
             matches!(kind, Some(InstrumentKind::Synth(_))),
             matches!(kind, Some(InstrumentKind::Hybrid(..))),
         ];
@@ -297,16 +322,17 @@ impl Gadget<AppState, Event> for Instrument {
     }
 
     fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
-        return self.name.handle_event(state, event)
+        return self
+            .transport
+            .iter_mut()
+            .chain([&mut self.flush])
+            .any(|button| button.handle_event(state, event))
+            || self.name.handle_event(state, event)
             || self
                 .stepped
                 .iter_mut()
                 .any(|stepper| stepper.handle_event(state, event))
-            || self.volume_slider.handle_event(state, event)
-            || self
-                .volume_steps
-                .iter_mut()
-                .any(|step| step.handle_event(state, event));
+            || self.volume_slider.handle_event(state, event);
     }
 
     fn render(&mut self, state: &AppState, area: Rect, painter: &mut Painter) {
@@ -351,9 +377,6 @@ impl Gadget<AppState, Event> for Instrument {
         self.volume.render(state, VOLUME.within(area), painter);
         self.volume_slider
             .render(state, VOLUME_SLIDER.within(area), painter);
-        for (button, rect) in self.volume_steps.iter_mut().zip(VOLUME_STEPS) {
-            button.render(state, rect.within(area), painter);
-        }
     }
 }
 
@@ -394,11 +417,9 @@ fn load(area: ContentArea, pen: Pen, painter: &mut Painter) {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use octamedic_core::{
         data::{
-            instrument::{InstrumentId, OctamedicSample, SampleOctaves},
+            instrument::{InstrumentId, SampleOctaves},
             project::OctamedicProject,
             song::SongId,
         },
@@ -524,13 +545,44 @@ mod tests {
     }
 
     #[test]
+    fn transport_and_flush() {
+        let (mut panel, mut state) = panel();
+        let [_, _, next, last, _] = TRANSPORT;
+        click(&mut panel, &mut state, next);
+        assert_eq!(state.active_instrument.0, 2);
+        click(&mut panel, &mut state, last);
+        assert_eq!(state.active_instrument.0, 63);
+        click(&mut panel, &mut state, TRANSPORT[1]);
+        assert_eq!(state.active_instrument.0, 62);
+        click(&mut panel, &mut state, TRANSPORT[0]);
+        assert_eq!(state.active_instrument.0, 1);
+        let mut settings = active(&state);
+        settings.transpose = 5;
+        settings.hold = 3;
+        state.replace_instrument(InstrumentId(1), settings);
+        click(&mut panel, &mut state, FLUSH);
+        let flushed = active(&state);
+        assert_eq!(flushed.kind, InstrumentKind::Empty);
+        assert_eq!(flushed.name, "");
+        assert_eq!((flushed.volume, flushed.transpose, flushed.hold), (0, 0, 0));
+        assert!(panel.types[0].is_toggled());
+        let empty = Arc::new(OctamedicSample {
+            data: Vec::new(),
+            repeat: None,
+            octaves: SampleOctaves::One,
+        });
+        assert_eq!(length_text(Some(&empty)), "-");
+        assert_eq!(length_text(None), "-");
+    }
+
+    #[test]
     fn volume_buttons() {
         let (mut panel, mut state) = panel();
-        let down = panel.volume_steps[0].area();
+        let down = panel.volume_slider.arrows()[0].area();
         click(&mut panel, &mut state, down);
         assert_eq!(active(&state).volume, MAX_INSTRUMENT_VOLUME - 1);
-        assert_eq!(panel.volume_slider.value(), 63);
-        let up = panel.volume_steps[1].area();
+        assert_eq!(panel.volume_slider.slider_mut().value(), 63);
+        let up = panel.volume_slider.arrows()[1].area();
         click(&mut panel, &mut state, up);
         click(&mut panel, &mut state, up);
         assert_eq!(active(&state).volume, MAX_INSTRUMENT_VOLUME);
