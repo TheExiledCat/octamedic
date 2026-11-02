@@ -91,6 +91,10 @@ command's and the value's. Each moves the cursor down by the line add, like a no
 the cursor skips the instrument's left digit, so instruments past 0V go in by entering a note with
 the instrument selected.
 
+Enter in the note column puts in a hold: no note, just the selected instrument, shown as `-|-` like
+any cell with an instrument and no note. It keeps a note held past its instrument's hold length
+(see [docs/PLAYER.md](../docs/PLAYER.md)).
+
 `app/files/mod.rs` knows the folders: the config folder (`config.toml`, `keybinds.toml`) and the
 projects folder inside the music folder. `initialize` creates them at startup.
 

@@ -122,3 +122,7 @@ the song's filter flag. It keeps running while off, so switching it doesn't clic
 - Multi-octave samples (MMD instrument types 1 to 6) play as one long sample. The player picks one
   of the octave copies for each note and a period for it; [FILES.md](FILES.md) has the tables.
 - MIDI and synth instruments.
+- Hold and decay. An instrument with a hold length plays each note for that many ticks and then
+  fades out by its decay. A line after the note with no note but the same instrument (shown as
+  `-|-`, entered with Enter) keeps the note held past its hold length. In the module it's just a
+  cell with note 0 and an instrument number. Instruments without a hold length ignore it.

@@ -6,6 +6,7 @@ use octamedic_core::{
     amiga::paula::SCOPE_CHANNELS,
     data::{
         instrument::InstrumentId,
+        note::OctamedicNote,
         pattern::{OctamedicPattern, OctamedicPatternTrack},
         track_count::TrackCount,
     },
@@ -45,6 +46,7 @@ const METER_WIDTH: i32 = 10;
 const LINE_NUMBER_CHARS: i32 = 4;
 
 const NOTE_CHARS: i32 = 3;
+const HOLD_TEXT: &str = "-|-";
 
 // track numbers end over the instrument's first digit
 const TRACK_NUMBER_END: i32 = NOTE_CHARS + 1;
@@ -84,6 +86,8 @@ pub enum EditorAction {
     ScreenLeft,
     ScreenRight,
     ToggleEdit,
+    // no note, just the instrument, which keeps a held note going
+    Hold,
     // the bottom row of note keys; the top row plays the octave above
     Octave(u8),
 }
@@ -127,6 +131,8 @@ impl BlockEditor {
             .bind(Key::ctrl(KeyCode::Left), ScreenLeft, "Screen left")
             .bind(Key::ctrl(KeyCode::Right), ScreenRight, "Screen right")
             .bind(Key::plain(KeyCode::Escape), ToggleEdit, "Edit")
+            .bind(Key::plain(KeyCode::Return), Hold, "Hold")
+            .bind(Key::plain(KeyCode::NumpadEnter), Hold, "Hold")
             .bind(Key::plain(KeyCode::F1), Octave(1), "Octave 1")
             .bind(Key::plain(KeyCode::F2), Octave(2), "Octave 2")
             .bind(Key::plain(KeyCode::F3), Octave(3), "Octave 3")
@@ -358,6 +364,7 @@ impl KeyActions for BlockEditor {
             ScreenLeft => cursor.move_tracks_clamped(-screen, tracks),
             ScreenRight => cursor.move_tracks_clamped(screen, tracks),
             ToggleEdit => cursor.edit_mode.flip(),
+            Hold => enter_hold(state),
             FirstBlock => state.select_block(0),
             LastBlock => state.select_block(usize::MAX),
             PreviousBlock => state.select_block(block.saturating_sub(1)),
@@ -387,6 +394,7 @@ impl KeyActions for BlockEditor {
             ScreenLeft => "One screen left",
             ScreenRight => "One screen right",
             ToggleEdit => "Switch edit mode on or off",
+            Hold => "Enter a hold: no note, just the instrument",
             Octave(_) => "Play notes from this octave up",
         };
     }
@@ -548,6 +556,15 @@ fn enter_key(state: &mut AppState, key: char) -> bool {
     return true;
 }
 
+fn enter_hold(state: &mut AppState) {
+    let cursor = state.cursor;
+    if !cursor.edit_mode || cursor.column != 0 {
+        return;
+    }
+    state.enter_note(cursor.track, cursor.line, OctamedicNote { value: 0 });
+    move_down(state);
+}
+
 fn enter_digit(state: &mut AppState, key: char) -> bool {
     let cursor = state.cursor;
     let Some(&cell) = state
@@ -656,10 +673,18 @@ fn blend_text(text: &str, x: i32, line: usize, font: Font, run: Rect, painter: &
     }
 }
 
+// no note but an instrument is a hold, which keeps the note before going
+fn cell_note_text(cell: &OctamedicPatternTrack) -> String {
+    if cell.note.value == 0 && cell.instrument_id.0 != 0 {
+        return HOLD_TEXT.to_owned();
+    }
+    return note_text(cell.note.value);
+}
+
 fn track_text(cell: &OctamedicPatternTrack) -> String {
     return format!(
         "{}{}{:02X}{:02X}",
-        note_text(cell.note.value),
+        cell_note_text(cell),
         instrument_text(cell.instrument_id.0),
         cell.command_id.0,
         cell.command_value
@@ -839,7 +864,8 @@ mod tests {
             (cell.command_id, cell.command_value),
             (CommandId(0xCF), 0x47)
         );
-        assert_eq!(track_text(&cell), "--- VCF47");
+        // an instrument without a note is a hold
+        assert_eq!(track_text(&cell), "-|- VCF47");
     }
 
     #[test]
@@ -867,6 +893,31 @@ mod tests {
         assert_eq!(cell.command_id, CommandId(0x90));
         assert_eq!(state.cursor.line, 1);
         assert!(!state.is_saved());
+    }
+
+    #[test]
+    fn enter_puts_in_a_hold() {
+        let (mut editor, mut state) = (BlockEditor::new(), state());
+        state.set_instrument(5);
+        press(&mut editor, &mut state, KeyCode::Return, KeyMods::NONE);
+        assert!(state.is_saved());
+        state.cursor.edit_mode = true;
+        press(&mut editor, &mut state, KeyCode::Return, KeyMods::NONE);
+        let cell = *state.active_pattern().unwrap().track(0, 0).unwrap();
+        assert_eq!((cell.note.value, cell.instrument_id), (0, InstrumentId(5)));
+        assert_eq!(track_text(&cell), "-|- 50000");
+        assert_eq!(state.cursor.line, 1);
+        // only in the note column
+        state.cursor.column = 2;
+        press(&mut editor, &mut state, KeyCode::Return, KeyMods::NONE);
+        assert_eq!(state.cursor.line, 1);
+    }
+
+    #[test]
+    fn typing_an_instrument_alone_makes_a_hold() {
+        let cell = with_digit(OctamedicPatternTrack::new(), 1, '3').unwrap();
+        assert_eq!(track_text(&cell), "-|- 30000");
+        assert_eq!(track_text(&OctamedicPatternTrack::new()), "--- 00000");
     }
 
     #[test]
