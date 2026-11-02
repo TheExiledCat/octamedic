@@ -2,10 +2,7 @@ use octamed::mmd::module::PALETTE_COLORS;
 use octamedic_core::data::palette::OctamedColorPalette;
 use rustuition::{
     gadget::Gadget,
-    gadgets::{
-        button::{ButtonContent, ContentArea},
-        slider::SliderDirection,
-    },
+    gadgets::{button::ContentArea, slider::SliderDirection},
     painter::{Align, Painter, Pen},
     palette::{CHANNEL_MAX, Channel, IntuitionColorPalette},
     rect::Rect,
@@ -18,11 +15,11 @@ use crate::{
     },
     framework::{
         event::Event,
-        widgets::{Button, Slider},
+        widgets::{Button, Slider, symbols::stacked_text},
     },
 };
 
-// screenshot measurements, panel's top left
+// from the panel's top left
 const COLOR_SECTION: Rect = Rect::new(0, 2, 182, 42);
 const SLIDERS: Rect = Rect::new(0, 2, 160, 30);
 const COLOR_BOXES: Rect = Rect::new(0, 32, 160, 12);
@@ -40,7 +37,8 @@ const CHANNEL_LETTERS: [&str; 3] = ["R", "G", "B"];
 
 const COLOR_BOX_WIDTH: i32 = 20;
 
-const STACKED_LINE: i32 = 6;
+const RES_LINES: [(&str, [i32; 2]); 3] = [("R", [7, 1]), ("E", [7, 7]), ("S", [7, 13])];
+const UNDO_LINES: [(&str, [i32; 2]); 2] = [("UN", [2, 4]), ("DO", [2, 10])];
 
 pub struct Misc {
     sliders: [Slider; Channel::ALL.len()],
@@ -68,15 +66,13 @@ impl Misc {
                     .align(Align::Left)
                     .padding(0)
             }),
-            color_buttons: std::array::from_fn(|pen| Button::new(Swatch(Pen(pen)))),
-            res: Button::new(StackedLabel {
-                lines: &["R", "E", "S"],
-                offset: [7, 1],
+            color_buttons: std::array::from_fn(|pen| {
+                Button::new(move |area: ContentArea, _, painter: &mut Painter| {
+                    painter.fill(area.inside, Pen(pen));
+                })
             }),
-            undo: Button::new(StackedLabel {
-                lines: &["UN", "DO"],
-                offset: [2, 4],
-            }),
+            res: Button::new(stacked_text(&RES_LINES)),
+            undo: Button::new(stacked_text(&UNDO_LINES)),
             selected_color: 0,
             levels: [0; Channel::ALL.len()],
             undo_palette: None,
@@ -163,28 +159,5 @@ impl Gadget<AppState, Event> for Misc {
         }
         self.res.render(state, RES.within(area), painter);
         self.undo.render(state, UNDO.within(area), painter);
-    }
-}
-
-struct Swatch(Pen);
-
-impl ButtonContent for Swatch {
-    fn render(&self, area: ContentArea, _pen: Pen, painter: &mut Painter) {
-        painter.fill(area.inside, self.0);
-    }
-}
-
-struct StackedLabel {
-    lines: &'static [&'static str],
-    offset: [i32; 2],
-}
-
-impl ButtonContent for StackedLabel {
-    fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter) {
-        let [x, y] = self.offset;
-        for (line, text) in self.lines.iter().enumerate() {
-            let line_y = area.inside.y + y + line as i32 * STACKED_LINE;
-            painter.text_in_font(area.inside.x + x, line_y, text, pen, fonts::SMALL);
-        }
     }
 }

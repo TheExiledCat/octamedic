@@ -13,7 +13,6 @@ pub mod keybinds;
 pub mod main;
 pub mod main_view;
 pub mod mode;
-pub mod mode_buttons;
 pub mod pens;
 pub mod state;
 pub mod status_bar;

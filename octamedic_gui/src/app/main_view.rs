@@ -1,7 +1,7 @@
-use ggez::input::keyboard::KeyCode;
+use ggez::input::keyboard::{KeyCode, KeyMods};
 use rustuition::{
     gadget::Gadget,
-    painter::{Align, CHAR_HEIGHT, Painter, Pen, text_width},
+    painter::{Align, CHAR_HEIGHT, Painter, Pen},
     rect::Rect,
     text::Line,
 };
@@ -102,6 +102,11 @@ impl Gadget<AppState, Event> for MainView {
             state.displays_off = !state.displays_off;
             return true;
         }
+        // last, so a text field being typed in gets its space first
+        if !taken && is_space(event) {
+            state.stop();
+            return true;
+        }
         return taken;
     }
 
@@ -132,12 +137,22 @@ impl Gadget<AppState, Event> for MainView {
         self.console.render(state, console, painter);
         if let Some(notification) = &state.notification {
             let [x, y] = NOTIFICATION_PADDING;
-            let width = text_width(notification) + 2 * x;
-            let box_area = Rect::new(area.x, area.y, width, CHAR_HEIGHT + 2 * y);
+            let box_area = Rect::new(area.x, area.y, area.w, CHAR_HEIGHT + 2 * y);
             painter.fill(box_area, Pen::BACKGROUND);
             painter.text(area.x + x, area.y + y, notification, Pen::SHINE);
         }
     }
+}
+
+fn is_space(event: &Event) -> bool {
+    return match *event {
+        Event::Text {
+            character: ' ',
+            mods,
+            ..
+        } => !mods.intersects(KeyMods::CTRL | KeyMods::ALT | KeyMods::LOGO),
+        _ => false,
+    };
 }
 
 impl KeyActions for MainView {
@@ -177,6 +192,30 @@ mod tests {
     }
 
     #[test]
+    fn space_stops_unless_typing() {
+        use rustuition::target::Framebuffer;
+
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        state.set_song_name("ab");
+        let mut view = MainView::new();
+        assert!(view.handle_event(&mut state, &Event::text(' ')));
+        view.update(&mut state);
+        let mut screen = Framebuffer::new(640, 256);
+        view.render(
+            &state,
+            screen.bounds(),
+            &mut Painter::new(&mut screen, &state.palette),
+        );
+        let song_name = Event::MouseDown {
+            pos: [600, 200],
+            button: MouseButton::Left,
+        };
+        assert!(view.handle_event(&mut state, &song_name));
+        assert!(view.handle_event(&mut state, &Event::text(' ')));
+        assert_eq!(state.song().name(), "ab ");
+    }
+
+    #[test]
     fn right_click_copyright() {
         let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
         let mut view = MainView::new();
@@ -188,8 +227,8 @@ mod tests {
     }
 
     #[test]
-    fn notification_top_left() {
-        use rustuition::target::Framebuffer;
+    fn notification_bar_across_the_top() {
+        use rustuition::{painter::text_width, target::Framebuffer};
 
         let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
         let mut view = MainView::new();
@@ -206,18 +245,21 @@ mod tests {
         let message = "NO AUDIO: SOMETHING LONG";
         state.notify(message.to_string());
         let after = draw(&state);
-        let width = text_width(message) + 4;
-        let box_pixels: Vec<[u8; 3]> = (0..10)
-            .flat_map(|y| (0..width).map(move |x| (x, y)))
+        // black right across, the text in the background's light grey
+        let bar_pixels: Vec<[u8; 3]> = (0..10)
+            .flat_map(|y| (0..640).map(move |x| (x, y)))
             .map(|(x, y)| after.pixel(x, y).unwrap())
             .collect();
         assert!(
-            box_pixels
+            bar_pixels
                 .iter()
                 .all(|&pixel| pixel == [0, 0, 0] || pixel == [0xCC; 3])
         );
-        let changed = (0..10).any(|y| (0..width).any(|x| before.pixel(x, y) != after.pixel(x, y)));
+        assert_eq!(after.pixel(639, 5), Some([0, 0, 0]));
+        let text_end = text_width(message);
+        let changed =
+            (0..10).any(|y| (0..text_end).any(|x| before.pixel(x, y) != after.pixel(x, y)));
         assert!(changed);
-        assert_eq!(after.pixel(width, 5), before.pixel(width, 5));
+        assert_eq!(after.pixel(10, 10), before.pixel(10, 10));
     }
 }

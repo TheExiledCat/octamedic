@@ -21,6 +21,11 @@ pub struct OctamedicSongFlags {
     pub st_slides: bool,
     // 5-8 channel mode, software mixed on the real thing
     pub eight_channel: bool,
+    // the mouse pointer follows the play position
+    pub jumping: bool,
+    pub jump_every_8th_line: bool,
+    pub hq_v2_compatible: bool,
+    pub mixing: bool,
 }
 
 pub struct OctamedicSong {

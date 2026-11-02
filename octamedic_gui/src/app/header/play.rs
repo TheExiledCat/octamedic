@@ -7,7 +7,7 @@ use octamedic_core::data::{
 use rustuition::{
     gadget::Gadget,
     gadgets::{
-        button::{ArrowLabel, ButtonContent, ContentArea, IncDec, Triangle},
+        button::{ArrowLabel, ContentArea, IncDec, Triangle},
         slider::SliderDirection,
     },
     painter::{
@@ -60,7 +60,7 @@ const SEQUENCE_COUNT_MAX: usize = 5;
 const ACTIVE_ROW: usize = SEQUENCE_COUNT_MAX / 2;
 const SEQUENCE_TOP_MARGIN: i32 = 1;
 
-// from the screenshot again, panel's top left
+// from the panel's top left
 const TEMPO_SLIDERS: [Rect; 2] = [Rect::new(94, 0, 190, 15), Rect::new(320, 0, 92, 15)];
 const TEMPO_STEPS: [[Rect; 2]; 2] = [
     [Rect::new(284, 0, 18, 15), Rect::new(302, 0, 18, 15)],
@@ -355,30 +355,26 @@ fn set_tempo_value(state: &mut AppState, index: usize, value: u16) {
 }
 
 // OctaMED doesn't centre this, and spaces the slash wider than the status row does
-struct TempoReadout([u16; 2]);
+const TEMPO_INDENT: i32 = 3;
+const TEMPO_SLASH_GAPS: [i32; 2] = [1, 2];
 
-impl TempoReadout {
-    const INDENT: i32 = 3;
-    const SLASH_GAPS: [i32; 2] = [1, 2];
-}
-
-impl ButtonContent for TempoReadout {
-    fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter) {
-        let [primary, secondary] = self.0;
-        let parts = [
-            format!("{primary:03}"),
-            POSITION_SLASH.to_string(),
-            format!("{secondary:02}"),
-        ];
-        let gaps = [0, Self::SLASH_GAPS[0], Self::SLASH_GAPS[1]];
-        let mut x = area.inside.x + Self::INDENT;
+// the two tempo numbers with the narrow slash between them
+fn tempo_readout([primary, secondary]: [u16; 2]) -> impl Fn(ContentArea, Pen, &mut Painter) {
+    let parts = [
+        format!("{primary:03}"),
+        POSITION_SLASH.to_string(),
+        format!("{secondary:02}"),
+    ];
+    return move |area, pen, painter| {
+        let gaps = [0, TEMPO_SLASH_GAPS[0], TEMPO_SLASH_GAPS[1]];
+        let mut x = area.inside.x + TEMPO_INDENT;
         let y = text_y(area.padded, fonts::INTERFACE.height());
         for (part, gap) in parts.iter().zip(gaps) {
             x += gap;
             painter.text_in_font(x, y, part, pen, fonts::INTERFACE);
             x += fonts::INTERFACE.width(part);
         }
-    }
+    };
 }
 
 fn left_clicked(button: &mut Button) -> bool {
@@ -420,6 +416,9 @@ impl Playback {
         let mut channel_modes: [Button; CHANNEL_MODES_COUNT] =
             array::from_fn(|mode| label_button(CHANNEL_MODE_LABELS[mode]));
         channel_modes[0].set_toggled(true);
+        for mode in &mut channel_modes {
+            mode.set_enabled(false);
+        }
         return Self {
             sliders: [
                 Slider::new(SliderDirection::Horizontal, false, MAX_BPM as u16),
@@ -437,13 +436,13 @@ impl Playback {
             }),
             slid: [1; 2],
             tempo_mode: Button::new("BPM"),
-            tempo: Button::new(TempoReadout([1; 2])),
+            tempo: Button::new(tempo_readout([1; 2])),
             hex: label_button("HEX"),
             dec: label_button("DEC"),
             filter: label_button("FILTER"),
             meters: ["E1", "E2", "E3"].map(label_button),
-            sts: toggled("STS"),
-            hq: label_button("HQ"),
+            sts: toggled("STS").enabled(false),
+            hq: label_button("HQ").enabled(false),
             channel_modes,
             stop: label_button("STOP").bold(),
             starts: PlayStart::ALL.map(|start| {
@@ -503,7 +502,7 @@ impl Playback {
         }
         self.tempo_mode
             .set_text(if tempo.is_bpm_mode { "BPM" } else { "SPD" });
-        self.tempo.set_content(TempoReadout(values));
+        self.tempo.set_content(tempo_readout(values));
     }
 
     fn update_meters(&mut self, state: &mut AppState) {
@@ -536,22 +535,6 @@ impl Playback {
         self.filter.set_toggled(state.song().flags.filter_on);
     }
 
-    // these don't affect playback yet
-    fn update_switches(&mut self) {
-        let switches = [&mut self.sts, &mut self.hq];
-        for button in switches {
-            if left_clicked(button) {
-                button.toggle();
-            }
-        }
-        let chosen = self.channel_modes.iter_mut().position(left_clicked);
-        if let Some(chosen) = chosen {
-            for (mode, button) in self.channel_modes.iter_mut().enumerate() {
-                button.set_toggled(mode == chosen);
-            }
-        }
-    }
-
     fn update_playing(&mut self, state: &mut AppState) {
         if left_clicked(&mut self.stop) {
             state.stop();
@@ -578,7 +561,6 @@ impl Gadget<AppState, Event> for Playback {
         self.update_volume_base(state);
         self.update_filter(state);
         self.update_meters(state);
-        self.update_switches();
         self.update_playing(state);
     }
 

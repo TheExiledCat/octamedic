@@ -48,6 +48,14 @@ pub trait ButtonContent {
     }
 }
 
+/// A closure that does the drawing itself, for one-off pictures:
+/// `Button::new(|area: ContentArea, pen, painter: &mut Painter| painter.fill(area.inside, pen))`.
+impl<F: Fn(ContentArea, Pen, &mut Painter)> ButtonContent for F {
+    fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter) {
+        self(area, pen, painter);
+    }
+}
+
 impl ButtonContent for Line<'static> {
     fn render(&self, area: ContentArea, pen: Pen, painter: &mut Painter) {
         let (line, x) = place_line(self, area);
@@ -307,6 +315,7 @@ pub struct Button<S, E = MouseEvent> {
     align: Align,
     font: Font,
     bold: bool,
+    enabled: bool,
     // from the last render
     area: Rect,
     click: Option<ButtonClick>,
@@ -327,10 +336,33 @@ impl<S, E> Button<S, E> {
             align: Align::Center,
             font: Font::TOPAZ,
             bold: false,
+            enabled: true,
             area: Rect::default(),
             click: None,
             events: PhantomData,
         };
+    }
+
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.set_enabled(enabled);
+        return self;
+    }
+
+    /// A disabled button is ghosted and doesn't take clicks, like AmigaOS's.
+    pub fn set_enabled(&mut self, enabled: bool) {
+        self.enabled = enabled;
+        if !enabled {
+            self.clickable.reset();
+            self.click = None;
+        }
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        return self.enabled;
+    }
+
+    pub fn area(&self) -> Rect {
+        return self.area;
     }
 
     /// Takes the last click, for owners that poll instead of setting a handler.
@@ -454,6 +486,9 @@ impl<S, E> Clone for Button<S, E> {
 
 impl<S, E: PointerEvent> Gadget<S, E> for Button<S, E> {
     fn handle_event(&mut self, state: &mut S, event: &E) -> bool {
+        if !self.enabled {
+            return false;
+        }
         let click = self.clickable.handle(event);
         if let Click::Clicked { button, pos } = click {
             let char_index = self.content.index_at(self.content_area(self.area), pos);
@@ -478,6 +513,9 @@ impl<S, E: PointerEvent> Gadget<S, E> for Button<S, E> {
         }
         self.content
             .render(self.content_area(area), content, painter);
+        if !self.enabled {
+            painter.ghost(area, Pen::BACKGROUND);
+        }
     }
 }
 
@@ -558,6 +596,31 @@ mod tests {
         assert_eq!(down, Some(Rect::new(17, 21, 2, 6)));
         let (minus, none) = IncDec::new(false, 8, 6, 1).lines(inside);
         assert_eq!((minus, none), (across, None));
+    }
+
+    #[test]
+    fn disabled_ignores_clicks_and_is_ghosted() {
+        let mut button = next_button(|clicks, _| *clicks += 1);
+        let mut clicks = 0;
+        button.set_enabled(false);
+        click(&mut button, &mut clicks, [5, 5]);
+        assert_eq!(clicks, 0);
+        let palette =
+            IntuitionColorPalette::new([Color(0x000), Color(0xFFF), Color(0x666), Color(0xAAA)]);
+        let ghost_dot = |button: &mut Button<Clicks>| {
+            let mut screen = Framebuffer::new(40, 10);
+            button.render(
+                &0,
+                screen.bounds(),
+                &mut Painter::new(&mut screen, &palette),
+            );
+            screen.pixel(36, 4).unwrap()
+        };
+        assert_eq!(ghost_dot(&mut button), [0, 0, 0]);
+        button.set_enabled(true);
+        assert_eq!(ghost_dot(&mut button), [0xAA, 0xAA, 0xAA]);
+        click(&mut button, &mut clicks, [5, 5]);
+        assert_eq!(clicks, 1);
     }
 
     #[test]
@@ -683,5 +746,21 @@ mod tests {
         assert_eq!(top_edge(Highlight::Complement, true), shine);
         assert_eq!(top_edge(Highlight::Recess, false), shine);
         assert_eq!(top_edge(Highlight::Recess, true), shadow);
+    }
+
+    #[test]
+    fn closure_content_draws_itself() {
+        let palette =
+            IntuitionColorPalette::new([Color(0x000), Color(0xFFF), Color(0x666), Color(0xAAA)]);
+        let mut button = Button::<()>::new(|area: ContentArea, pen, painter: &mut Painter| {
+            painter.fill(area.inside, pen);
+        });
+        let mut screen = Framebuffer::new(20, 10);
+        button.render(
+            &(),
+            screen.bounds(),
+            &mut Painter::new(&mut screen, &palette),
+        );
+        assert_eq!(screen.pixel(10, 5), Some([0, 0, 0]));
     }
 }

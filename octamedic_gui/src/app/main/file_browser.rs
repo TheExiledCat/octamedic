@@ -1,0 +1,515 @@
+use std::path::{Path, PathBuf};
+
+use bytesize::ByteSize;
+use rustuition::{
+    event::{MouseButton, MouseEvent, PointerEvent},
+    gadget::Gadget,
+    gadgets::{button::Triangle, slider::SliderDirection},
+    painter::{CHAR_HEIGHT, CHAR_WIDTH, Painter, Pen, text_width},
+    rect::Rect,
+    shape::Direction::{Down, Up},
+};
+
+use crate::{
+    app::{files::browser::Browser, state::AppState},
+    framework::{
+        event::Event,
+        widgets::{Button, Slider},
+    },
+};
+
+// from the screen's top left. the lists take the height that's left, so they still fit when NTSC
+// cuts the screen short
+const DISK_USAGE: [i32; 2] = [8, 3];
+const LISTS_TOP: i32 = 11;
+const LISTS_BOTTOM_MARGIN: i32 = 3;
+// x, width
+const FILE_LIST: [i32; 2] = [6, 428];
+const SHORTCUT_LIST: [i32; 2] = [454, 164];
+const SCROLLER_WIDTH: i32 = 20;
+const ARROW_HEIGHT: i32 = 10;
+const ARROW: [i32; 2] = [12, 6];
+// from the list's top left
+const ENTRY_OFFSET: [i32; 2] = [3, 1];
+const SIZE_RIGHT_MARGIN: i32 = 2;
+const PARENT_ENTRY: &str = "(dir) / Parent Dir";
+const FOLDER_PREFIX: &str = "(dir) ";
+// so a long list's handle can still be grabbed
+const MIN_HANDLE: i32 = 4;
+
+// index of the file list in the two lists, the shortcuts are the other one
+const FILES: usize = 0;
+
+/// The FILES screen: the current folder on the left, shortcuts on the right.
+pub struct FileBrowser {
+    scrollers: [ListScroller; 2],
+    scrolled_folder: Option<PathBuf>,
+    // from the last render, for clicks
+    list_areas: [Rect; 2],
+}
+
+impl FileBrowser {
+    pub fn new() -> Self {
+        return Self {
+            scrollers: [ListScroller::new(), ListScroller::new()],
+            scrolled_folder: None,
+            list_areas: [Rect::default(); 2],
+        };
+    }
+
+    fn entry_under(&self, pos: [i32; 2]) -> Option<(usize, usize)> {
+        let list = self.list_areas.iter().position(|area| area.contains(pos))?;
+        let line = (pos[1] - self.list_areas[list].y - ENTRY_OFFSET[1]).max(0) / CHAR_HEIGHT;
+        return Some((
+            list,
+            self.scrollers[list].first_visible_entry + line as usize,
+        ));
+    }
+
+    fn click(&self, state: &mut AppState, pos: [i32; 2]) -> bool {
+        let Some((list, index)) = self.entry_under(pos) else {
+            return false;
+        };
+        let lists = list_entries(&state.browser);
+        if let Some(entry) = lists[list].get(index) {
+            entry.target.clone().click(state);
+        }
+        return true;
+    }
+}
+
+struct ListScroller {
+    slider: Slider,
+    arrows: [Button; 2],
+    first_visible_entry: usize,
+    // from the last render
+    lines_that_fit: usize,
+    // the value last set on the slider, so a drag shows up as a change
+    last_slider_value: u16,
+}
+
+impl ListScroller {
+    fn new() -> Self {
+        let [width, height] = ARROW;
+        return Self {
+            slider: Slider::new(SliderDirection::Vertical, false, 1),
+            arrows: [Up, Down]
+                .map(|direction| Button::new(Triangle::new(direction, width, height))),
+            first_visible_entry: 0,
+            lines_that_fit: 0,
+            last_slider_value: 0,
+        };
+    }
+
+    fn update(&mut self, total: usize) {
+        if self.slider.value() != self.last_slider_value {
+            self.first_visible_entry = self.slider.value() as usize;
+        }
+        let [up, down] = &mut self.arrows;
+        if up.clicked().is_some() {
+            self.first_visible_entry = self.first_visible_entry.saturating_sub(1);
+        }
+        if down.clicked().is_some() {
+            self.first_visible_entry += 1;
+        }
+        let last = total.saturating_sub(self.lines_that_fit);
+        self.first_visible_entry = self.first_visible_entry.min(last);
+        self.slider
+            .set_steps((last + 1).min(u16::MAX as usize) as u16);
+        self.slider.set_value(self.first_visible_entry as u16);
+        self.last_slider_value = self.slider.value();
+    }
+
+    fn render(&mut self, state: &AppState, area: Rect, total: usize, painter: &mut Painter) {
+        let (slider, arrows) = area.split_top(area.h - 2 * ARROW_HEIGHT);
+        let track = slider.h - 2;
+        let handle = if total > self.lines_that_fit {
+            (track * self.lines_that_fit as i32 / total as i32).max(MIN_HANDLE)
+        } else {
+            track
+        };
+        self.slider.set_handle(Some(handle));
+        self.slider.render(state, slider, painter);
+        for (arrow, rect) in self.arrows.iter_mut().zip(arrows.split_rows(2)) {
+            arrow.render(state, rect, painter);
+        }
+    }
+
+    fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
+        return self.slider.handle_event(state, event)
+            || self
+                .arrows
+                .iter_mut()
+                .any(|arrow| arrow.handle_event(state, event));
+    }
+}
+
+impl Gadget<AppState, Event> for FileBrowser {
+    fn update(&mut self, state: &mut AppState) {
+        let browser = &state.browser;
+        if self.scrolled_folder.as_deref() != Some(browser.path()) {
+            self.scrollers[FILES].first_visible_entry = 0;
+            self.scrolled_folder = Some(browser.path().to_path_buf());
+        }
+        let totals = [file_entry_count(browser), browser.shortcuts().len()];
+        for (scroller, total) in self.scrollers.iter_mut().zip(totals) {
+            scroller.update(total);
+        }
+    }
+
+    fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
+        if self
+            .scrollers
+            .iter_mut()
+            .any(|scroller| scroller.handle_event(state, event))
+        {
+            return true;
+        }
+        return match event.mouse() {
+            Some(MouseEvent::Down {
+                pos,
+                button: MouseButton::Left,
+            }) => self.click(state, pos),
+            _ => false,
+        };
+    }
+
+    fn render(&mut self, state: &AppState, area: Rect, painter: &mut Painter) {
+        painter.fill(area, Pen::FILL);
+        painter.frame(area, 1);
+        if let Some(usage) = disk_usage(&state.browser) {
+            let [x, y] = DISK_USAGE;
+            painter.text(area.x + x, area.y + y, &usage, Pen::BACKGROUND);
+        }
+        let height = area.h - LISTS_TOP - LISTS_BOTTOM_MARGIN;
+        let lists = [FILE_LIST, SHORTCUT_LIST]
+            .into_iter()
+            .zip(list_entries(&state.browser))
+            .zip(&mut self.list_areas);
+        for ((([x, w], entries), list_area), scroller) in lists.zip(&mut self.scrollers) {
+            let list = Rect::new(x, LISTS_TOP, w, height).within(area);
+            *list_area = list;
+            let inside = painter.frame(list, 1);
+            scroller.lines_that_fit = (inside.h / CHAR_HEIGHT) as usize;
+            let shown = &entries[scroller.first_visible_entry.min(entries.len())..];
+            render_entries(painter, list, inside, shown);
+            let scroller_area = Rect::new(list.right(), list.y, SCROLLER_WIDTH, height);
+            scroller.render(state, scroller_area, entries.len(), painter);
+        }
+    }
+}
+
+// OctaMED's wording, with the free space in KiB, MiB and so on rather than bytes
+fn disk_usage(browser: &Browser) -> Option<String> {
+    let space = browser.disk_space()?;
+    let free = ByteSize(space.available);
+    return Some(format!(
+        "Disk {:>3} % full ({free} free)",
+        space.percent_full()
+    ));
+}
+
+fn has_parent(browser: &Browser) -> bool {
+    return browser.path().parent().is_some();
+}
+
+fn file_entry_count(browser: &Browser) -> usize {
+    return has_parent(browser) as usize + browser.folders().len() + browser.files().len();
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct Entry {
+    text: String,
+    target: ClickTarget,
+}
+
+impl Entry {
+    fn bytes(&self) -> Option<u64> {
+        return match self.target {
+            ClickTarget::File { bytes, .. } => Some(bytes),
+            _ => None,
+        };
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum ClickTarget {
+    Parent,
+    Folder(String),
+    File { name: String, bytes: u64 },
+    Shortcut(PathBuf),
+}
+
+impl ClickTarget {
+    fn click(self, state: &mut AppState) {
+        let current = state.browser.path().to_path_buf();
+        match self {
+            ClickTarget::Parent => open_or_notify(state, current.parent().unwrap_or(&current)),
+            ClickTarget::Folder(name) => open_or_notify(state, &current.join(name)),
+            ClickTarget::File { name, .. } => state.browser.select_file(Some(name)),
+            ClickTarget::Shortcut(path) => open_or_notify(state, &path),
+        }
+    }
+}
+
+fn open_or_notify(state: &mut AppState, path: &Path) {
+    if state.browser.open(path).is_err() {
+        state.notify("Can't open folder");
+    }
+}
+
+fn list_entries(browser: &Browser) -> [Vec<Entry>; 2] {
+    let shortcuts = browser.shortcuts().iter().map(|shortcut| Entry {
+        text: shortcut.name.clone(),
+        target: ClickTarget::Shortcut(shortcut.path.clone()),
+    });
+    return [file_entries(browser), shortcuts.collect()];
+}
+
+fn file_entries(browser: &Browser) -> Vec<Entry> {
+    let parent = has_parent(browser).then(|| Entry {
+        text: PARENT_ENTRY.to_owned(),
+        target: ClickTarget::Parent,
+    });
+    let folders = browser.folders().iter().map(|folder| Entry {
+        text: format!("{FOLDER_PREFIX}{folder}"),
+        target: ClickTarget::Folder(folder.clone()),
+    });
+    let files = browser.files().iter().map(|file| Entry {
+        text: file.name.clone(),
+        target: ClickTarget::File {
+            name: file.name.clone(),
+            bytes: file.bytes,
+        },
+    });
+    return parent.into_iter().chain(folders).chain(files).collect();
+}
+
+// a long name is cut off a char before its size
+fn render_entries(painter: &mut Painter, list: Rect, inside: Rect, entries: &[Entry]) {
+    let [x, y] = ENTRY_OFFSET;
+    for (line, entry) in entries.iter().enumerate() {
+        let top = list.y + y + line as i32 * CHAR_HEIGHT;
+        if top >= list.bottom() {
+            break;
+        }
+        let mut name_right = inside.right();
+        if let Some(bytes) = entry.bytes() {
+            let bytes = bytes.to_string();
+            let bytes_x = list.right() - SIZE_RIGHT_MARGIN - text_width(&bytes);
+            painter.clipped(inside, |painter| {
+                painter.text(bytes_x, top, &bytes, Pen::SHADOW)
+            });
+            name_right = bytes_x - CHAR_WIDTH;
+        }
+        let name_area = Rect::new(inside.x, inside.y, name_right - inside.x, inside.h);
+        painter.clipped(name_area.intersection(inside), |painter| {
+            painter.text(list.x + x, top, &entry.text, Pen::SHADOW);
+        });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
+    use rustuition::target::Framebuffer;
+
+    use super::*;
+
+    const SCREEN_AREA: Rect = Rect::new(0, 77, 640, 120);
+    const SHORTCUTS: usize = 1;
+
+    fn state() -> AppState {
+        return AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+    }
+
+    fn temp_folder_with(name: &str, folder_count: usize) -> PathBuf {
+        let path = std::env::temp_dir().join(format!("octamedic-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir_all(&path).unwrap();
+        for index in 0..folder_count {
+            fs::create_dir_all(path.join(index.to_string())).unwrap();
+        }
+        return path;
+    }
+
+    #[test]
+    fn parent_folders_then_files() {
+        let temp = temp_folder_with("entries", 0);
+        fs::create_dir_all(temp.join("songs")).unwrap();
+        fs::create_dir_all(temp.join("Bass")).unwrap();
+        fs::write(temp.join("tune.mmd1"), [0; 1843]).unwrap();
+        let mut browser = Browser::new();
+        browser.open(&temp).unwrap();
+        let entries = file_entries(&browser);
+        let _ = fs::remove_dir_all(&temp);
+        let texts: Vec<&str> = entries.iter().map(|entry| entry.text.as_str()).collect();
+        assert_eq!(
+            texts,
+            [
+                "(dir) / Parent Dir",
+                "(dir) Bass",
+                "(dir) songs",
+                "tune.mmd1"
+            ]
+        );
+        let bytes: Vec<Option<u64>> = entries.iter().map(Entry::bytes).collect();
+        assert_eq!(bytes, [None, None, None, Some(1843)]);
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn no_parent_at_root() {
+        let mut browser = Browser::new();
+        browser.open("/").unwrap();
+        let entries = file_entries(&browser);
+        assert!(entries.iter().all(|entry| entry.text != PARENT_ENTRY));
+        let folders = entries.iter().filter(|entry| entry.bytes().is_none());
+        assert!(
+            folders
+                .into_iter()
+                .all(|entry| entry.text.starts_with(FOLDER_PREFIX))
+        );
+    }
+
+    #[test]
+    fn disk_usage_text() {
+        let browser = Browser::new();
+        let usage = disk_usage(&browser).unwrap();
+        assert!(usage.starts_with("Disk "), "{usage}");
+        assert!(
+            usage.contains(" % full (") && usage.ends_with("iB free)"),
+            "{usage}"
+        );
+    }
+
+    fn scroller_fitting(lines_that_fit: usize) -> ListScroller {
+        let mut scroller = ListScroller::new();
+        scroller.lines_that_fit = lines_that_fit;
+        return scroller;
+    }
+
+    fn drag_to(scroller: &mut ListScroller, value: u16) {
+        scroller.slider.set_value(value);
+    }
+
+    #[test]
+    fn dragging_scrolls() {
+        let mut scroller = scroller_fitting(13);
+        scroller.update(20);
+        assert_eq!(
+            (scroller.first_visible_entry, scroller.slider.value()),
+            (0, 0)
+        );
+        drag_to(&mut scroller, 5);
+        scroller.update(20);
+        assert_eq!(scroller.first_visible_entry, 5);
+        drag_to(&mut scroller, 7);
+        scroller.update(20);
+        assert_eq!(scroller.first_visible_entry, 7);
+    }
+
+    #[test]
+    fn scrolling_stops_at_the_ends() {
+        let mut scroller = scroller_fitting(13);
+        scroller.first_visible_entry = 100;
+        scroller.update(20);
+        assert_eq!(scroller.first_visible_entry, 7);
+        scroller.update(5);
+        assert_eq!(scroller.first_visible_entry, 0);
+        assert_eq!(scroller.slider.value(), 0);
+    }
+
+    #[test]
+    fn arrows_scroll_a_line() {
+        let mut state = state();
+        let mut scroller = scroller_fitting(13);
+        let area = Rect::new(0, 0, SCROLLER_WIDTH, 106);
+        let mut screen = Framebuffer::new(20, 106);
+        scroller.update(20);
+        let mut painter = Painter::new(&mut screen, &state.palette);
+        scroller.render(&state, area, 20, &mut painter);
+        let press = |y| Event::MouseDown {
+            pos: [5, y],
+            button: MouseButton::Left,
+        };
+        let down = area.bottom() - ARROW_HEIGHT / 2;
+        let up = down - ARROW_HEIGHT;
+        for _ in 0..3 {
+            scroller.handle_event(&mut state, &press(down));
+            scroller.update(20);
+        }
+        assert_eq!(scroller.first_visible_entry, 3);
+        scroller.handle_event(&mut state, &press(up));
+        scroller.update(20);
+        assert_eq!(scroller.first_visible_entry, 2);
+    }
+
+    #[test]
+    fn new_folder_scrolls_to_top() {
+        let mut state = state();
+        let [first, second] = ["scroll-a", "scroll-b"].map(|name| temp_folder_with(name, 20));
+        let mut browser = FileBrowser::new();
+        state.browser.open(&first).unwrap();
+        browser.update(&mut state);
+        browser.scrollers[FILES].first_visible_entry = 3;
+        browser.update(&mut state);
+        assert_eq!(browser.scrollers[FILES].first_visible_entry, 3);
+        state.browser.open(&second).unwrap();
+        browser.update(&mut state);
+        let _ = [first, second].map(fs::remove_dir_all);
+        assert_eq!(browser.scrollers[FILES].first_visible_entry, 0);
+    }
+
+    fn render(browser: &mut FileBrowser, state: &mut AppState) {
+        let mut screen = Framebuffer::new(640, 256);
+        browser.update(state);
+        browser.render(
+            state,
+            SCREEN_AREA,
+            &mut Painter::new(&mut screen, &state.palette),
+        );
+    }
+
+    fn click(browser: &mut FileBrowser, state: &mut AppState, list: usize, line: i32) {
+        let x = if list == FILES {
+            FILE_LIST[0]
+        } else {
+            SHORTCUT_LIST[0]
+        } + 20;
+        let y = SCREEN_AREA.y + LISTS_TOP + ENTRY_OFFSET[1] + line * CHAR_HEIGHT + 3;
+        let press = Event::MouseDown {
+            pos: [x, y],
+            button: MouseButton::Left,
+        };
+        assert!(browser.handle_event(state, &press));
+        render(browser, state);
+    }
+
+    #[test]
+    fn clicking_entries() {
+        let mut state = state();
+        let temp = temp_folder_with("clicks", 0);
+        fs::create_dir_all(temp.join("songs")).unwrap();
+        fs::write(temp.join("tune.mmd1"), [0; 10]).unwrap();
+        state.browser.open(&temp).unwrap();
+        let mut browser = FileBrowser::new();
+        render(&mut browser, &mut state);
+        // parent, songs, tune.mmd1
+        click(&mut browser, &mut state, FILES, 1);
+        assert_eq!(state.browser.path(), temp.join("songs"));
+        click(&mut browser, &mut state, FILES, 0);
+        assert_eq!(state.browser.path(), temp);
+        click(&mut browser, &mut state, FILES, 2);
+        assert_eq!(state.browser.selected_file(), Some("tune.mmd1"));
+        // past the last entry
+        click(&mut browser, &mut state, FILES, 5);
+        assert_eq!(state.browser.path(), temp);
+        let first_shortcut = state.browser.shortcuts()[0].path.clone();
+        click(&mut browser, &mut state, SHORTCUTS, 0);
+        let _ = fs::remove_dir_all(&temp);
+        assert_eq!(state.browser.path(), first_shortcut);
+    }
+}

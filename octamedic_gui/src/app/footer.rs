@@ -1,10 +1,4 @@
-use octamedic_core::{
-    amiga::clock::VideoStandard,
-    data::{
-        pattern::MAX_TRACKS,
-        song::{OctamedicSong, SongId},
-    },
-};
+use octamedic_core::{amiga::clock::VideoStandard, data::pattern::MAX_TRACKS};
 use rustuition::{
     gadget::Gadget,
     painter::{Painter, Pen},
@@ -104,7 +98,7 @@ impl Footer {
         return Self {
             block_name,
             song_name,
-            mode: Button::new("NRM"),
+            mode: Button::new("NRM").enabled(false),
             instruments: [MeterLevel::default(); INSTRUMENT_SLOTS],
             notes: [MeterLevel::default(); NOTE_SLOTS],
             seen: [0; MAX_TRACKS],
@@ -217,24 +211,14 @@ impl Gadget<AppState, Event> for Footer {
     }
 }
 
-// the song's sample memory, then all the songs'
+// what has to go in chip memory, then the whole project as a module
 fn memory_text(state: &AppState) -> String {
     let project = state.project();
-    let all: usize = (0..project.song_count())
-        .filter_map(|song| project.get_song(SongId(song as u8)))
-        .map(sample_bytes)
-        .sum();
-    return format!("Mem  {:7}/{:8}", sample_bytes(state.song()), all);
-}
-
-fn sample_bytes(song: &OctamedicSong) -> usize {
-    return song
-        .instruments
-        .iter()
-        .flatten()
-        .filter_map(|instrument| instrument.sample.as_ref())
-        .map(|sample| sample.data.len())
-        .sum();
+    return format!(
+        "Mem  {:7}/{:8}",
+        project.chip_bytes(),
+        project.module_bytes()
+    );
 }
 
 fn bar_steps(level: u8) -> u8 {

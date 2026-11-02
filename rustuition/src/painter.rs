@@ -133,6 +133,19 @@ impl<'a> Painter<'a> {
         }
     }
 
+    /// Dots over `rect` the way AmigaOS ghosts a disabled gadget: every fourth pixel, two along on
+    /// every other line, so what's under it still shows. Lined up with the screen, so gadgets next
+    /// to each other share the pattern.
+    pub fn ghost(&mut self, rect: Rect, pen: Pen) {
+        for y in rect.y..rect.bottom() {
+            let row_offset = 2 * y.rem_euclid(2);
+            let first = rect.x + (4 - (rect.x + row_offset).rem_euclid(4)) % 4;
+            for x in (first..rect.right()).step_by(4) {
+                self.fill(Rect::new(x, y, 1, 1), pen);
+            }
+        }
+    }
+
     /// Draws a 1px box just inside `rect`.
     pub fn outline(&mut self, rect: Rect, pen: Pen) {
         let Rect { x, y, w, h } = rect;
@@ -322,6 +335,39 @@ pub fn aligned_text_x(rect: Rect, width: i32, align: Align) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ghost_dots_line_up_with_the_screen() {
+        use crate::{
+            palette::{Color, IntuitionColorPalette},
+            target::Framebuffer,
+        };
+        let palette =
+            IntuitionColorPalette::new([Color(0x000), Color(0xFFF), Color(0x666), Color(0xAAA)]);
+        let mut screen = Framebuffer::new(12, 4);
+        let mut painter = Painter::new(&mut screen, &palette);
+        painter.fill(Rect::new(0, 0, 12, 4), Pen::SHINE);
+        painter.ghost(Rect::new(1, 0, 11, 4), Pen::BACKGROUND);
+        let dots: Vec<(i32, i32)> = (0..4)
+            .flat_map(|y| (0..12).map(move |x| (x, y)))
+            .filter(|&(x, y)| screen.pixel(x, y) == Some([0, 0, 0]))
+            .collect();
+        assert_eq!(
+            dots,
+            [
+                (4, 0),
+                (8, 0),
+                (2, 1),
+                (6, 1),
+                (10, 1),
+                (4, 2),
+                (8, 2),
+                (2, 3),
+                (6, 3),
+                (10, 3)
+            ]
+        );
+    }
 
     #[test]
     fn text_alignment() {

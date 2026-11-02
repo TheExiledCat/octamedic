@@ -19,7 +19,11 @@ use rustuition::{
 
 use crate::{
     app::{DEFAULT_VIDEO, main_view::MainView, screen, state::AppState},
-    framework::event::{self, Event},
+    framework::{
+        dialog_stack::DialogStack,
+        event::{self, Event},
+        key_repeat::KeyRepeat,
+    },
 };
 
 const CURSOR: &[u8] = include_bytes!("../../assets/cursor.png");
@@ -30,6 +34,7 @@ const CURSOR_SCALE: [f32; 2] = [2.0, 1.0];
 pub struct App {
     state: AppState,
     main: MainView,
+    dialogs: DialogStack,
     // native res, scaled up into the window
     screen: Image,
     video: VideoStandard,
@@ -41,6 +46,9 @@ pub struct App {
     next_frame: Instant,
     // text input events don't say whether the key is repeating
     key_repeated: bool,
+    key_repeat: KeyRepeat,
+    // the text event after a held back repeat gets dropped too
+    repeat_held_back: bool,
 }
 
 impl App {
@@ -49,6 +57,7 @@ impl App {
         let mut app = Self {
             state: Self::state_with_engine(project),
             main: MainView::new(),
+            dialogs: DialogStack::default(),
             screen: screen_image(ctx, DEFAULT_VIDEO),
             video: DEFAULT_VIDEO,
             cursor: Image::from_bytes(ctx, CURSOR)?,
@@ -57,6 +66,8 @@ impl App {
             pointer: [0, 0],
             next_frame: Instant::now(),
             key_repeated: false,
+            key_repeat: KeyRepeat::default(),
+            repeat_held_back: false,
         };
         app.fit_viewport(ctx);
         return Ok(app);
@@ -100,7 +111,8 @@ impl App {
     }
 
     fn dispatch(&mut self, event: Event) -> bool {
-        return self.main.handle_event(&mut self.state, &event);
+        return self.dialogs.handle_event(&mut self.state, &event)
+            || self.main.handle_event(&mut self.state, &event);
     }
 
     fn mouse_event(&mut self, x: f32, y: f32, event: impl FnOnce(Point) -> Event) {
@@ -116,6 +128,7 @@ impl App {
             let mut target = BatchedCanvas::new(&ctx.gfx, &mut canvas, area);
             let mut painter = Painter::new(&mut target, &self.state.palette);
             self.main.render(&self.state, area, &mut painter);
+            self.dialogs.render(&self.state, area, &mut painter);
         }
         // after the batched fills are flushed, so it's on top
         let [x, y] = self.pointer;
@@ -133,6 +146,7 @@ impl EventHandler for App {
             .set_window_title(&format!("OctaMEDIC ({:.02} FPS) ", ctx.time.fps()));
         self.state.update();
         self.main.update(&mut self.state);
+        self.dialogs.update(&mut self.state);
         self.follow_video(ctx);
         if self.state.exit_requested {
             ctx.request_quit();
@@ -214,6 +228,15 @@ impl EventHandler for App {
         let Some(key) = input.keycode else {
             return Ok(());
         };
+        let now = Instant::now();
+        let delay = self.state.video().clock().key_repeat_delay;
+        self.repeat_held_back = repeated && !self.key_repeat.allows_repeat(key, now, delay);
+        if self.repeat_held_back {
+            return Ok(());
+        }
+        if !repeated {
+            self.key_repeat.pressed(key, now);
+        }
         let event = Event::Key {
             key,
             mods: input.mods,
@@ -223,7 +246,17 @@ impl EventHandler for App {
         return Ok(());
     }
 
+    fn key_up_event(&mut self, _ctx: &mut Context, input: KeyInput) -> GameResult {
+        if let Some(key) = input.keycode {
+            self.key_repeat.released(key);
+        }
+        return Ok(());
+    }
+
     fn text_input_event(&mut self, ctx: &mut Context, character: char) -> GameResult {
+        if self.repeat_held_back {
+            return Ok(());
+        }
         self.dispatch(Event::Text {
             character,
             mods: ctx.keyboard.active_mods(),

@@ -8,6 +8,7 @@ rust-version.workspace = true
 octamedic_util = {path="../octamedic_util"}
 cpal = "0.17.3"
 octamed = {path="../octamed"}
+symphonia = { version = "0.6.1", default-features = false, features = ["flac", "mp3", "pcm", "wav"] }
 
 [lints]
 workspace = true

@@ -35,6 +35,12 @@ impl Clickable {
         self.area = area;
     }
 
+    /// Forgets any press, like when its gadget gets disabled while held.
+    pub fn reset(&mut self) {
+        self.pressed = None;
+        self.hovered = false;
+    }
+
     /// Whether a mouse button is held on it with the pointer still over it.
     pub fn is_pressed(&self) -> bool {
         return self.hovered && self.pressed.is_some();

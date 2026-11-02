@@ -5,7 +5,7 @@ use crate::mmd::module::{
     OctamedMMD0SongFlags,
 };
 
-#[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
 pub struct ULong(pub u32);
 
 impl Display for ULong {
@@ -14,7 +14,7 @@ impl Display for ULong {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
 pub struct UWord(pub u16);
 
 impl Display for UWord {
@@ -44,7 +44,7 @@ impl From<UByte> for Byte {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Copy)]
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
 pub struct Byte(pub i8);
 
 impl Display for Byte {

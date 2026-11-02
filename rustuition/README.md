@@ -172,8 +172,9 @@ let button = Button::new("FILES")
 
 `Button::new` takes any `ButtonContent`: `&str`, `String`, `Line`, a `Triangle` (`.with_bar()`
 puts a bar across the point, like jump to start/end), an `ArrowLabel` or an `IncDec` (plus or
-minus). Your own content types implement `render`, plus `index_at` if it matters which part got
-clicked. `set_text` / `set_content` change it later.
+minus). A closure taking `(ContentArea, Pen, &mut Painter)` works too, for a one-off picture.
+Your own content types implement `render`, plus `index_at` if it matters which part got clicked.
+`set_text` / `set_content` change it later.
 
 It clicks the moment it's pressed, like Intuition's `GACT_IMMEDIATE` gadgets. The handler gets the
 state and a `ButtonClick` with the mouse button and `char_index` (the label character under the
@@ -212,6 +213,35 @@ impl TextEvent for Event {
 
 Give text boxes your events before other gadgets, so typing doesn't reach them and the box sees
 the click that unfocuses it.
+
+Any `Button`, `Textbox` or `Slider` can be disabled with `set_enabled(false)`. It's drawn as usual
+and then ghosted with `Painter::ghost`, a dot every fourth pixel and two along on every other line,
+like AmigaOS, and it ignores the mouse until it's enabled again.
+
+## Windows and dialogs
+
+`Window` draws a Workbench window: a frame and a title bar with a close gadget
+(`closable(false)` leaves that out). It only draws itself; put the contents in
+`Window::content_area`, and `Window::height_for` gives the height for so much of them.
+
+`Dialog` is a window with components stacked in it and a row of buttons, like an Amiga
+requester, and takes every event while it's open:
+
+```rust
+let mut dialog = Dialog::new("Rename").submit_button("OK").cancel_button("Cancel");
+let name = dialog.add_field(TextField::new("Name:").text("old").focused());
+let dialog = dialog.on_submit(move |state, result| state.rename(result.get(name)));
+```
+
+`with` adds something that only shows (a `Label`), `add_field` something with a value
+(`TextField`, `Checkbox`, `Cycle`, `PopupList`, `Toggle`, or a `Label` whose text changes) and
+gives back a `Field` that reads it from the `DialogResult`, already the right type. Each button submits or
+cancels; Enter presses the first submit button, and Escape and the close gadget cancel unless
+`cancellable(false)`. `on_submit_checked` can refuse with a message, which keeps the dialog open.
+`on_change` runs when it opens and whenever a component takes an event, and its `DialogFields`
+can read, set and disable fields, so one can follow another. `message`, `confirm` and
+`text_input` are ready made. New components implement `DialogComponent`, plus `DialogInput` if
+they have a value.
 
 ## Clicks
 

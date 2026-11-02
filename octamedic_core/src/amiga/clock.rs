@@ -1,3 +1,8 @@
+use std::time::Duration;
+
+// how long a key's held before it repeats, the same on both machines for now
+const KEY_REPEAT_DELAY: Duration = Duration::from_millis(400);
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AmigaClock {
     /// CIA timer clock, cpu clock / 10
@@ -5,6 +10,7 @@ pub struct AmigaClock {
     /// bytes per second = paula_clock / period
     pub paula_clock: u32,
     pub frame_rate: u32,
+    pub key_repeat_delay: Duration,
 }
 
 impl AmigaClock {
@@ -12,12 +18,14 @@ impl AmigaClock {
         e_clock: 709_379,
         paula_clock: 3_546_895,
         frame_rate: 50,
+        key_repeat_delay: KEY_REPEAT_DELAY,
     };
 
     pub const NTSC: Self = Self {
         e_clock: 715_909,
         paula_clock: 3_579_545,
         frame_rate: 60,
+        key_repeat_delay: KEY_REPEAT_DELAY,
     };
 }
 

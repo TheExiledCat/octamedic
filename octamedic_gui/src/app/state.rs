@@ -7,29 +7,35 @@ use octamed::{mmd::module::SONG_TRACKS, utility::note::SEMITONES_PER_OCTAVE};
 use octamedic_core::{
     amiga::clock::VideoStandard,
     data::{
-        instrument::{InstrumentId, MAX_INSTRUMENTS},
+        instrument::{InstrumentId, MAX_INSTRUMENTS, OctamedicInstrument},
         note::OctamedicNote,
         palette::{OctamedColorPalette, PALETTE_SIZE},
         pattern::{OctamedicPattern, OctamedicPatternTrack, PatternId},
         project::OctamedicProject,
         song::{OctamedicSong, SongId},
         tempo::OctamedicTempo,
+        volume::MAX_VOLUME,
     },
     engine::{engine::PlayMode, handle::EngineHandle},
 };
 use rustuition::palette::{Color, IntuitionColorPalette};
 
-use crate::app::{
-    DEFAULT_VIDEO,
-    cursor::EditCursor,
-    mode::{HeaderMode, MainMode},
+use crate::{
+    app::{
+        DEFAULT_VIDEO,
+        cursor::EditCursor,
+        files::browser::Browser,
+        mode::{HeaderMode, MainMode},
+    },
+    framework::widgets::Dialog,
 };
 
 const NOTIFICATION_DURATION: Duration = Duration::from_secs(2);
 
 const MAX_INSTRUMENT: u8 = MAX_INSTRUMENTS as u8;
 
-const MAX_OCTAVE: u8 = 9;
+// the keyboard's bottom row. F1 to F5 only go up to 5, the status bar's octaves box to 9
+pub const MAX_OCTAVE: u8 = 9;
 
 const SEMITONES: u8 = SEMITONES_PER_OCTAVE;
 
@@ -89,6 +95,9 @@ pub struct AppState {
     // the D switch
     pub play_on_note: bool,
     pub meters: Meters,
+    pub browser: Browser,
+    // opened since the dialog stack last looked
+    pending_dialogs: Vec<Dialog>,
     // right click: the title bar shows and the meters and scrolling stop
     pub displays_off: bool,
     video: VideoStandard,
@@ -130,7 +139,7 @@ impl AppState {
             cursor: EditCursor::default(),
             active_sequence_index: 0,
             active_instrument: InstrumentId(1),
-            current_octave: 2,
+            current_octave: 1,
             line_add: 1,
             recording: false,
             exit_requested: false,
@@ -138,6 +147,8 @@ impl AppState {
             palette,
             play_on_note: false,
             meters: Meters::default(),
+            browser: Browser::new(),
+            pending_dialogs: Vec::new(),
             displays_off: false,
             video: DEFAULT_VIDEO,
             queued_sequence_index: None,
@@ -187,6 +198,14 @@ impl AppState {
         }
     }
 
+    pub fn open_dialog(&mut self, dialog: Dialog) {
+        self.pending_dialogs.push(dialog);
+    }
+
+    pub fn take_pending_dialogs(&mut self) -> Vec<Dialog> {
+        return std::mem::take(&mut self.pending_dialogs);
+    }
+
     pub fn project(&self) -> &OctamedicProject {
         return &self.project;
     }
@@ -194,6 +213,27 @@ impl AppState {
     pub fn project_mut(&mut self) -> &mut OctamedicProject {
         self.has_changes = true;
         return &mut self.project;
+    }
+
+    // keeps what isn't the song's, like the file browser and which screen is showing
+    pub fn load_project(&mut self, project: OctamedicProject) {
+        self.stop();
+        for track in 0..SONG_TRACKS {
+            if self.muted_tracks[track] {
+                self.engine.set_track_muted(track, false);
+            }
+        }
+        self.palette = screen_palette(&project.palette());
+        self.project = project;
+        self.active_song = SongId(0);
+        self.active_pattern = PatternId(0);
+        self.cursor = EditCursor::default();
+        self.active_sequence_index = 0;
+        self.active_instrument = InstrumentId(1);
+        self.muted_tracks = [false; SONG_TRACKS];
+        self.has_changes = false;
+        self.restart_timer();
+        self.send_all_to_engine();
     }
 
     pub fn song(&self) -> &OctamedicSong {
@@ -349,6 +389,29 @@ impl AppState {
         self.queued_sequence_index = None;
     }
 
+    // plays at `note`, without it going in the song
+    pub fn preview(&self, instrument: &OctamedicInstrument, note: u8) {
+        if let Some(sample) = instrument.sample() {
+            self.engine
+                .preview(sample.clone(), OctamedicNote { value: note });
+        }
+    }
+
+    pub fn stop_preview(&self) {
+        self.engine.stop_preview();
+    }
+
+    pub fn replace_instrument(&mut self, id: InstrumentId, instrument: OctamedicInstrument) {
+        let Some(index) = id.index() else {
+            return;
+        };
+        let Some(slot) = self.song_mut().instruments.get_mut(index) else {
+            return;
+        };
+        *slot = Some(instrument.clone());
+        self.engine.set_instrument(id, Some(instrument));
+    }
+
     pub fn set_instrument(&mut self, instrument: u8) -> InstrumentId {
         self.active_instrument.0 = instrument.clamp(1, MAX_INSTRUMENT);
         return self.active_instrument;
@@ -459,6 +522,29 @@ impl AppState {
 
     pub fn set_song_name(&mut self, name: &str) {
         self.song_mut().set_name(name);
+    }
+
+    pub fn set_track_volume(&mut self, track: usize, volume: u8) {
+        let volume = volume.min(MAX_VOLUME);
+        let current = self
+            .song()
+            .track_volumes
+            .get(track)
+            .map(|volume| volume.get());
+        if current.is_none_or(|current| current == volume) {
+            return;
+        }
+        self.song_mut().track_volumes[track].set(volume);
+        self.engine.set_track_volume(track, volume);
+    }
+
+    pub fn set_master_volume(&mut self, volume: u8) {
+        let volume = volume.min(MAX_VOLUME);
+        if self.song().master_volume.get() == volume {
+            return;
+        }
+        self.song_mut().master_volume.set(volume);
+        self.engine.set_master_volume(volume);
     }
 
     pub fn set_volumes_hex(&mut self, hex: bool) {
@@ -655,6 +741,30 @@ mod tests {
 
     fn state() -> AppState {
         return AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+    }
+
+    #[test]
+    fn loading_resets_the_song_state() {
+        let mut state = state();
+        state.set_song_name("old");
+        state.toggle_track_mute(2);
+        state.set_instrument(5);
+        assert!(!state.is_saved());
+        let mut project = OctamedicProject::new();
+        project.get_song_mut(SongId(0)).unwrap().set_name("new");
+        state.load_project(project);
+        assert_eq!(state.song().name(), "new");
+        assert!(state.is_saved());
+        assert!(!state.is_track_muted(2));
+        assert_eq!(state.active_instrument, InstrumentId(1));
+    }
+
+    #[test]
+    fn loading_keeps_the_browser() {
+        let mut state = state();
+        state.browser.open(std::env::temp_dir()).unwrap();
+        state.load_project(OctamedicProject::new());
+        assert_eq!(state.browser.path(), std::env::temp_dir());
     }
 
     #[test]

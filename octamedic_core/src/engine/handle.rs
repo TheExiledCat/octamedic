@@ -17,7 +17,7 @@ use super::engine::{OctamedicEngine, PlayMode};
 use crate::{
     amiga::{clock::AmigaClock, paula::Scopes},
     data::{
-        instrument::{InstrumentId, OctamedicInstrument},
+        instrument::{InstrumentId, OctamedicInstrument, OctamedicSample},
         note::OctamedicNote,
         pattern::{MAX_TRACKS, OctamedicPattern, PatternId},
         song::OctamedicSong,
@@ -71,6 +71,8 @@ pub enum EngineCommand {
     ReleaseNote {
         track: usize,
     },
+    /// Plays a sample that isn't in the song on the first track, or stops it with `None`.
+    Preview(Option<(Arc<OctamedicSample>, OctamedicNote)>),
 }
 
 impl EngineCommand {
@@ -367,6 +369,14 @@ impl EngineHandle {
 
     pub fn release_note(&self, track: usize) {
         self.send(EngineCommand::ReleaseNote { track });
+    }
+
+    pub fn preview(&self, sample: Arc<OctamedicSample>, note: OctamedicNote) {
+        self.send(EngineCommand::Preview(Some((sample, note))));
+    }
+
+    pub fn stop_preview(&self) {
+        self.send(EngineCommand::Preview(None));
     }
 
     pub fn shut_down(&mut self) {

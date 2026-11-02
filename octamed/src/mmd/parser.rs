@@ -21,6 +21,7 @@ use crate::{
             OctamedMMDBlockTable, OctamedMMDTrackLine, PALETTE_COLORS, SEQUENCE_LENGTH,
             SONG_TRACKS,
         },
+        synth::OctamedMMD0SynthInstrument,
     },
     utility::bytes::{Byte, Offset, UByte, ULong, UWord, Word},
 };
@@ -267,12 +268,14 @@ impl OctamedMMDParser {
         let mut sample_table = OctamedMMD0SampleTable {
             headers: vec![],
             samples: vec![],
+            synths: vec![],
         };
         for offset in instrument_ptrs {
             // an empty instrument slot
             if offset.is_null() {
                 sample_table.headers.push(None);
                 sample_table.samples.push(None);
+                sample_table.synths.push(None);
                 continue;
             }
             stream.seek(offset.into())?;
@@ -285,6 +288,7 @@ impl OctamedMMDParser {
                 //null instrument
                 sample_table.headers.push(None);
                 sample_table.samples.push(None);
+                sample_table.synths.push(None);
                 continue;
             }
             let sample_type = OctamedMMD0InstrumentType::from_word(sample_type)
@@ -299,9 +303,11 @@ impl OctamedMMDParser {
             }));
             if is_sample {
                 sample_table.samples.push(Some(samples));
+                sample_table.synths.push(None);
             } else {
-                // synth/hybrid instrument: keep headers and samples vecs in sync
+                let synth = OctamedMMD0SynthInstrument::from_module(stream, offset.0 as u64)?;
                 sample_table.samples.push(None);
+                sample_table.synths.push(Some(synth));
             }
         }
         return Ok(sample_table);
@@ -396,10 +402,10 @@ impl OctamedMMDParser {
     fn parse_block_info<R: Read + Seek>(
         &self,
         stream: &mut R,
-        header: &OctamedMMD1BlockHeader,
+        block_header: &OctamedMMD1BlockHeader,
     ) -> Result<Option<OctamedMMD1BlockInfo>> {
         let start_pos = stream.stream_position()?;
-        let offset = header.info_ptr;
+        let offset = block_header.info_ptr;
         if offset.is_null() {
             return Ok(None);
         }
@@ -426,10 +432,15 @@ impl OctamedMMDParser {
         for _ in 0..header.block_name_length.0.saturating_sub(1) {
             block_name.push(Self::parse_ubyte(stream)?.as_char());
         }
-        let highlight_mask = {
+        let highlight_mask = if header.highlight_mask_array_ptr.is_null() {
+            OctamedMMD1HighlightMask::default()
+        } else {
             stream.seek(header.highlight_mask_array_ptr.into())?;
-            //todo. not that important
-            OctamedMMD1HighlightMask {}
+            let lines = block_header.line_count.0 as usize + 1;
+            let words = (0..lines.div_ceil(32))
+                .map(|_| Self::parse_ulong(stream))
+                .collect::<Result<_>>()?;
+            OctamedMMD1HighlightMask { words }
         };
         let page_table: OctamedMMD2BlockCommandPageTable = {
             // only for mmd2
