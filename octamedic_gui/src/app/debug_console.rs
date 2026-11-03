@@ -1,4 +1,4 @@
-use ggez::input::keyboard::KeyCode;
+use ggez::input::keyboard::{KeyCode, KeyMods};
 use octamedic_util::primitives::Flip;
 use rustuition::{
     gadget::Gadget,
@@ -8,7 +8,8 @@ use rustuition::{
 
 use crate::{app::state::AppState, framework::event::Event};
 
-// the key rather than the character, which repeats while held and is a dead key on some layouts
+// the key rather than the character, which repeats while held and is a dead key on some layouts.
+// with Ctrl, since the key on its own is SP
 const TOGGLE: KeyCode = KeyCode::Grave;
 
 const OPACITY: f32 = 0.8;
@@ -25,19 +26,14 @@ impl Gadget<AppState, Event> for DebugConsole {
         match *event {
             Event::Key {
                 key: TOGGLE,
+                mods,
                 repeat,
-                ..
-            } => {
+            } if mods.contains(KeyMods::CTRL) => {
                 if !repeat {
                     self.visible.flip();
                 }
                 return true;
             }
-            // what the toggle types
-            Event::Text {
-                character: '~' | '`',
-                ..
-            } => return true,
             _ => return false,
         }
     }
@@ -60,7 +56,6 @@ impl Gadget<AppState, Event> for DebugConsole {
 
 #[cfg(test)]
 mod tests {
-    use ggez::input::keyboard::KeyMods;
     use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
 
     use super::*;
@@ -68,7 +63,7 @@ mod tests {
     fn key(repeat: bool) -> Event {
         return Event::Key {
             key: TOGGLE,
-            mods: KeyMods::SHIFT,
+            mods: KeyMods::CTRL,
             repeat,
         };
     }
@@ -79,8 +74,14 @@ mod tests {
         let mut console = DebugConsole::default();
         assert!(console.handle_event(&mut state, &key(false)));
         assert!(console.handle_event(&mut state, &key(true)));
-        assert!(console.handle_event(&mut state, &Event::text('~')));
         assert!(console.visible);
+        // without Ctrl it's SP's
+        let plain = Event::Key {
+            key: TOGGLE,
+            mods: KeyMods::NONE,
+            repeat: false,
+        };
+        assert!(!console.handle_event(&mut state, &plain));
         console.handle_event(&mut state, &key(false));
         assert!(!console.visible);
     }

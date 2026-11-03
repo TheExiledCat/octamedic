@@ -2,6 +2,7 @@ use std::{fmt::Display, fs, io, path::Path};
 
 pub mod decode;
 pub mod flac;
+pub mod iff;
 pub mod mp3;
 pub mod msh;
 pub mod raw;
@@ -9,14 +10,15 @@ pub mod sample;
 pub mod wav;
 
 use crate::{
-    data::instrument::{InstrumentKind, OctamedicInstrument},
+    data::instrument::OctamedicInstrument,
     import::sample::{DecodedSample, ImportSettings},
 };
 
 pub enum Decoded {
     /// Still needs making into what Paula plays, see [`DecodedSample::to_instrument`].
     Sample(DecodedSample),
-    Ready(InstrumentKind),
+    /// Everything but the name, which comes from the file's.
+    Ready(Box<OctamedicInstrument>),
 }
 
 impl Decoded {
@@ -34,13 +36,9 @@ impl Decoded {
     ) -> Result<OctamedicInstrument, InstrumentLoadError> {
         return match self {
             Decoded::Sample(sample) => sample.to_instrument(name, settings),
-            Decoded::Ready(kind) => {
-                let mut instrument = OctamedicInstrument::new(name);
-                if let InstrumentKind::Synth(synth) | InstrumentKind::Hybrid(synth, _) = &kind {
-                    instrument.decay = synth.default_decay;
-                }
-                instrument.kind = kind;
-                Ok(instrument)
+            Decoded::Ready(mut instrument) => {
+                instrument.name = name.to_owned();
+                Ok(*instrument)
             }
         };
     }

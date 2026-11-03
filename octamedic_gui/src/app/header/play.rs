@@ -15,7 +15,7 @@ use rustuition::{
         CHAR_HEIGHT, Painter, Pen, text_y,
     },
     rect::Rect,
-    shape::Direction::{Down, Left, Right as Rightward, Up},
+    shape::Direction::{Down, Up},
     text::{Line, Span},
 };
 
@@ -26,7 +26,7 @@ use crate::{
     },
     framework::{
         event::{Event, MouseButton},
-        widgets::{Button, Slider},
+        widgets::{Button, SteppedSlider},
     },
 };
 const SEQUENCER_JUMP_BUTTONS: usize = 4;
@@ -61,11 +61,9 @@ const ACTIVE_ROW: usize = SEQUENCE_COUNT_MAX / 2;
 const SEQUENCE_TOP_MARGIN: i32 = 1;
 
 // from the panel's top left
-const TEMPO_SLIDERS: [Rect; 2] = [Rect::new(94, 0, 190, 15), Rect::new(320, 0, 92, 15)];
-const TEMPO_STEPS: [[Rect; 2]; 2] = [
-    [Rect::new(284, 0, 18, 15), Rect::new(302, 0, 18, 15)],
-    [Rect::new(412, 0, 18, 15), Rect::new(430, 0, 18, 15)],
-];
+// each slider with its arrows
+const TEMPO_SLIDERS: [Rect; 2] = [Rect::new(94, 0, 226, 15), Rect::new(320, 0, 128, 15)];
+const STEP_WIDTH: i32 = 18;
 const STEP_ARROW: [i32; 2] = [8, 7];
 // OctaMED's tempo handles don't scale with the range
 const TEMPO_HANDLE_LENGTH: i32 = 5;
@@ -388,10 +386,8 @@ fn label_button(label: &'static str) -> Button {
 }
 
 struct Playback {
-    sliders: [Slider; 2],
-    steps: [[Button; 2]; 2],
-    // the value last set on each slider, so a drag shows up as a change
-    slid: [u16; 2],
+    // the tempo, then the lines per beat or ticks per line
+    sliders: [SteppedSlider; 2],
     tempo_mode: Button,
     tempo: Button,
     hex: Button,
@@ -420,21 +416,10 @@ impl Playback {
             mode.set_enabled(false);
         }
         return Self {
-            sliders: [
-                Slider::new(SliderDirection::Horizontal, false, MAX_BPM as u16),
-                Slider::new(
-                    SliderDirection::Horizontal,
-                    false,
-                    MAX_LINES_PER_BEAT as u16,
-                ),
-            ]
-            .map(|slider| slider.fixed_handle(TEMPO_HANDLE_LENGTH)),
-            steps: array::from_fn(|_| {
-                [Left, Rightward].map(|direction| {
-                    Button::new(Triangle::new(direction, STEP_ARROW[0], STEP_ARROW[1]))
-                })
+            sliders: [MAX_BPM as u16, MAX_LINES_PER_BEAT as u16].map(|max| {
+                SteppedSlider::new(SliderDirection::Horizontal, 1, max, STEP_ARROW, STEP_WIDTH)
+                    .fixed_handle(TEMPO_HANDLE_LENGTH)
             }),
-            slid: [1; 2],
             tempo_mode: Button::new("BPM"),
             tempo: Button::new(tempo_readout([1; 2])),
             hex: label_button("HEX"),
@@ -455,38 +440,29 @@ impl Playback {
     }
 
     fn buttons(&mut self) -> impl Iterator<Item = &mut Button> {
-        return self
-            .steps
-            .iter_mut()
-            .flatten()
-            .chain([
-                &mut self.tempo_mode,
-                &mut self.hex,
-                &mut self.dec,
-                &mut self.filter,
-                &mut self.sts,
-                &mut self.hq,
-                &mut self.stop,
-                &mut self.play_on_note,
-            ])
-            .chain(&mut self.meters)
-            .chain(&mut self.channel_modes)
-            .chain(&mut self.starts);
+        return [
+            &mut self.tempo_mode,
+            &mut self.hex,
+            &mut self.dec,
+            &mut self.filter,
+            &mut self.sts,
+            &mut self.hq,
+            &mut self.stop,
+            &mut self.play_on_note,
+        ]
+        .into_iter()
+        .chain(&mut self.meters)
+        .chain(&mut self.channel_modes)
+        .chain(&mut self.starts);
     }
 
     fn update_tempo(&mut self, state: &mut AppState) {
-        for index in 0..TEMPO_SLIDERS.len() {
-            let dragged = self.sliders[index].value() + 1;
-            if dragged != self.slid[index] {
-                set_tempo_value(state, index, dragged);
-            }
-            let value = tempo_values(&state.song().tempo())[index];
-            let [down, up] = &mut self.steps[index];
-            if left_clicked(down) {
-                set_tempo_value(state, index, value.saturating_sub(1));
-            }
-            if left_clicked(up) {
-                set_tempo_value(state, index, value.saturating_add(1));
+        let tempo = state.song().tempo();
+        let maxima = tempo_maxima(&tempo);
+        for (index, slider) in self.sliders.iter_mut().enumerate() {
+            slider.set_range(1, maxima[index]);
+            if let Some(value) = slider.update(state, tempo_values(&tempo)[index]) {
+                set_tempo_value(state, index, value);
             }
         }
         if left_clicked(&mut self.tempo_mode) {
@@ -496,10 +472,6 @@ impl Playback {
         }
         let tempo = state.song().tempo();
         let values = tempo_values(&tempo);
-        for (index, slider) in self.sliders.iter_mut().enumerate() {
-            slider.set_value(values[index].saturating_sub(1));
-            self.slid[index] = slider.value() + 1;
-        }
         self.tempo_mode
             .set_text(if tempo.is_bpm_mode { "BPM" } else { "SPD" });
         self.tempo.set_content(tempo_readout(values));
@@ -575,11 +547,8 @@ impl Gadget<AppState, Event> for Playback {
     }
 
     fn render(&mut self, state: &AppState, area: Rect, painter: &mut Painter) {
-        for (index, slider) in self.sliders.iter_mut().enumerate() {
-            slider.render(state, TEMPO_SLIDERS[index].within(area), painter);
-            for (button, rect) in self.steps[index].iter_mut().zip(TEMPO_STEPS[index]) {
-                button.render(state, rect.within(area), painter);
-            }
+        for (slider, rect) in self.sliders.iter_mut().zip(TEMPO_SLIDERS) {
+            slider.render(state, rect.within(area), painter);
         }
         self.tempo_mode
             .render(state, TEMPO_MODE.within(area), painter);

@@ -1,4 +1,4 @@
-use crate::data::instrument::{MAX_FINETUNE, MIN_FINETUNE};
+use crate::data::instrument::{MAX_FINETUNE, MIN_FINETUNE, SampleOctaves};
 
 // v4 period tables, C-1 to B-3, finetune -8..7. same numbers as ProTracker
 const PERIODS: [[u16; 36]; 16] = [
@@ -108,10 +108,91 @@ const LAST_INDEX: i8 = 62;
 // C-3
 const TOP_OCTAVE: usize = 24;
 
+// which octave copy plays and which period table row, by the note's octave, for each multi-octave
+// type in MMD order (5, 3, 2, 4, 6 and 7 octaves), see docs/FILES.md. the player's fourth row is a
+// copy of octave 3, so it's 2 here
+#[rustfmt::skip]
+const OCTAVE_COPIES: [[u8; 6]; 6] = [
+    [4, 3, 2, 1, 1, 0],
+    [2, 2, 1, 1, 0, 0],
+    [1, 1, 0, 0, 0, 0],
+    [3, 3, 2, 2, 1, 0],
+    [5, 4, 3, 2, 1, 0],
+    [6, 5, 4, 3, 2, 1],
+];
+#[rustfmt::skip]
+const OCTAVE_ROWS: [[u8; 6]; 6] = [
+    [1, 1, 1, 1, 2, 2],
+    [0, 1, 1, 2, 2, 2],
+    [0, 1, 1, 2, 2, 2],
+    [0, 1, 1, 2, 2, 2],
+    [1, 1, 1, 1, 1, 1],
+    [1, 1, 1, 1, 1, 1],
+];
+
+// ExtSample plays two octaves under the table, at 4 and then 2 times its first octave's periods
+const EXTRA_LOW_OCTAVES: i8 = 2;
+
 /// Period for a note the way v4 works it out, for normal samples, no extra octaves.
 /// `transpose` is instrument + song. Low notes get pushed up by octaves until they fit, very high
 /// ones drop one octave, and anything above B-3 folds into the top octave.
 pub fn note_period(note: u8, transpose: i8, finetune: i8) -> u16 {
+    return period_at(note_index(note, transpose), finetune);
+}
+
+/// How a sample plays a note: which of its octave copies, counting from the shortest, at which
+/// period.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SampleNote {
+    pub copy: u32,
+    pub period: u16,
+}
+
+/// Plain samples only have copy 0.
+pub fn sample_note(note: u8, transpose: i8, finetune: i8, octaves: SampleOctaves) -> SampleNote {
+    let index = note_index(note, transpose);
+    let Some(row) = octave_table_row(octaves) else {
+        let period = if octaves == SampleOctaves::ExtraLow {
+            extra_low_period(index, finetune)
+        } else {
+            period_at(index, finetune)
+        };
+        return SampleNote { copy: 0, period };
+    };
+    let octave = index as usize / NOTES_PER_OCTAVE as usize;
+    let semitone = index as usize % NOTES_PER_OCTAVE as usize;
+    let periods_row = OCTAVE_ROWS[row][octave] as usize;
+    return SampleNote {
+        copy: OCTAVE_COPIES[row][octave] as u32,
+        period: table(finetune)[periods_row * NOTES_PER_OCTAVE as usize + semitone],
+    };
+}
+
+// the MMD instrument type less one
+fn octave_table_row(octaves: SampleOctaves) -> Option<usize> {
+    return match octaves {
+        SampleOctaves::Five => Some(0),
+        SampleOctaves::Three => Some(1),
+        SampleOctaves::Two => Some(2),
+        SampleOctaves::Four => Some(3),
+        SampleOctaves::Six => Some(4),
+        SampleOctaves::Seven => Some(5),
+        SampleOctaves::One | SampleOctaves::ExtraLow => None,
+    };
+}
+
+fn extra_low_period(index: i8, finetune: i8) -> u16 {
+    let lowered = index - EXTRA_LOW_OCTAVES * NOTES_PER_OCTAVE;
+    if lowered >= 0 {
+        return period_at(lowered, finetune);
+    }
+    let first_octave = table(finetune)[index as usize % NOTES_PER_OCTAVE as usize];
+    let times = if lowered < -NOTES_PER_OCTAVE { 4 } else { 2 };
+    return first_octave * times;
+}
+
+// from C-1, after the transpose, octaves up until it's not negative and one down past D-6
+fn note_index(note: u8, transpose: i8) -> i8 {
     // i8 on purpose, the player does this in a byte and wraps
     let mut index = (note as i8).wrapping_add(transpose).wrapping_sub(1);
     while index < 0 {
@@ -120,7 +201,15 @@ pub fn note_period(note: u8, transpose: i8, finetune: i8) -> u16 {
     if index > LAST_INDEX {
         index -= NOTES_PER_OCTAVE;
     }
-    let table = &PERIODS[(finetune.clamp(MIN_FINETUNE, MAX_FINETUNE) - MIN_FINETUNE) as usize];
+    return index;
+}
+
+fn table(finetune: i8) -> &'static [u16; 36] {
+    return &PERIODS[(finetune.clamp(MIN_FINETUNE, MAX_FINETUNE) - MIN_FINETUNE) as usize];
+}
+
+fn period_at(index: i8, finetune: i8) -> u16 {
+    let table = table(finetune);
     let index = index as usize;
     if index < table.len() {
         return table[index];
@@ -180,5 +269,101 @@ mod tests {
         // 127 + 2 wraps to -127, then octaves up to E-1
 
         assert_eq!(note_period(127, 2, 0), 678);
+    }
+
+    #[test]
+    fn multi_octave_copies_and_periods() {
+        use SampleOctaves::*;
+        // C-1, C-5 and C-6 on the table in docs/FILES.md
+        assert_eq!(
+            sample_note(1, 0, 0, Five),
+            SampleNote {
+                copy: 4,
+                period: 428
+            }
+        );
+        assert_eq!(
+            sample_note(49, 0, 0, Five),
+            SampleNote {
+                copy: 1,
+                period: 214
+            }
+        );
+        assert_eq!(
+            sample_note(61, 0, 0, Five),
+            SampleNote {
+                copy: 0,
+                period: 214
+            }
+        );
+        assert_eq!(
+            sample_note(1, 0, 0, Three),
+            SampleNote {
+                copy: 2,
+                period: 856
+            }
+        );
+        assert_eq!(
+            sample_note(61, 0, 0, Three),
+            SampleNote {
+                copy: 0,
+                period: 214
+            }
+        );
+        assert_eq!(
+            sample_note(13, 0, 0, Seven),
+            SampleNote {
+                copy: 5,
+                period: 428
+            }
+        );
+        assert_eq!(
+            sample_note(14, 0, 0, Two),
+            SampleNote {
+                copy: 1,
+                period: 404
+            }
+        );
+        // plain samples only ever play copy 0
+        assert_eq!(
+            sample_note(13, 0, 0, One),
+            SampleNote {
+                copy: 0,
+                period: 428
+            }
+        );
+    }
+
+    #[test]
+    fn extra_low_is_two_octaves_down() {
+        use SampleOctaves::ExtraLow;
+        assert_eq!(
+            sample_note(1, 0, 0, ExtraLow),
+            SampleNote {
+                copy: 0,
+                period: 3424
+            }
+        );
+        assert_eq!(
+            sample_note(13, 0, 0, ExtraLow),
+            SampleNote {
+                copy: 0,
+                period: 1712
+            }
+        );
+        assert_eq!(
+            sample_note(25, 0, 0, ExtraLow),
+            SampleNote {
+                copy: 0,
+                period: 856
+            }
+        );
+        assert_eq!(
+            sample_note(37, 0, 0, ExtraLow),
+            SampleNote {
+                copy: 0,
+                period: 428
+            }
+        );
     }
 }

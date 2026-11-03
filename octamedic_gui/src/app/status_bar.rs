@@ -1,4 +1,4 @@
-use ggez::input::keyboard::KeyCode;
+use ggez::input::keyboard::{KeyCode, KeyMods};
 use octamedic_util::{base32, primitives::Flip};
 use rustuition::{
     gadget::Gadget,
@@ -14,11 +14,12 @@ use rustuition::{
 use crate::{
     app::{
         fonts::{self, POSITION_SLASH},
-        state::{AppState, MAX_OCTAVE},
+        mode::HeaderMode,
+        state::{AppState, MAX_OCTAVE, NameEdit},
     },
     framework::{
         event::{Event, MouseButton},
-        keymap::{Action, Key, KeyActions, Keymap},
+        keymap::{AMIGA, Action, Key, KeyActions, Keymap},
         widgets::Button,
     },
 };
@@ -48,9 +49,26 @@ const MUTE_ROWS: usize = 2;
 pub enum StatusBarAction {
     NextInstrument,
     PrevInstrument,
+    ToggleSpacing,
+    // by this many, through the instrument list
+    MoveInstrument(i32),
+    FirstInstrument,
+    LastInstrument,
+    EditName(NameEdit),
 }
 
-impl Action for StatusBarAction {}
+// a quick scroll through the instrument list
+const INSTRUMENT_PAGE: i32 = 8;
+const INSTRUMENT_JUMP: i32 = 16;
+
+impl Action for StatusBarAction {
+    fn repeats(self) -> bool {
+        return !matches!(
+            self,
+            StatusBarAction::ToggleSpacing | StatusBarAction::EditName(_)
+        );
+    }
+}
 
 pub struct StatusBar {
     keys: Keymap<StatusBarAction>,
@@ -116,7 +134,7 @@ impl StatusBar {
         boxes[NEXT_SONG] = Button::new(Triangle::arrow(Direction::Right)).enabled(false);
         boxes[SONG] = Button::new("").align(Align::Right).font(fonts::INTERFACE);
         boxes[EDIT] = flag("E", 3).on_click(|state, _| state.cursor.edit_mode.flip());
-        boxes[SP] = flag("SP", 2).enabled(false);
+        boxes[SP] = flag("SP", 2).on_click(|state, _| state.spacing.flip());
         boxes[CHRD] = flag("CHRD", 2).enabled(false);
         boxes[INSTRUMENT] = Button::new("")
             .align(Align::Left)
@@ -156,6 +174,61 @@ impl StatusBar {
                     Key::shift(KeyCode::Left),
                     StatusBarAction::PrevInstrument,
                     "Prev instrument",
+                )
+                .bind(
+                    Key::plain(KeyCode::Grave),
+                    StatusBarAction::ToggleSpacing,
+                    "Spacing",
+                )
+                .bind(
+                    Key::alt(KeyCode::Numpad7),
+                    StatusBarAction::FirstInstrument,
+                    "First instr",
+                )
+                .bind(
+                    Key::alt(KeyCode::Numpad1),
+                    StatusBarAction::LastInstrument,
+                    "Last instr",
+                )
+                .bind(
+                    Key::alt(KeyCode::Numpad8),
+                    StatusBarAction::MoveInstrument(-1),
+                    "Instr up",
+                )
+                .bind(
+                    Key::alt(KeyCode::Numpad2),
+                    StatusBarAction::MoveInstrument(1),
+                    "Instr down",
+                )
+                .bind(
+                    Key::alt(KeyCode::Numpad9),
+                    StatusBarAction::MoveInstrument(-INSTRUMENT_PAGE),
+                    "Instr page up",
+                )
+                .bind(
+                    Key::alt(KeyCode::Numpad3),
+                    StatusBarAction::MoveInstrument(INSTRUMENT_PAGE),
+                    "Instr page down",
+                )
+                .bind(
+                    Key::new(KeyCode::Left, KeyMods::ALT | KeyMods::SHIFT),
+                    StatusBarAction::MoveInstrument(-INSTRUMENT_JUMP),
+                    "16 instr back",
+                )
+                .bind(
+                    Key::new(KeyCode::Right, KeyMods::ALT | KeyMods::SHIFT),
+                    StatusBarAction::MoveInstrument(INSTRUMENT_JUMP),
+                    "16 instr on",
+                )
+                .bind(
+                    Key::amiga(KeyCode::I),
+                    StatusBarAction::EditName(NameEdit::Select),
+                    "Instr name",
+                )
+                .bind(
+                    Key::new(KeyCode::I, AMIGA | KeyMods::SHIFT),
+                    StatusBarAction::EditName(NameEdit::Clear),
+                    "Clear instr name",
                 ),
             boxes,
             mutes: Grid::new(MUTE_COLUMNS, MUTE_ROWS, mute_boxes),
@@ -204,6 +277,7 @@ impl Gadget<AppState, Event> for StatusBar {
         }
 
         self.boxes[EDIT].set_toggled(state.cursor.edit_mode);
+        self.boxes[SP].set_toggled(state.spacing);
         for (track, button) in self.mutes.cells_mut().iter_mut().enumerate() {
             button.set_toggled(!state.is_track_muted(track));
         }
@@ -263,15 +337,40 @@ impl KeyActions for StatusBar {
 
     fn perform(&mut self, action: StatusBarAction, state: &mut AppState) {
         match action {
-            StatusBarAction::NextInstrument => state.next_instrument(),
-            StatusBarAction::PrevInstrument => state.prev_instrument(),
-        };
+            StatusBarAction::NextInstrument => {
+                state.next_instrument();
+            }
+            StatusBarAction::PrevInstrument => {
+                state.prev_instrument();
+            }
+            StatusBarAction::ToggleSpacing => state.spacing.flip(),
+            StatusBarAction::MoveInstrument(delta) => {
+                state.move_instrument(delta);
+            }
+            StatusBarAction::FirstInstrument => {
+                state.set_instrument(1);
+            }
+            StatusBarAction::LastInstrument => {
+                state.set_instrument(u8::MAX);
+            }
+            StatusBarAction::EditName(edit) => {
+                state.set_modes(HeaderMode::Instrument, state.main_mode());
+                state.name_edit_request = Some(edit);
+            }
+        }
     }
 
     fn describe(action: StatusBarAction) -> &'static str {
         return match action {
             StatusBarAction::NextInstrument => "Next instrument",
             StatusBarAction::PrevInstrument => "Previous instrument",
+            StatusBarAction::ToggleSpacing => "Spacing (SP): move by the line add",
+            StatusBarAction::MoveInstrument(delta) if delta < 0 => "Earlier in the instrument list",
+            StatusBarAction::MoveInstrument(_) => "Later in the instrument list",
+            StatusBarAction::FirstInstrument => "First instrument",
+            StatusBarAction::LastInstrument => "Last instrument",
+            StatusBarAction::EditName(NameEdit::Select) => "Edit the instrument's name",
+            StatusBarAction::EditName(NameEdit::Clear) => "Clear and edit the instrument's name",
         };
     }
 }
@@ -309,6 +408,23 @@ mod tests {
     }
 
     #[test]
+    fn sp_switches_spacing() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        let mut status = StatusBar::new();
+        let area = Rect::new(0, 0, 640, 12);
+        let mut screen = Framebuffer::new(640, 12);
+        status.render(&state, area, &mut Painter::new(&mut screen, &state.palette));
+        let sp = status.boxes[SP].area();
+        let press = Event::MouseDown {
+            pos: [sp.x + 3, sp.y + 3],
+            button: MouseButton::Left,
+        };
+        status.handle_event(&mut state, &press);
+        status.update(&mut state);
+        assert!(state.spacing && status.boxes[SP].is_toggled());
+    }
+
+    #[test]
     fn octaves_box_shows_and_loops() {
         let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
         let mut status = StatusBar::new();
@@ -332,6 +448,32 @@ mod tests {
         );
         status.handle_event(&mut state, &press(MouseButton::Right));
         assert_eq!(state.current_octave, MAX_OCTAVE);
+    }
+
+    #[test]
+    fn instrument_list_keys() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        let mut status = StatusBar::new();
+        let mut press = |state: &mut AppState, key, mods| {
+            let event = Event::Key {
+                key,
+                mods,
+                repeat: false,
+            };
+            assert!(status.handle_event(state, &event));
+            return state.active_instrument.0;
+        };
+        let alt = KeyMods::ALT;
+        assert_eq!(press(&mut state, KeyCode::Numpad1, alt), 63);
+        assert_eq!(press(&mut state, KeyCode::Numpad9, alt), 55);
+        let alt_shift = KeyMods::ALT | KeyMods::SHIFT;
+        assert_eq!(press(&mut state, KeyCode::Left, alt_shift), 39);
+        assert_eq!(press(&mut state, KeyCode::Numpad7, alt), 1);
+        assert_eq!(press(&mut state, KeyCode::Numpad8, alt), 1);
+        assert_eq!(press(&mut state, KeyCode::Numpad2, alt), 2);
+        press(&mut state, KeyCode::I, AMIGA | KeyMods::SHIFT);
+        assert_eq!(state.header_mode(), HeaderMode::Instrument);
+        assert_eq!(state.name_edit_request, Some(NameEdit::Clear));
     }
 
     #[test]

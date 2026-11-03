@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{ops::Range, sync::Arc};
 
 pub use octamed::mmd::module::MAX_INSTRUMENTS;
 use octamed::mmd::{
@@ -41,6 +41,19 @@ pub enum SampleOctaves {
 }
 
 impl SampleOctaves {
+    /// How many copies of the sound there are.
+    pub fn copies(self) -> u32 {
+        return match self {
+            Self::One | Self::ExtraLow => 1,
+            Self::Two => 2,
+            Self::Three => 3,
+            Self::Four => 4,
+            Self::Five => 5,
+            Self::Six => 6,
+            Self::Seven => 7,
+        };
+    }
+
     pub fn from_octamed(kind: OctamedMMD0InstrumentType) -> Self {
         return match kind {
             OctamedMMD0InstrumentType::SampleOct2 => Self::Two,
@@ -64,7 +77,34 @@ pub struct OctamedicSample {
     pub octaves: SampleOctaves,
 }
 
+/// Where one octave copy of a sample is, and its loop, in bytes from the start of the data.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OctaveCopy {
+    pub data: Range<usize>,
+    pub repeat: Option<Range<usize>>,
+}
+
 impl OctamedicSample {
+    /// Copy `copy`, counting from the shortest. Each is twice as long as the one before, from
+    /// `length / (2^copies - 1)` up, and the loop doubles with it. A plain sample's copy 0 is all
+    /// of it.
+    pub fn octave_copy(&self, copy: u32) -> OctaveCopy {
+        let copies = self.octaves.copies();
+        let copy = copy.min(copies - 1);
+        let shortest = self.data.len() / ((1 << copies) - 1);
+        let start = shortest * ((1 << copy) - 1);
+        let end = (start + (shortest << copy)).min(self.data.len());
+        let repeat = self.repeat.and_then(|(from, to)| {
+            let from = (start + (from << copy)).min(end);
+            let to = (start + (to << copy)).min(end);
+            (from < to).then_some(from..to)
+        });
+        return OctaveCopy {
+            data: start..end,
+            repeat,
+        };
+    }
+
     /// Everything ends up 8-bit mono: 16-bit keeps the high byte, stereo gets mixed down.
     pub fn from_octamed(
         bytes: &[i8],
@@ -191,5 +231,37 @@ impl OctamedicInstrument {
             InstrumentKind::Sample(sample) => Some(sample),
             _ => None,
         };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn octave_copies_double() {
+        let sample = OctamedicSample {
+            data: (0..15).collect(),
+            repeat: Some((1, 2)),
+            octaves: SampleOctaves::Three,
+        };
+        // 2 bytes, then 4, then 8, the odd byte left over
+        let copy = |k| sample.octave_copy(k);
+        assert_eq!(copy(0).data, 0..2);
+        assert_eq!(copy(1).data, 2..6);
+        assert_eq!(
+            copy(2),
+            OctaveCopy {
+                data: 6..14,
+                repeat: Some(10..14),
+            }
+        );
+        assert_eq!(copy(9).data, 6..14);
+        let plain = OctamedicSample {
+            data: vec![0; 5],
+            repeat: None,
+            octaves: SampleOctaves::One,
+        };
+        assert_eq!(plain.octave_copy(0).data, 0..5);
     }
 }

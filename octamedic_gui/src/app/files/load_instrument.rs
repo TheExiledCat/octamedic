@@ -5,6 +5,7 @@ use octamedic_core::{
     import::{
         Decoded, InstrumentLoader, find_loader,
         flac::FlacLoader,
+        iff::IffLoader,
         instrument_name,
         mp3::Mp3Loader,
         msh::MshLoader,
@@ -21,8 +22,14 @@ use crate::{
 };
 
 // tried in order, raw takes anything so it's last
-const LOADERS: &[&dyn InstrumentLoader] =
-    &[&WavLoader, &FlacLoader, &Mp3Loader, &MshLoader, &RawLoader];
+const LOADERS: &[&dyn InstrumentLoader] = &[
+    &WavLoader,
+    &FlacLoader,
+    &Mp3Loader,
+    &IffLoader,
+    &MshLoader,
+    &RawLoader,
+];
 
 // downsampling converts to the rate this note plays at, so it plays at its original pitch there.
 // the numbers are the engine's notes, counted from 1 = C-1 in semitones, so 13 = C-2 and 25 = C-3

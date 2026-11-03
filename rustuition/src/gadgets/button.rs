@@ -114,6 +114,8 @@ pub struct Triangle {
     pub height: i32,
     // bar across the tip, like the jump to start/end buttons
     pub bar: bool,
+    // space between the bar and the tip
+    pub bar_gap: i32,
 }
 
 impl Triangle {
@@ -124,6 +126,7 @@ impl Triangle {
             width,
             height,
             bar: false,
+            bar_gap: 0,
         };
     }
 
@@ -138,6 +141,12 @@ impl Triangle {
         return self;
     }
 
+    /// Leaves `gap` pixels between the bar and the point.
+    pub fn bar_gap(mut self, gap: i32) -> Self {
+        self.bar_gap = gap;
+        return self;
+    }
+
     const ARROW_WIDTH: i32 = 6;
     const ARROW_HEIGHT: i32 = 5;
 
@@ -149,9 +158,12 @@ impl Triangle {
         if !self.bar {
             return [self.width, self.height];
         }
+        let bar = self.bar_gap;
         return match self.direction {
-            Direction::Up | Direction::Down => [self.width, self.height + Self::BAR_LINES],
-            Direction::Left | Direction::Right => [self.width + Self::BAR_PIXELS, self.height],
+            Direction::Up | Direction::Down => [self.width, self.height + Self::BAR_LINES + bar],
+            Direction::Left | Direction::Right => {
+                [self.width + Self::BAR_PIXELS + bar, self.height]
+            }
         };
     }
 
@@ -166,18 +178,25 @@ impl Triangle {
         );
     }
 
-    // (bar, triangle)
+    // (bar, triangle), the gap left out
     fn split_bar(&self, area: Rect) -> (Rect, Rect) {
+        let gap = self.bar_gap;
         return match self.direction {
-            Direction::Up => area.split_top(Self::BAR_LINES),
-            Direction::Left => area.split_left(Self::BAR_PIXELS),
+            Direction::Up => {
+                let (bar, rest) = area.split_top(Self::BAR_LINES);
+                (bar, rest.split_top(gap).1)
+            }
+            Direction::Left => {
+                let (bar, rest) = area.split_left(Self::BAR_PIXELS);
+                (bar, rest.split_left(gap).1)
+            }
             Direction::Down => {
-                let (triangle, bar) = area.split_top(area.h - Self::BAR_LINES);
-                (bar, triangle)
+                let (rest, bar) = area.split_top(area.h - Self::BAR_LINES);
+                (bar, rest.split_top(rest.h - gap).0)
             }
             Direction::Right => {
-                let (triangle, bar) = area.split_left(area.w - Self::BAR_PIXELS);
-                (bar, triangle)
+                let (rest, bar) = area.split_left(area.w - Self::BAR_PIXELS);
+                (bar, rest.split_left(rest.w - gap).0)
             }
         };
     }
@@ -307,7 +326,7 @@ pub enum Highlight {
 /// How long a button's held before it starts clicking again, when it repeats.
 pub const DEFAULT_REPEAT_DELAY: Duration = Duration::from_millis(400);
 /// How often a held button clicks once it's repeating.
-pub const DEFAULT_REPEAT_INTERVAL: Duration = Duration::from_millis(60);
+pub const DEFAULT_REPEAT_INTERVAL: Duration = Duration::from_millis(150);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Repeat {
@@ -858,5 +877,18 @@ mod tests {
         button.handle_event(&mut (), &MouseEvent::Move { pos: [5, 5] });
         button.repeat_at(&mut (), repeating + 8 * DEFAULT_REPEAT_INTERVAL);
         assert_eq!(clicks.get(), 3);
+    }
+
+    #[test]
+    fn bar_gap_spaces_the_bar() {
+        let triangle = Triangle::new(Direction::Left, 8, 7).with_bar().bar_gap(2);
+        let area = triangle.area(Rect::new(0, 0, 12, 7));
+        assert_eq!(area.w, 12);
+        let (bar, rest) = triangle.split_bar(area);
+        assert_eq!((bar.x, bar.w), (0, 2));
+        assert_eq!((rest.x, rest.w), (4, 8));
+        let right = Triangle::new(Direction::Right, 8, 7).with_bar().bar_gap(2);
+        let (bar, rest) = right.split_bar(right.area(Rect::new(0, 0, 12, 7)));
+        assert_eq!((rest.x, rest.w, bar.x), (0, 8, 10));
     }
 }

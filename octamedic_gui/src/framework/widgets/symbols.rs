@@ -38,6 +38,17 @@ pub fn stacked_text(
     };
 }
 
+// a picture drawn from rows of '#', centred
+pub fn picture(rows: &'static [&'static str]) -> impl Fn(ContentArea, Pen, &mut Painter) {
+    return move |area, pen, painter| {
+        let width = rows.iter().map(|row| row.len()).max().unwrap_or(0) as i32;
+        let inside = area.inside;
+        let x = inside.x + (inside.w - width + 1) / 2;
+        let y = inside.y + (inside.h - rows.len() as i32 + 1) / 2;
+        draw_rows(rows, x, y, pen, painter);
+    };
+}
+
 // copied off OctaMED's picture button. each has its spacing built in so a row of them comes
 // out spaced the same
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -154,7 +165,8 @@ impl<const N: usize> ButtonContent for MusicSymbols<N> {
     }
 }
 
-fn draw_rows(rows: &[&str], x: i32, y: i32, pen: Pen, painter: &mut Painter) {
+// '#' is a pixel, anything else is blank
+pub fn draw_rows(rows: &[&str], x: i32, y: i32, pen: Pen, painter: &mut Painter) {
     for (line, row) in rows.iter().enumerate() {
         let mut start = None;
         for (column, c) in row.chars().chain(['.']).enumerate() {

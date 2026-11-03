@@ -1,4 +1,5 @@
 pub mod files;
+pub mod instrument;
 pub mod misc;
 pub mod play;
 pub mod volume;
@@ -11,7 +12,7 @@ use rustuition::{
 
 use crate::{
     app::{
-        header::{files::Files, misc::Misc, play::Play, volume::Volume},
+        header::{files::Files, instrument::Instrument, misc::Misc, play::Play, volume::Volume},
         mode::{HeaderMode, buttons::ModeButtons},
         state::AppState,
         status_bar::StatusBar,
@@ -28,6 +29,7 @@ const MODE_BUTTONS: Rect = Rect::new(462, 2, 174, 50);
 
 pub struct HeaderPanels {
     pub files: Files,
+    pub instrument: Instrument,
     pub misc: Misc,
     pub play: Play,
     pub volume: Volume,
@@ -37,6 +39,7 @@ impl HeaderPanels {
     pub fn new() -> Self {
         return Self {
             files: Files::new(),
+            instrument: Instrument::new(),
             misc: Misc::new(),
             play: Play::new(),
             volume: Volume::new(),
@@ -46,14 +49,13 @@ impl HeaderPanels {
     pub fn panel(&mut self, mode: HeaderMode) -> Option<&mut dyn Gadget<AppState, Event>> {
         return match mode {
             HeaderMode::Files => Some(&mut self.files),
+            HeaderMode::Instrument => Some(&mut self.instrument),
             HeaderMode::Misc => Some(&mut self.misc),
             HeaderMode::Play => Some(&mut self.play),
             HeaderMode::Volume => Some(&mut self.volume),
-            HeaderMode::Instrument
-            | HeaderMode::Block
-            | HeaderMode::Edit
-            | HeaderMode::Transpose
-            | HeaderMode::Range => None,
+            HeaderMode::Block | HeaderMode::Edit | HeaderMode::Transpose | HeaderMode::Range => {
+                None
+            }
         };
     }
 }

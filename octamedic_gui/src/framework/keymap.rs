@@ -91,7 +91,7 @@ const SYMBOLS: [(KeyCode, char); 11] = [
     (KeyCode::Grave, '`'),
 ];
 
-const NAMED: [(KeyCode, &str); 15] = [
+const NAMED: [(KeyCode, &str); 26] = [
     (KeyCode::Space, "Spc"),
     (KeyCode::Up, "Up"),
     (KeyCode::Down, "Dn"),
@@ -107,6 +107,17 @@ const NAMED: [(KeyCode, &str); 15] = [
     (KeyCode::Tab, "Tab"),
     (KeyCode::Home, "Home"),
     (KeyCode::End, "End"),
+    (KeyCode::Numpad0, "Kp0"),
+    (KeyCode::Numpad1, "Kp1"),
+    (KeyCode::Numpad2, "Kp2"),
+    (KeyCode::Numpad3, "Kp3"),
+    (KeyCode::Numpad4, "Kp4"),
+    (KeyCode::Numpad5, "Kp5"),
+    (KeyCode::Numpad6, "Kp6"),
+    (KeyCode::Numpad7, "Kp7"),
+    (KeyCode::Numpad8, "Kp8"),
+    (KeyCode::Numpad9, "Kp9"),
+    (KeyCode::NumpadDecimal, "Kp."),
 ];
 
 // physical keys, so shift+1 is S-1 and not !
@@ -114,6 +125,23 @@ const NAMED: [(KeyCode, &str); 15] = [
 pub struct Key {
     code: KeyCode,
     mods: KeyMods,
+}
+
+/// The Amiga key, which right Alt and the Windows key (Cmd on a Mac) both count as. The real
+/// keyboard had it next to right Ctrl, where right Alt is now.
+pub const AMIGA: KeyMods = KeyMods::LOGO;
+
+/// `mods` with right Alt counted as the Amiga key instead of Alt. Alt stays if left Alt is held
+/// too.
+pub fn amiga_mods(mods: KeyMods, left_alt: bool, right_alt: bool) -> KeyMods {
+    if !right_alt {
+        return mods;
+    }
+    let mods = mods | AMIGA;
+    if left_alt {
+        return mods;
+    }
+    return mods - KeyMods::ALT;
 }
 
 impl Key {
@@ -140,6 +168,11 @@ impl Key {
 
     pub fn super_key(code: KeyCode) -> Self {
         return Self::new(code, KeyMods::LOGO);
+    }
+
+    /// With the Amiga key, see [`AMIGA`].
+    pub fn amiga(code: KeyCode) -> Self {
+        return Self::new(code, AMIGA);
     }
 
     pub fn matches(&self, code: KeyCode, mods: KeyMods) -> bool {
@@ -514,6 +547,16 @@ mod tests {
             mods,
             repeat: false,
         };
+    }
+
+    #[test]
+    fn right_alt_is_the_amiga_key() {
+        assert_eq!(amiga_mods(KeyMods::ALT, false, true), AMIGA);
+        assert_eq!(amiga_mods(KeyMods::ALT, true, false), KeyMods::ALT);
+        assert_eq!(amiga_mods(KeyMods::ALT, true, true), KeyMods::ALT | AMIGA);
+        let shift = KeyMods::SHIFT | KeyMods::ALT;
+        assert_eq!(amiga_mods(shift, false, true), KeyMods::SHIFT | AMIGA);
+        assert_eq!(amiga_mods(KeyMods::CTRL, false, false), KeyMods::CTRL);
     }
 
     #[test]

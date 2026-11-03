@@ -192,11 +192,11 @@ let button = Button::new("FILES")
     .on_click(|state, click| state.show_files());
 ```
 
-`Button::new` takes any `ButtonContent`: `&str`, `String`, `Line`, a `Triangle` (`.with_bar()`
-puts a bar across the point, like jump to start/end), an `ArrowLabel` or an `IncDec` (plus or
-minus). A closure taking `(ContentArea, Pen, &mut Painter)` works too, for a one-off picture.
-Your own content types implement `render`, plus `index_at` if it matters which part got clicked.
-`set_text` / `set_content` change it later.
+`Button::new` takes any `ButtonContent`: `&str`, `String`, `Line`, a `Triangle` (`.with_bar()` puts
+a bar across the point, like jump to start/end, and `.bar_gap(n)` spaces it off), an `ArrowLabel` or
+an `IncDec` (plus or minus). A closure taking `(ContentArea, Pen, &mut Painter)` works too, for a
+one-off picture. Your own content types implement `render`, plus `index_at` if it matters which part
+got clicked. `set_text` / `set_content` change it later.
 
 It clicks the moment it's pressed, like Intuition's `GACT_IMMEDIATE` gadgets. The handler gets the
 state and a `ButtonClick` with the mouse button and `char_index` (the label character under the
@@ -209,8 +209,10 @@ padding (`padding(n)` or `padding_xy(x, y)`) and cut to what fits; a label too l
 moves into it.
 
 `Slider` is a proportional gadget with a dotted track, horizontal or vertical, optionally
-reversed. `Grid::new(columns, rows, gadgets)` lays gadgets out in rows and passes events and
-drawing to them.
+reversed. `SteppedSlider` (`gadgets/stepped_slider.rs`) is a slider with two arrow buttons after
+it that step its value by one and keep stepping while held; its `update(state, current)` hands
+back a new value when it's dragged or stepped, from `min` to `max`. `Grid::new(columns, rows,
+gadgets)` lays gadgets out in rows and passes events and drawing to them.
 
 `Textbox` is Intuition's string gadget. A click focuses it and puts the cursor on the char under
 the pointer, dragging selects, a double click selects a word, and clicking anywhere else, Enter or

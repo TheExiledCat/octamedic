@@ -54,6 +54,13 @@ const TOP_OCTAVE_KEYS: [char; 13] = [
     'q', '2', 'w', '3', 'e', 'r', '5', 't', '6', 'y', '7', 'u', 'i',
 ];
 
+/// How the instrument name box gets selected.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NameEdit {
+    Select,
+    Clear,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PlayStart {
     Song,
@@ -88,7 +95,14 @@ pub struct AppState {
     pub active_sequence_index: usize,
     pub active_instrument: InstrumentId,
     pub current_octave: u8,
+    // how far note entry and the arrows move while SP is on, never 0
     pub line_add: u8,
+    // SP: move by the line add instead of a line at a time
+    pub spacing: bool,
+    // the keypad edits the play sequence without Ctrl while it's on
+    pub caps_lock: bool,
+    // Amiga+I asked for the instrument name box
+    pub name_edit_request: Option<NameEdit>,
     pub recording: bool,
     pub exit_requested: bool,
     pub notification: Option<String>,
@@ -143,6 +157,9 @@ impl AppState {
             active_instrument: InstrumentId(1),
             current_octave: 1,
             line_add: 1,
+            spacing: false,
+            caps_lock: false,
+            name_edit_request: None,
             recording: false,
             exit_requested: false,
             notification: None,
@@ -263,6 +280,15 @@ impl AppState {
         let id = self.active_pattern;
         self.changed_patterns.insert(id);
         return self.song_mut().get_pattern_mut(id);
+    }
+
+    pub fn toggle_highlight(&mut self, line: usize) {
+        if let Some(line) = self
+            .active_pattern_mut()
+            .and_then(|pattern| pattern.lines.get_mut(line))
+        {
+            line.highlighted = !line.highlighted;
+        }
     }
 
     pub fn header_mode(&self) -> HeaderMode {
@@ -415,6 +441,18 @@ impl AppState {
         self.engine.set_instrument(id, Some(instrument));
     }
 
+    /// Changes the active instrument, putting an empty one in its slot first if there isn't one.
+    pub fn edit_active_instrument(&mut self, edit: impl FnOnce(&mut OctamedicInstrument)) {
+        let id = self.active_instrument;
+        let mut instrument = self
+            .song()
+            .instrument(id)
+            .cloned()
+            .unwrap_or_else(|| OctamedicInstrument::new(""));
+        edit(&mut instrument);
+        self.replace_instrument(id, instrument);
+    }
+
     pub fn set_instrument(&mut self, instrument: u8) -> InstrumentId {
         self.active_instrument.0 = instrument.clamp(1, MAX_INSTRUMENT);
         return self.active_instrument;
@@ -427,6 +465,12 @@ impl AppState {
             .saturating_add(1)
             .min(MAX_INSTRUMENT);
         return self.active_instrument;
+    }
+
+    /// Moves the active instrument by `delta`, stopping at the first and last.
+    pub fn move_instrument(&mut self, delta: i32) -> InstrumentId {
+        let instrument = (self.active_instrument.0 as i32 + delta).clamp(1, MAX_INSTRUMENT as i32);
+        return self.set_instrument(instrument as u8);
     }
 
     pub fn prev_instrument(&mut self) -> InstrumentId {
@@ -481,12 +525,20 @@ impl AppState {
         }
     }
 
+    /// Lines the cursor moves after entering something, and with the arrows.
+    pub fn line_step(&self) -> usize {
+        if self.spacing {
+            return self.line_add.max(1) as usize;
+        }
+        return 1;
+    }
+
     pub fn increase_line_add(&mut self) {
         self.line_add = self.line_add.saturating_add(1);
     }
 
     pub fn decrease_line_add(&mut self) {
-        self.line_add = self.line_add.saturating_sub(1);
+        self.line_add = self.line_add.saturating_sub(1).max(1);
     }
 
     pub fn next_pattern(&mut self) {
