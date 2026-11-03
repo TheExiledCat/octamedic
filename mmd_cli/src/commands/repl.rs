@@ -4,7 +4,7 @@ use clap::{CommandFactory, Parser};
 use clap_derive::Subcommand;
 use figlet_rs::Toilet;
 use inquire::{Autocomplete, Text, autocompletion::Replacement};
-use octamed::mmd::{module::OctamedMMD, parser::OctamedMMDParser};
+use mmd::mmd::{module::OctamedMMD, parser::OctamedMMDParser};
 
 use crate::commands::{
     blocks::{InspectBlockCommand, InspectBlocksCommand},

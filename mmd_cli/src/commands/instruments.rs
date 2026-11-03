@@ -7,7 +7,7 @@ use crate::commands::repl::{Command, CommandResult};
 pub struct InstrumentsCommand {}
 
 impl Command for InstrumentsCommand {
-    fn run(&self, mmd: &mut octamed::mmd::module::OctamedMMD) -> CommandResult {
+    fn run(&self, mmd: &mut mmd::mmd::module::OctamedMMD) -> CommandResult {
         println!("Instruments");
         println!();
         for inst in 0..mmd.song.sample_count.0 as usize {

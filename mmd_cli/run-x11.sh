@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs octamed_cli in WSL through X11, since windows exit straight away under WSLg's Wayland.
+# Runs mmd_cli in WSL through X11, since windows exit straight away under WSLg's Wayland.
 # Arguments are passed on.
 set -e
 

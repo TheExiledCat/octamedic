@@ -9,7 +9,7 @@ use crate::commands::repl::{Command, CommandResult};
 pub struct ExitCommand {}
 
 impl Command for ExitCommand {
-    fn run(&self, _mmd: &mut octamed::mmd::module::OctamedMMD) -> CommandResult {
+    fn run(&self, _mmd: &mut mmd::mmd::module::OctamedMMD) -> CommandResult {
         exit(0);
     }
 }

@@ -12,7 +12,7 @@ use std::{
     thread,
 };
 
-use octamed::mmd::{conversion::FromModule, error::MmdError, parser::OctamedMMDParser};
+use mmd::mmd::{conversion::FromModule, error::MmdError, parser::OctamedMMDParser};
 use octamedic_core::data::project::OctamedicProject;
 
 const FOLDER_ROOT_NAME: &str = "octamedic";

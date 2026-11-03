@@ -32,7 +32,8 @@ const EDITOR_HEIGHT: i32 = 120;
 
 const CONSOLE_HEIGHT: i32 = 128;
 
-const NOTIFICATION_PADDING: [i32; 2] = [2, 1];
+// the notification bar covers the title bar
+const NOTIFICATION_TEXT_X: i32 = 2;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MainAction {
@@ -194,6 +195,10 @@ impl Gadget<AppState, Event> for MainView {
             }
             return true;
         }
+        // any screen plays the keyboard's notes, unless a text field or the block editor took them
+        if let Some(key) = typed_key(event).filter(|_| !taken) {
+            return state.play_key(state.cursor.track, key).is_some();
+        }
         return taken;
     }
 
@@ -222,11 +227,12 @@ impl Gadget<AppState, Event> for MainView {
         self.footer.render(state, footer, painter);
         let (console, _) = area.split_top(CONSOLE_HEIGHT);
         self.console.render(state, console, painter);
-        if let Some(notification) = &state.notification {
-            let [x, y] = NOTIFICATION_PADDING;
-            let box_area = Rect::new(area.x, area.y, area.w, CHAR_HEIGHT + 2 * y);
-            painter.fill(box_area, Pen::BACKGROUND);
-            painter.text(area.x + x, area.y + y, notification, Pen::SHINE);
+        let prompt = state.prompt.as_ref().map(|prompt| prompt.text());
+        if let Some(text) = prompt.or(state.notification.as_deref()) {
+            let bar = Rect::new(area.x, area.y, area.w, TITLE_HEIGHT);
+            let y = bar.y + (bar.h - CHAR_HEIGHT + 1) / 2;
+            painter.fill(bar, Pen::BACKGROUND);
+            painter.text(bar.x + NOTIFICATION_TEXT_X, y, text, Pen::SHINE);
         }
     }
 }
@@ -266,6 +272,20 @@ fn sequence(state: &mut AppState, action: SequenceAction) {
         SequenceAction::InsertZero => state.insert_sequence(PatternId::ZERO),
         SequenceAction::Delete => state.delete_sequence(state.active_sequence_index),
     }
+}
+
+// a typed character that isn't part of a shortcut
+fn typed_key(event: &Event) -> Option<char> {
+    let Event::Text {
+        character, mods, ..
+    } = *event
+    else {
+        return None;
+    };
+    if mods.intersects(KeyMods::CTRL | KeyMods::ALT | KeyMods::LOGO) {
+        return None;
+    }
+    return Some(character);
 }
 
 // what's held with a typed space, if it's not a shortcut
@@ -432,6 +452,22 @@ mod tests {
         state.caps_lock = true;
         assert!(view.handle_event(&mut state, &keypad_5));
         assert_eq!(state.song().sequence().len(), 2);
+    }
+
+    #[test]
+    fn notes_play_on_any_screen() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        state.set_modes(crate::app::mode::HeaderMode::Play, MainMode::SampleEditor);
+        let mut view = MainView::new();
+        assert!(view.handle_event(&mut state, &Event::text('z')));
+        // not a note key
+        assert!(!view.handle_event(&mut state, &Event::text('`')));
+        let with_ctrl = Event::Text {
+            character: 'z',
+            mods: KeyMods::CTRL,
+            repeat: false,
+        };
+        assert!(!view.handle_event(&mut state, &with_ctrl));
     }
 
     #[test]

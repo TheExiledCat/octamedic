@@ -3,6 +3,8 @@ pub mod file_browser;
 pub mod list_scroller;
 pub mod sample_editor;
 pub mod song_list;
+pub mod wave_view;
+pub mod waveform_mouse;
 
 use rustuition::gadget::Gadget;
 

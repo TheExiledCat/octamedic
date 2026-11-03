@@ -3,7 +3,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use octamed::{mmd::module::SONG_TRACKS, utility::note::SEMITONES_PER_OCTAVE};
+use ggez::input::keyboard::KeyMods;
+use mmd::{mmd::module::SONG_TRACKS, utility::note::SEMITONES_PER_OCTAVE};
 use octamedic_core::{
     amiga::clock::VideoStandard,
     data::{
@@ -26,6 +27,7 @@ use crate::{
         cursor::EditCursor,
         files::browser::Browser,
         mode::{HeaderMode, MainMode},
+        prompt::Prompt,
         screen_filters::ScreenFilters,
     },
     framework::widgets::Dialog,
@@ -106,6 +108,10 @@ pub struct AppState {
     pub recording: bool,
     pub exit_requested: bool,
     pub notification: Option<String>,
+    // shown instead of the notification, and holding everything up until it's answered
+    pub prompt: Option<Prompt>,
+    // the sample editor's clipboard, CBUFF
+    pub copy_buffer: Vec<i8>,
     pub palette: IntuitionColorPalette,
     // the D switch
     pub play_on_note: bool,
@@ -116,6 +122,8 @@ pub struct AppState {
     pending_dialogs: Vec<Dialog>,
     // right click: the title bar shows and the meters and scrolling stop
     pub displays_off: bool,
+    // the modifier keys down at the last mouse event, Amiga included
+    pub mouse_mods: KeyMods,
     video: VideoStandard,
     queued_sequence_index: Option<usize>,
     started: Option<PlayStart>,
@@ -163,6 +171,8 @@ impl AppState {
             recording: false,
             exit_requested: false,
             notification: None,
+            prompt: None,
+            copy_buffer: Vec::new(),
             palette,
             play_on_note: false,
             meters: Meters::default(),
@@ -170,6 +180,7 @@ impl AppState {
             screen_filters: ScreenFilters::default(),
             pending_dialogs: Vec::new(),
             displays_off: false,
+            mouse_mods: KeyMods::NONE,
             video: DEFAULT_VIDEO,
             queued_sequence_index: None,
             started: None,
@@ -342,6 +353,11 @@ impl AppState {
 
     pub fn is_saved(&self) -> bool {
         return !self.has_changes;
+    }
+
+    /// Shows `prompt` in the notification bar, holding everything up until a key answers it.
+    pub fn open_prompt(&mut self, prompt: Prompt) {
+        self.prompt = Some(prompt);
     }
 
     pub fn notify(&mut self, notification: impl Into<String>) {

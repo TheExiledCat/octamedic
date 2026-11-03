@@ -1,4 +1,4 @@
-use octamed::utility::bytes::UByte;
+use mmd::utility::bytes::UByte;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct OctamedicNote {

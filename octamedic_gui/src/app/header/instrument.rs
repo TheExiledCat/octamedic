@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use octamed::mmd::module::INSTRUMENT_NAME_LENGTH;
+use mmd::mmd::module::INSTRUMENT_NAME_LENGTH;
 use octamedic_core::data::instrument::{
     InstrumentKind, MAX_FINETUNE, MAX_INSTRUMENT_VOLUME, MIN_FINETUNE, OctamedicInstrument,
     OctamedicSample,

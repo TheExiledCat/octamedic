@@ -22,7 +22,7 @@ use rustuition::{
 };
 
 use crate::{
-    app::{DEFAULT_VIDEO, main_view::MainView, screen, state::AppState},
+    app::{DEFAULT_VIDEO, main_view::MainView, prompt, screen, state::AppState},
     framework::{
         dialog_stack::DialogStack,
         event::{self, Event},
@@ -53,6 +53,8 @@ pub struct App {
     next_frame: Instant,
     // text input events don't say whether the key is repeating
     key_repeated: bool,
+    // the last key pressed went to a prompt
+    prompt_took_key: bool,
     key_repeat: KeyRepeat,
     // the text event after a held back repeat gets dropped too
     repeat_held_back: bool,
@@ -76,6 +78,7 @@ impl App {
             pointer: [0, 0],
             next_frame: Instant::now(),
             key_repeated: false,
+            prompt_took_key: false,
             key_repeat: KeyRepeat::default(),
             repeat_held_back: false,
             alts_held: [false; 2],
@@ -135,11 +138,13 @@ impl App {
     }
 
     fn dispatch(&mut self, event: Event) -> bool {
-        return self.dialogs.handle_event(&mut self.state, &event)
+        return prompt::handle_event(&mut self.state, &event)
+            || self.dialogs.handle_event(&mut self.state, &event)
             || self.main.handle_event(&mut self.state, &event);
     }
 
-    fn mouse_event(&mut self, x: f32, y: f32, event: impl FnOnce(Point) -> Event) {
+    fn mouse_event(&mut self, ctx: &Context, x: f32, y: f32, event: impl FnOnce(Point) -> Event) {
+        self.state.mouse_mods = self.with_amiga(ctx.keyboard.active_mods());
         self.pointer = screen(self.video).to_screen(self.viewport, [x, y]);
         self.dispatch(event(self.pointer));
     }
@@ -232,19 +237,19 @@ impl EventHandler for App {
 
     fn mouse_motion_event(
         &mut self,
-        _ctx: &mut Context,
+        ctx: &mut Context,
         x: f32,
         y: f32,
         _dx: f32,
         _dy: f32,
     ) -> GameResult {
-        self.mouse_event(x, y, |pos| Event::MouseMove { pos });
+        self.mouse_event(ctx, x, y, |pos| Event::MouseMove { pos });
         return Ok(());
     }
 
     fn mouse_button_down_event(
         &mut self,
-        _ctx: &mut Context,
+        ctx: &mut Context,
         button: MouseButton,
         x: f32,
         y: f32,
@@ -254,20 +259,20 @@ impl EventHandler for App {
             return Ok(());
         }
         if let Some(button) = mouse_button(button) {
-            self.mouse_event(x, y, |pos| Event::MouseDown { pos, button });
+            self.mouse_event(ctx, x, y, |pos| Event::MouseDown { pos, button });
         }
         return Ok(());
     }
 
     fn mouse_button_up_event(
         &mut self,
-        _ctx: &mut Context,
+        ctx: &mut Context,
         button: MouseButton,
         x: f32,
         y: f32,
     ) -> GameResult {
         if let Some(button) = mouse_button(button) {
-            self.mouse_event(x, y, |pos| Event::MouseUp { pos, button });
+            self.mouse_event(ctx, x, y, |pos| Event::MouseUp { pos, button });
         }
         return Ok(());
     }
@@ -300,6 +305,7 @@ impl EventHandler for App {
             mods: self.with_amiga(input.mods),
             repeat: repeated,
         };
+        self.prompt_took_key = self.state.prompt.is_some();
         self.dispatch(event);
         return Ok(());
     }
@@ -313,7 +319,8 @@ impl EventHandler for App {
     }
 
     fn text_input_event(&mut self, ctx: &mut Context, character: char) -> GameResult {
-        if self.repeat_held_back {
+        // the letter of a key that answered a prompt isn't typed as well
+        if self.repeat_held_back || self.prompt_took_key {
             return Ok(());
         }
         let shift = ctx.keyboard.active_mods().contains(KeyMods::SHIFT);

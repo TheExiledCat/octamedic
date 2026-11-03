@@ -2,7 +2,7 @@ use std::{env, path::PathBuf};
 
 mod commands;
 
-use octamed::mmd::parser::OctamedMMDParser;
+use mmd::mmd::parser::OctamedMMDParser;
 
 use crate::commands::{
     repl::{Command, MMDRepl},

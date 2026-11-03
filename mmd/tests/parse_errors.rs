@@ -1,6 +1,6 @@
 use std::io::Cursor;
 
-use octamed::{
+use mmd::{
     mmd::{error::MmdError, parser::OctamedMMDParser},
     utility::bytes::Offset,
 };

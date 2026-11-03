@@ -1,4 +1,4 @@
-use octamed::mmd::module::{OctamedMMD0Color, OctamedMMD0ColorPalette, PALETTE_COLORS};
+use mmd::mmd::module::{OctamedMMD0Color, OctamedMMD0ColorPalette, PALETTE_COLORS};
 
 pub const PALETTE_SIZE: usize = PALETTE_COLORS;
 

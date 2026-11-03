@@ -5,10 +5,10 @@ the CLI, and the GUI is slowly being built up to match OctaMED's screen pixel fo
 
 The crates:
 
-- `octamed` reads and writes MMD0/MMD1 files. No playback in here.
+- `mmd` reads and writes MMD0/MMD1 files. No playback in here.
 - `octamedic_core` is the song model and the playback engine (`OctamedicEngine`). Most of the work
   right now happens here.
-- `octamed_cli` is a REPL for loading, inspecting and playing `.mmd` files (audio through `cpal`).
+- `mmd_cli` is a REPL for loading, inspecting and playing `.mmd` files (audio through `cpal`).
 - `octamedic_gui` is the editor, on ggez.
 - `rustuition` is the Amiga style GUI library the editor is built on (gadgets, Topaz, the
   palette). It doesn't know about OctaMEDIC and will get its own repo at some point, so keep
@@ -23,7 +23,7 @@ You need Rust 1.85 or newer and an audio device. 1.85 is the MSRV (`rust-version
 
 ```sh
 cargo build
-cargo run -p octamed_cli -- example_meds/example.mmd0
+cargo run -p mmd_cli -- example_meds/example.mmd0
 cargo run -p octamedic_gui -- example_meds/example.mmd1   # the module is optional
 ```
 
@@ -71,8 +71,8 @@ don't mind.
   press).
 - [octamedic_gui/FRAMEWORK.md](octamedic_gui/FRAMEWORK.md): what the GUI adds on top of
   rustuition (keys, OctaMED's fonts and pens) and how its screens fit together.
-- `octamed/format.md` is the original MMD format documentation. The parsers in
-  `octamed/src/mmd/parser.rs` are what we actually go by.
+- `mmd/format.md` is the original MMD format documentation. The parsers in
+  `mmd/src/mmd/parser.rs` are what we actually go by.
 - [docs/FILES.md](docs/FILES.md): the rest of the files: how instruments get loaded (WAV, FLAC,
   MP3, raw), multi-octave samples, and how synth sounds are stored on their own.
 

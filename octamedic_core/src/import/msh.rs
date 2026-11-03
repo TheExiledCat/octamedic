@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use octamed::mmd::synth::OctamedMMD0SynthInstrument;
+use mmd::mmd::synth::OctamedMMD0SynthInstrument;
 
 use crate::{
     data::instrument::{
@@ -41,7 +41,7 @@ impl InstrumentLoader for MshLoader {
 // repeat and its length are in words
 fn hybrid_sample(
     msh: &OctamedMMD0SynthInstrument,
-    bytes: &[octamed::utility::bytes::Byte],
+    bytes: &[mmd::utility::bytes::Byte],
 ) -> OctamedicSample {
     let data: Vec<i8> = bytes.iter().map(|byte| byte.0).collect();
     let start = msh.repeat.0 as usize * 2;

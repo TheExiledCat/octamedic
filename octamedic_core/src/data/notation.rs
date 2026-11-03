@@ -1,4 +1,4 @@
-use octamed::mmd::module::{
+use mmd::mmd::module::{
     MAX_INSTRUMENTS, NOTATION_SELECTED_TRACK_WORDS, OctamedMMD0NotationInfo, SONG_TRACKS,
 };
 
@@ -57,7 +57,7 @@ impl OctamedicNotation {
 
 #[cfg(test)]
 mod tests {
-    use octamed::utility::bytes::{Byte, UByte, UWord};
+    use mmd::utility::bytes::{Byte, UByte, UWord};
 
     use super::*;
 

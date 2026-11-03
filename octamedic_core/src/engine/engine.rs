@@ -1,6 +1,6 @@
 use std::sync::{Arc, mpsc::Receiver};
 
-use octamed::mmd::module::SONG_TRACKS;
+use mmd::mmd::module::SONG_TRACKS;
 
 use super::{
     handle::{EngineCommand, EngineStatus},

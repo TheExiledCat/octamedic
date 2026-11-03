@@ -7,7 +7,7 @@ use crate::commands::repl::{Command, CommandResult};
 pub struct ClearCommand {}
 
 impl Command for ClearCommand {
-    fn run(&self, _mmd: &mut octamed::mmd::module::OctamedMMD) -> CommandResult {
+    fn run(&self, _mmd: &mut mmd::mmd::module::OctamedMMD) -> CommandResult {
         clearscreen::clear().unwrap();
         return Ok(());
     }

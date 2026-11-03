@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use octamed::{
+use mmd::{
     mmd::{module::OctamedMMD, parser::OctamedMMDParser, writer::OctamedMMDWriter},
     utility::bytes::Offset,
 };

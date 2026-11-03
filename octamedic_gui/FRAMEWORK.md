@@ -45,19 +45,20 @@ Implement `KeyActions` (`keymap`, `perform`, `describe`) on the gadget and call
 ## The app
 
 `MainView` (`app/main_view.rs`) is the whole screen and handles global keys like Ctrl+Q, and last of
-all Space (stop) and Shift+Space (continue the song), so a text field gets them first. The other
-play keys are OctaMED's: Amiga+P and Shift+Alt+Space play the song, Amiga+Space the block, Alt+Space
-continues the block. The Amiga key is right Alt, where it was on the real keyboard next to right
-Ctrl; the Windows key (Cmd on a Mac) counts too. `App` tells the two Alts apart itself
-(`keymap::amiga_mods`), since the modifiers don't, and shortcuts use `Key::amiga`. Ctrl and the
-keypad edit the play sequence like OctaMED's: 7 and 1 go to the top and end, 8 and 2 move up and
-down, 4 and 6 change the block number, 5 inserts the current block, 0 inserts block 0 and . deletes.
-Inside it: `TitleBar` (timer, title, author), `CopyrightBar` (the screen title over the title bar,
-toggled by a right click nothing else takes, its gadget quits), `Header` (`app/header/mod.rs`),
-`ModeButtons`, `StatusBar` (song position, block, instrument, song), the `BlockEditor`
-(`app/main/block_editor.rs`, with track numbers and the block's `TrackCount` over its top rows),
-`Footer` (info line and scopes) and `DebugConsole` (toggle with Ctrl+`). Most live in a file named
-after them in `app/`.
+all Space (stop) and Shift+Space (continue the song), so a text field gets them first. The
+keyboard's note keys work the same way: any screen plays them on the cursor's track, unless a text
+field or the block editor took them first. The other play keys are OctaMED's: Amiga+P and
+Shift+Alt+Space play the song, Amiga+Space the block, Alt+Space continues the block. The Amiga key
+is right Alt, where it was on the real keyboard next to right Ctrl; the Windows key (Cmd on a Mac)
+counts too. `App` tells the two Alts apart itself (`keymap::amiga_mods`), since the modifiers don't,
+and shortcuts use `Key::amiga`. Ctrl and the keypad edit the play sequence like OctaMED's: 7 and 1
+go to the top and end, 8 and 2 move up and down, 4 and 6 change the block number, 5 inserts the
+current block, 0 inserts block 0 and . deletes. Inside it: `TitleBar` (timer, title, author),
+`CopyrightBar` (the screen title over the title bar, toggled by a right click nothing else takes,
+its gadget quits), `Header` (`app/header/mod.rs`), `ModeButtons`, `StatusBar` (song position, block,
+instrument, song), the `BlockEditor` (`app/main/block_editor.rs`, with track numbers and the block's
+`TrackCount` over its top rows), `Footer` (info line and scopes) and `DebugConsole` (toggle with
+Ctrl+`). Most live in a file named after them in `app/`.
 
 The info line's memory numbers are the project's, not the PC's: first what has to fit in an
 Amiga's chip memory (sample data and synth waveforms, `OctamedicProject::chip_bytes`), then
@@ -83,6 +84,26 @@ every value 0, volume included. The rest of it is ghosted. The rest of MISC and 
 (`main/song_list.rs`) are laid out like OctaMED with their buttons ghosted, ready to be hooked up.
 `main/list_scroller.rs` is the slider with arrows that the FILES and SLIST lists share.
 
+The sample editor (`main/sample_editor.rs`) is laid out like OctaMED's SMPED. BUFFSIZE is the whole
+sample's length and the number at the waveform's top right the length in view. `WaveView`
+(`main/wave_view.rs`) is what's in view: each zoom level halves it around its middle, ZOOM OUT
+doubles it again and SHOW ALL goes back to the whole sample, as does picking another instrument.
+SHOW RANGE shows just the range, and zooming out from there doubles it until it's the whole sample.
+Left and Right move the view half its length either way, stopping at the sample's ends. The
+waveform, its zero line and the scroll bar mix their pens where they cross, the way OctaMED's
+bitplanes do. The waveform takes one sample a column, joined to the one before with a line, or on
+its own with D.PIXELS on.
+
+The range is dragged out on the waveform with the right button, and shift stretches the one there
+is to the sample clicked. `WaveformMouse` (`main/waveform_mouse.rs`) follows a press on the
+waveform until it's let go. The range's columns are highlighted, RNGSTART and RNGEND show it and
+can be typed in, RANGE ALL makes it the whole sample, CLEAR silences it and DEL cuts it out.
+The copy buffer is `state.copy_buffer`: COPY puts the range in it, CUT does that and then what DEL
+does, PASTE puts it in at the range's start, S>CBUFF copies the whole sample and CBUFF>S swaps the
+sample for it. MIX mixes the buffer in from the range's start, only as far as the range goes if
+there is one, and REV turns the range round. BUFFSIZE takes a new length after Enter, with a prompt to clear or keep the sample.
+The rest of the buttons are ghosted.
+
 Change project data through `AppState` methods like `enter_note` and `edit_track`, not directly.
 They track which blocks changed and send them to the engine in `AppState::update`, so you hear
 edits while it's playing.
@@ -93,6 +114,12 @@ Dialogs are rustuition's `Dialog` (the `Dialog` alias in `framework/widgets`). O
 `state.open_dialog(dialog)`, from anywhere that has the state, even another dialog's callback.
 `DialogStack` (`framework/dialog_stack.rs`, owned by `App`) picks them up, gives the top one every
 event and draws them over everything.
+
+A prompt (`app/prompt.rs`) is the small version: a line of text in the notification bar, opened
+with `state.open_prompt(prompt)`. Until a key's pressed it gets every event and nothing else does;
+the first key that isn't a modifier closes it and goes to its closure with the state.
+`Prompt::yes_no` is the usual "(Y/N)" question. `state.notify(text)` shows a message in the same
+bar for a few seconds. The bar is the title bar's height and covers it.
 
 The status bar's box next to E shows the keyboard's two octaves, the bottom row's and the top
 row's, in hex like OctaMED: 12 up to 9A. Clicking it goes up (right click down) and loops round;

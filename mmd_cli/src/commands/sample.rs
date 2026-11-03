@@ -3,7 +3,7 @@ use std::{ops::Add, thread, time::Duration};
 use clap_derive::Args;
 use clap_num::number_range;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use octamed::utility::{frequency::Frequency, period::AmigaPalPeriod};
+use mmd::utility::{frequency::Frequency, period::AmigaPalPeriod};
 
 use crate::commands::repl::{Command, CommandError, CommandResult};
 
@@ -41,7 +41,7 @@ pub struct SampleCommand {
 }
 
 impl Command for SampleCommand {
-    fn run(&self, mmd: &mut octamed::mmd::module::OctamedMMD) -> CommandResult {
+    fn run(&self, mmd: &mut mmd::mmd::module::OctamedMMD) -> CommandResult {
         let header = mmd.sample_table.headers[self.sample_number]
             .as_ref()
             .ok_or(CommandError::Generic(format!(

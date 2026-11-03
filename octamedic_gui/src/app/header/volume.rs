@@ -1,4 +1,4 @@
-use octamed::mmd::module::SONG_TRACKS;
+use mmd::mmd::module::SONG_TRACKS;
 use octamedic_core::data::volume::MAX_VOLUME;
 use rustuition::{
     gadget::Gadget,

@@ -3,13 +3,12 @@ use std::array;
 use rustuition::{
     font::Font,
     gadget::Gadget,
-    gadgets::dialog::Label,
     painter::{Painter, Pen},
     rect::Rect,
 };
 
 use crate::{
-    app::{files::load_module, fonts, pens, state::AppState},
+    app::{files::load_module, fonts, pens, prompt::Prompt, state::AppState},
     framework::{
         event::Event,
         widgets::{Button, Dialog, Textbox, symbols::stacked_text},
@@ -186,16 +185,10 @@ fn load_selected_song(state: &mut AppState) {
         load_song(state, &path);
         return;
     }
-    let dialog = Dialog::new("Load song")
-        .with(Label::new("The song has unsaved changes.\nLoad anyway?"))
-        .submit_button("Load")
-        .cancel_button("Cancel")
-        .on_submit_checked(move |state, _| {
-            let project = load_module(&path).map_err(|error| error.to_string())?;
-            state.load_project(project);
-            return Ok(());
-        });
-    state.open_dialog(dialog);
+    state.open_prompt(Prompt::yes_no(
+        "Current song has been modified. Are you sure? (Y/N)",
+        move |state| load_song(state, &path),
+    ));
 }
 
 fn delete_selected_file(state: &mut AppState) {
@@ -355,7 +348,11 @@ mod tests {
         state.browser.select_file(Some("anything.mmd0".to_owned()));
         let mut files = Files::new();
         click_load_song(&mut files, &mut state);
-        assert_eq!(state.take_pending_dialogs().len(), 1);
+        let prompt = state.prompt.as_ref().map(|prompt| prompt.text());
+        assert_eq!(
+            prompt,
+            Some("Current song has been modified. Are you sure? (Y/N)")
+        );
         assert_eq!(state.song().name(), "edited");
     }
 

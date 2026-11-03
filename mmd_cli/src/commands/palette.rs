@@ -1,5 +1,5 @@
 use clap_derive::Args;
-use octamed::mmd::conversion::FromModule;
+use mmd::mmd::conversion::FromModule;
 use octamedic_core::data::{palette::PALETTE_SIZE, project::OctamedicProject};
 
 use crate::commands::repl::{Command, CommandResult};
@@ -9,7 +9,7 @@ use crate::commands::repl::{Command, CommandResult};
 pub struct PaletteCommand {}
 
 impl Command for PaletteCommand {
-    fn run(&self, mmd: &mut octamed::mmd::module::OctamedMMD) -> CommandResult {
+    fn run(&self, mmd: &mut mmd::mmd::module::OctamedMMD) -> CommandResult {
         // modules without a palette show OctaMED's default one, as the editor does
         let palette = OctamedicProject::from_module(mmd).palette();
         for pen in 0..PALETTE_SIZE {

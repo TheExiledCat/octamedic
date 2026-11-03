@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use octamed::mmd::module::SONG_TRACKS;
+use mmd::mmd::module::SONG_TRACKS;
 
 use crate::data::{
     instrument::{InstrumentId, MAX_INSTRUMENTS, OctamedicInstrument},

@@ -1,4 +1,4 @@
-use octamed::mmd::module::PALETTE_COLORS;
+use mmd::mmd::module::PALETTE_COLORS;
 use octamedic_core::data::palette::OctamedColorPalette;
 use rustuition::{
     font::Font,

@@ -1,5 +1,5 @@
-pub use octamed::mmd::module::MAX_TRACKS;
-use octamed::{
+pub use mmd::mmd::module::MAX_TRACKS;
+use mmd::{
     mmd::module::{OctamedMMD0Block, OctamedMMD0BlockLine, OctamedMMD1Block},
     utility::bytes::{UByte, ValueMap},
 };

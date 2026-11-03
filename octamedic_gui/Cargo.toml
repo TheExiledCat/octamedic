@@ -6,7 +6,7 @@ rust-version.workspace = true
 
 [dependencies]
 octamedic_util = {path="../octamedic_util"}
-octamed = {path="../octamed"}
+mmd = {path="../mmd"}
 octamedic_core = {path="../octamedic_core"}
 rustuition = { path = "../rustuition", features = ["ggez"] }
 ggez = { version = "0.9.3", default-features = false }
