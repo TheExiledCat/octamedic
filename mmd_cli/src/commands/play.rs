@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use clap_derive::Args;
 use clap_num::number_range;
-use octamed::mmd::conversion::FromModule;
+use mmd::mmd::conversion::FromModule;
 use octamedic_core::{
     amiga::clock::AmigaClock,
     data::{project::OctamedicProject, song::SongId, volume::MAX_VOLUME},
@@ -29,7 +29,7 @@ pub struct PlayCommand {
 }
 
 impl Command for PlayCommand {
-    fn run(&self, mmd: &mut octamed::mmd::module::OctamedMMD) -> CommandResult {
+    fn run(&self, mmd: &mut mmd::mmd::module::OctamedMMD) -> CommandResult {
         let project = OctamedicProject::from_module(mmd);
         let song = project
             .get_song(SongId(0))

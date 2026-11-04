@@ -7,13 +7,13 @@ use crate::{
     import::{Decoded, InstrumentLoadError, InstrumentLoader},
 };
 
-const FORM: &[u8] = b"FORM";
-const SAMPLE_FORM: &[u8] = b"8SVX";
-const HEADER: &[u8] = b"VHDR";
-const BODY: &[u8] = b"BODY";
+pub const FORM: &[u8] = b"FORM";
+pub const SAMPLE_FORM: &[u8] = b"8SVX";
+pub const HEADER: &[u8] = b"VHDR";
+pub const BODY: &[u8] = b"BODY";
 const HEADER_LENGTH: usize = 20;
 // the volume is fixed point, this much is full
-const FULL_VOLUME: u32 = 0x10000;
+pub const FULL_VOLUME: u32 = 0x10000;
 const UNCOMPRESSED: u8 = 0;
 const FIBONACCI_DELTA: u8 = 1;
 const DELTAS: [i8; 16] = [-34, -21, -13, -8, -5, -3, -2, -1, 0, 1, 2, 3, 5, 8, 13, 21];

@@ -594,7 +594,7 @@ impl Gadget<AppState, Event> for Playback {
 #[cfg(test)]
 mod tests {
     use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
-    use rustuition::target::Framebuffer;
+    use rustuition::{rect::Point, target::Framebuffer};
 
     use super::*;
 
@@ -611,7 +611,7 @@ mod tests {
         );
         assert!(playback.dec.is_toggled() && !playback.hex.is_toggled());
         let press = Event::MouseDown {
-            pos: [HEX.x + 2, HEX.y + 2],
+            pos: Point::new(HEX.x + 2, HEX.y + 2),
             button: MouseButton::Left,
         };
         playback.handle_event(&mut state, &press);
@@ -634,7 +634,7 @@ mod tests {
         );
         assert!(!playback.filter.is_toggled());
         let press = Event::MouseDown {
-            pos: [FILTER.x + 2, FILTER.y + 2],
+            pos: Point::new(FILTER.x + 2, FILTER.y + 2),
             button: MouseButton::Left,
         };
         playback.handle_event(&mut state, &press);

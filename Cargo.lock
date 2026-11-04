@@ -1660,6 +1660,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "mmd"
+version = "0.1.0"
+dependencies = [
+ "octamedic_util",
+]
+
+[[package]]
+name = "mmd_cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "clap-num",
+ "clap_derive",
+ "clearscreen",
+ "cpal",
+ "figlet-rs",
+ "hound",
+ "inquire",
+ "mmd",
+ "octamedic_core",
+ "octamedic_util",
+ "progress_bar",
+]
+
+[[package]]
 name = "naga"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2016,36 +2041,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "octamed"
-version = "0.1.0"
-dependencies = [
- "octamedic_util",
-]
-
-[[package]]
-name = "octamed_cli"
-version = "0.1.0"
-dependencies = [
- "clap",
- "clap-num",
- "clap_derive",
- "clearscreen",
- "cpal",
- "figlet-rs",
- "hound",
- "inquire",
- "octamed",
- "octamedic_core",
- "octamedic_util",
- "progress_bar",
-]
-
-[[package]]
 name = "octamedic_core"
 version = "0.1.0"
 dependencies = [
  "cpal",
- "octamed",
+ "mmd",
  "octamedic_util",
  "symphonia",
 ]
@@ -2060,7 +2060,7 @@ dependencies = [
  "fs4",
  "ggez",
  "image",
- "octamed",
+ "mmd",
  "octamedic_core",
  "octamedic_util",
  "rustuition",

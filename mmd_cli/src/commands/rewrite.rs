@@ -1,7 +1,7 @@
 use std::{fs::File, io::Write};
 
 use clap_derive::Args;
-use octamed::mmd::{module::OctamedMMDType, writer::OctamedMMDWriter};
+use mmd::mmd::{module::OctamedMMDType, writer::OctamedMMDWriter};
 
 use crate::commands::repl::{Command, CommandError, CommandResult};
 
@@ -10,7 +10,7 @@ use crate::commands::repl::{Command, CommandError, CommandResult};
 pub struct RewriteCommand {}
 
 impl Command for RewriteCommand {
-    fn run(&self, mmd: &mut octamed::mmd::module::OctamedMMD) -> CommandResult {
+    fn run(&self, mmd: &mut mmd::mmd::module::OctamedMMD) -> CommandResult {
         let error = |e: &dyn std::fmt::Display| CommandError::Generic(e.to_string());
         let bytes = OctamedMMDWriter::new()
             .write_module(mmd)

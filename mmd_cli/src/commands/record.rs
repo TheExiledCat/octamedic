@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use clap_derive::{Args, Subcommand};
-use octamed::mmd::conversion::FromModule;
+use mmd::mmd::conversion::FromModule;
 use octamedic_core::{
     data::{pattern::PatternId, project::OctamedicProject, song::SongId},
     engine::record::Recorder,
@@ -20,7 +20,7 @@ pub struct RecordCommand {
 }
 
 impl Command for RecordCommand {
-    fn run(&self, mmd: &mut octamed::mmd::module::OctamedMMD) -> CommandResult {
+    fn run(&self, mmd: &mut mmd::mmd::module::OctamedMMD) -> CommandResult {
         let project = OctamedicProject::from_module(mmd);
         let song = project
             .get_song(SongId(0))
@@ -121,7 +121,7 @@ mod tests {
     use std::path::Path;
 
     use clap::Parser;
-    use octamed::mmd::{module::OctamedMMD, parser::OctamedMMDParser};
+    use mmd::mmd::{module::OctamedMMD, parser::OctamedMMDParser};
 
     use super::*;
 

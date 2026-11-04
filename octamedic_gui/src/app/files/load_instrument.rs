@@ -1,6 +1,7 @@
 use std::{fs, rc::Rc};
 
 use octamedic_core::{
+    data::instrument::{OctamedicInstrument, OctamedicSample},
     engine::period::note_period,
     import::{
         Decoded, InstrumentLoader, find_loader,
@@ -77,9 +78,26 @@ fn load_with(state: &mut AppState, loaders: &[&dyn InstrumentLoader]) {
         decoded => decoded,
     };
     match decoded.into_instrument(&name, ImportSettings::default()) {
-        Ok(instrument) => state.replace_instrument(state.active_instrument, instrument),
+        Ok(instrument) => place_loaded(state, instrument),
         Err(error) => state.notify(error.to_string()),
     }
+}
+
+// into the active instrument, saying what a sample came to like OctaMED does
+fn place_loaded(state: &mut AppState, instrument: OctamedicInstrument) {
+    if let Some(sample) = instrument.sample() {
+        state.notify(loaded_message(sample));
+    }
+    state.replace_instrument(state.active_instrument, instrument);
+}
+
+fn loaded_message(sample: &OctamedicSample) -> String {
+    let octaves = sample.octaves.copies();
+    let plural = if octaves == 1 { "" } else { "s" };
+    return format!(
+        "Sample loaded (length={}, {octaves} octave{plural})",
+        sample.data.len()
+    );
 }
 
 fn import_dialog(name: String, decoded: DecodedSample) -> Dialog {
@@ -150,7 +168,7 @@ fn import_dialog(name: String, decoded: DecodedSample) -> Dialog {
             let instrument = decoded
                 .to_instrument(&name, settings(state, &Fields::Result(result)))
                 .map_err(|error| error.to_string())?;
-            state.replace_instrument(state.active_instrument, instrument);
+            place_loaded(state, instrument);
             return Ok(());
         });
 }
@@ -197,7 +215,10 @@ fn describe(decoded: &DecodedSample) -> String {
 mod tests {
     use ggez::input::keyboard::{KeyCode, KeyMods};
     use octamedic_core::{
-        data::{instrument::InstrumentKind, project::OctamedicProject},
+        data::{
+            instrument::{InstrumentKind, SampleOctaves},
+            project::OctamedicProject,
+        },
         engine::handle::EngineHandle,
     };
     use rustuition::gadget::Gadget;
@@ -322,6 +343,21 @@ mod tests {
         let rate = note_rate(&state, 25) as usize;
         assert_eq!(instrument.sample().unwrap().data.len(), rate);
         assert!(!state.is_saved());
+        let loaded = format!("Sample loaded (length={rate}, 1 octave)");
+        assert_eq!(state.notification.as_deref(), Some(loaded.as_str()));
+    }
+
+    #[test]
+    fn loaded_message_counts_octaves() {
+        let sample = |octaves| OctamedicSample {
+            data: vec![0; 70],
+            repeat: None,
+            octaves,
+        };
+        assert_eq!(
+            loaded_message(&sample(SampleOctaves::Three)),
+            "Sample loaded (length=70, 3 octaves)"
+        );
     }
 
     #[test]

@@ -1,15 +1,21 @@
-use std::array;
+use std::{array, path::PathBuf};
+
+use octamedic_core::{data::instrument::InstrumentKind, export};
 
 use rustuition::{
     font::Font,
     gadget::Gadget,
-    gadgets::dialog::Label,
     painter::{Painter, Pen},
     rect::Rect,
 };
 
 use crate::{
-    app::{files::load_module, fonts, pens, state::AppState},
+    app::{
+        files::load_module,
+        fonts, pens,
+        prompt::Prompt,
+        state::{AppState, InstrumentSaveType},
+    },
     framework::{
         event::Event,
         widgets::{Button, Dialog, Textbox, symbols::stacked_text},
@@ -77,10 +83,7 @@ impl Files {
                 label_button("LOAD SONG"),
                 unhooked(label_button("SAVE SONG")),
             ],
-            instr: [
-                label_button("LOAD INSTR"),
-                unhooked(label_button("SAVE INSTR")),
-            ],
+            instr: [label_button("LOAD INSTR"), label_button("SAVE INSTR")],
             del_file: Button::new(stacked_text(&DEL_FILE_LINES)),
             msg: array::from_fn(|_| unhooked(label_button("MSG"))),
             map: array::from_fn(|_| unhooked(label_button("MAP"))),
@@ -120,9 +123,12 @@ impl Gadget<AppState, Event> for Files {
         if load_song.clicked().is_some() {
             load_selected_song(state);
         }
-        let [load_instrument, _] = &mut self.instr;
+        let [load_instrument, save_instrument] = &mut self.instr;
         if load_instrument.clicked().is_some() {
             crate::app::files::load_instrument::load_selected_instrument(state);
+        }
+        if save_instrument.clicked().is_some() {
+            save_active_instrument(state);
         }
         if self.del_file.clicked().is_some() {
             delete_selected_file(state);
@@ -186,16 +192,10 @@ fn load_selected_song(state: &mut AppState) {
         load_song(state, &path);
         return;
     }
-    let dialog = Dialog::new("Load song")
-        .with(Label::new("The song has unsaved changes.\nLoad anyway?"))
-        .submit_button("Load")
-        .cancel_button("Cancel")
-        .on_submit_checked(move |state, _| {
-            let project = load_module(&path).map_err(|error| error.to_string())?;
-            state.load_project(project);
-            return Ok(());
-        });
-    state.open_dialog(dialog);
+    state.open_prompt(Prompt::yes_no(
+        "Current song has been modified. Are you sure?",
+        move |state| load_song(state, &path),
+    ));
 }
 
 fn delete_selected_file(state: &mut AppState) {
@@ -213,6 +213,69 @@ fn delete_selected_file(state: &mut AppState) {
         },
     );
     state.open_dialog(dialog);
+}
+
+fn save_active_instrument(state: &mut AppState) {
+    let Some(instrument) = state.song().instrument(state.active_instrument) else {
+        state.notify("There's no instrument to save");
+        return;
+    };
+    let InstrumentKind::Sample(sample) = &instrument.kind else {
+        state.notify("Only samples can be saved");
+        return;
+    };
+    let name = instrument.name.trim();
+    if name.is_empty() {
+        state.notify("Name the instrument first");
+        return;
+    }
+    let save_type = state.instrument_save_type;
+    let bytes = match save_type {
+        InstrumentSaveType::Raw => export::raw(sample),
+        InstrumentSaveType::Iff => export::iff(name, instrument, sample),
+        InstrumentSaveType::Wav => export::wav(sample),
+    };
+    let file_name = instrument_file_name(name, save_type);
+    let path = state.browser.path().join(&file_name);
+    if path.is_dir() {
+        state.notify(format!("There's a folder called {file_name}"));
+        return;
+    }
+    if !path.exists() {
+        write_instrument(state, path, &bytes);
+        return;
+    }
+    let question = format!("{file_name} exists, replace it?");
+    state.open_prompt(Prompt::yes_no(question, move |state| {
+        write_instrument(state, path, &bytes)
+    }));
+}
+
+// a name can't reach into another folder. raw and IFF go without an extension like on the Amiga
+fn instrument_file_name(name: &str, save_type: InstrumentSaveType) -> String {
+    let name = name.replace(['/', '\\'], "_");
+    let wav = save_type == InstrumentSaveType::Wav;
+    if wav && !name.to_lowercase().ends_with(".wav") {
+        return format!("{name}.wav");
+    }
+    return name;
+}
+
+fn write_instrument(state: &mut AppState, path: PathBuf, bytes: &[u8]) {
+    if std::fs::write(&path, bytes).is_err() {
+        state.notify("Can't save it");
+        return;
+    }
+    let folder = state.browser.path().to_path_buf();
+    let _ = state.browser.open(folder);
+    let file_name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned());
+    state.notify(format!(
+        "Saved {}",
+        file_name.as_deref().unwrap_or_default()
+    ));
+    state.browser.select_file(file_name);
 }
 
 fn load_song(state: &mut AppState, path: &std::path::Path) {
@@ -249,7 +312,16 @@ fn render_stacked_pair(
 
 #[cfg(test)]
 mod tests {
-    use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
+    use std::sync::Arc;
+
+    use octamedic_core::{
+        data::{
+            instrument::{OctamedicInstrument, OctamedicSample, SampleOctaves},
+            project::OctamedicProject,
+        },
+        engine::handle::EngineHandle,
+    };
+    use rustuition::rect::Point;
 
     use super::*;
 
@@ -309,7 +381,7 @@ mod tests {
         let area = screen.bounds();
         files.render(state, area, &mut Painter::new(&mut screen, &state.palette));
         let press = Event::MouseDown {
-            pos: [SONG.x + 5, SONG.y + 3],
+            pos: Point::new(SONG.x + 5, SONG.y + 3),
             button: rustuition::event::MouseButton::Left,
         };
         assert!(files.handle_event(state, &press));
@@ -355,7 +427,11 @@ mod tests {
         state.browser.select_file(Some("anything.mmd0".to_owned()));
         let mut files = Files::new();
         click_load_song(&mut files, &mut state);
-        assert_eq!(state.take_pending_dialogs().len(), 1);
+        let prompt = state.prompt.as_ref().map(|prompt| prompt.text());
+        assert_eq!(
+            prompt,
+            Some("Current song has been modified. Are you sure? (Y/N)")
+        );
         assert_eq!(state.song().name(), "edited");
     }
 
@@ -412,6 +488,125 @@ mod tests {
             Some("Select a file to delete first")
         );
         assert!(state.take_pending_dialogs().is_empty());
+    }
+
+    fn saving(name: &str) -> (AppState, PathBuf) {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        let folder = std::env::temp_dir().join(format!(
+            "octamedic-save-{}-{}",
+            name.replace('/', "_"),
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        state.browser.open(&folder).unwrap();
+        let mut instrument = OctamedicInstrument::new(name);
+        instrument.kind = InstrumentKind::Sample(Arc::new(OctamedicSample {
+            data: vec![0, 10, -10, 20],
+            repeat: None,
+            octaves: SampleOctaves::One,
+        }));
+        let active = state.active_instrument;
+        state.song_mut().set_instrument(active, Some(instrument));
+        return (state, folder);
+    }
+
+    #[test]
+    fn save_instr_saves_in_the_picked_format() {
+        let (mut state, folder) = saving("kick");
+        let sample = state
+            .song()
+            .instrument(state.active_instrument)
+            .and_then(|instrument| instrument.sample().cloned())
+            .unwrap();
+        let instrument = state.song().instrument(state.active_instrument).unwrap();
+        let expected = [
+            (InstrumentSaveType::Raw, "kick", export::raw(&sample)),
+            (
+                InstrumentSaveType::Iff,
+                "kick",
+                export::iff("kick", instrument, &sample),
+            ),
+            (InstrumentSaveType::Wav, "kick.wav", export::wav(&sample)),
+        ];
+        for (save_type, file_name, bytes) in expected {
+            let _ = std::fs::remove_file(folder.join("kick"));
+            state.instrument_save_type = save_type;
+            save_active_instrument(&mut state);
+            let saved = std::fs::read(folder.join(file_name)).ok();
+            assert_eq!(saved, Some(bytes), "{save_type:?}");
+            assert_eq!(state.browser.selected_file(), Some(file_name));
+        }
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn save_instr_asks_before_replacing() {
+        let (mut state, folder) = saving("snare");
+        let path = folder.join("snare");
+        std::fs::write(&path, b"old").unwrap();
+        save_active_instrument(&mut state);
+        let prompt = state.prompt.as_ref().map(Prompt::text);
+        assert_eq!(prompt, Some("snare exists, replace it? (Y/N)"));
+        assert_eq!(std::fs::read(&path).unwrap(), b"old");
+        crate::app::prompt::handle_event(&mut state, &key(ggez::input::keyboard::KeyCode::Y));
+        let replaced = std::fs::read(&path).unwrap();
+        let _ = std::fs::remove_dir_all(&folder);
+        assert_eq!(replaced.len(), 4);
+    }
+
+    #[test]
+    fn save_instr_wont_replace_a_folder() {
+        let (mut state, folder) = saving("..");
+        save_active_instrument(&mut state);
+        assert_eq!(
+            state.notification.as_deref(),
+            Some("There's a folder called ..")
+        );
+        assert!(state.prompt.is_none());
+        let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn save_instr_needs_a_named_sample() {
+        let (mut state, folder) = saving("  ");
+        save_active_instrument(&mut state);
+        assert_eq!(
+            state.notification.as_deref(),
+            Some("Name the instrument first")
+        );
+        state.edit_active_instrument(|instrument| instrument.kind = InstrumentKind::Empty);
+        save_active_instrument(&mut state);
+        assert_eq!(
+            state.notification.as_deref(),
+            Some("Only samples can be saved")
+        );
+        let active = state.active_instrument;
+        state.song_mut().set_instrument(active, None);
+        save_active_instrument(&mut state);
+        assert_eq!(
+            state.notification.as_deref(),
+            Some("There's no instrument to save")
+        );
+        let empty = std::fs::read_dir(&folder).unwrap().next().is_none();
+        let _ = std::fs::remove_dir_all(&folder);
+        assert!(empty);
+    }
+
+    #[test]
+    fn file_names_stay_in_the_folder() {
+        assert_eq!(
+            instrument_file_name("a/b\\c", InstrumentSaveType::Raw),
+            "a_b_c"
+        );
+        assert_eq!(
+            instrument_file_name("bass", InstrumentSaveType::Wav),
+            "bass.wav"
+        );
+        assert_eq!(
+            instrument_file_name("bass.WAV", InstrumentSaveType::Wav),
+            "bass.WAV"
+        );
     }
 
     #[test]

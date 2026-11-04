@@ -1,7 +1,7 @@
 use std::array;
 
 use ggez::input::keyboard::{KeyCode, KeyMods};
-use octamed::utility::note::SEMITONES_PER_OCTAVE;
+use mmd::utility::note::SEMITONES_PER_OCTAVE;
 use octamedic_core::{
     amiga::paula::SCOPE_CHANNELS,
     data::{
@@ -18,7 +18,7 @@ use rustuition::{
     font::Font,
     gadget::Gadget,
     painter::{CHAR_HEIGHT, CHAR_WIDTH, Painter, Pen},
-    rect::Rect,
+    rect::{Point, Rect},
 };
 
 use crate::{
@@ -173,7 +173,11 @@ impl BlockEditor {
             return false;
         }
         let click = self.clickable.handle(event);
-        if let Click::Clicked { pos: [x, _], .. } = click {
+        if let Click::Clicked {
+            pos: Point { x, .. },
+            ..
+        } = click
+        {
             let layout = state
                 .active_pattern()
                 .map(|pattern| Layout::new(self.area, pattern.track_count()));
@@ -495,11 +499,11 @@ impl Gadget<AppState, Event> for BlockEditor {
             let pen = if center { Pen::FILL } else { Pen::SHINE };
             let pen = if highlighted[row as usize] {
                 if center {
-                    painter.fill(band, highlight(Pen::SHADOW));
+                    painter.fill(band, pens::highlight(Pen::SHADOW));
                 } else {
-                    painter.fill(row_rect(area, row), highlight(Pen::BACKGROUND));
+                    painter.fill(row_rect(area, row), pens::highlight(Pen::BACKGROUND));
                 }
-                highlight(pen)
+                pens::highlight(pen)
             } else {
                 pen
             };
@@ -512,11 +516,14 @@ impl Gadget<AppState, Event> for BlockEditor {
             painter.fill(Rect::new(x, area.y, width, area.h), pens::PINK);
             for row in (0..rows).filter(|&row| highlighted[row as usize]) {
                 let rect = row_rect(area, row);
-                painter.fill(Rect::new(x, rect.y, width, rect.h), highlight(pens::PINK));
+                painter.fill(
+                    Rect::new(x, rect.y, width, rect.h),
+                    pens::highlight(pens::PINK),
+                );
             }
             // OctaMED draws the band by flipping a bitplane, which turns the pink red
             let pen = if highlighted[center_row(area) as usize] {
-                highlight(pens::RED)
+                pens::highlight(pens::RED)
             } else {
                 pens::RED
             };
@@ -535,12 +542,6 @@ struct CursorBox {
     top: Rect,
     bottom: Rect,
     sides: [Rect; 2],
-}
-
-// OctaMED highlights a line by flipping the lowest bitplane under it, which swaps each pen for
-// its neighbour: black and light grey, the band's greys, pink and blush, red and rose
-fn highlight(pen: Pen) -> Pen {
-    return Pen(pen.0 ^ 1);
 }
 
 fn row_rect(area: Rect, row: i32) -> Rect {
@@ -992,8 +993,8 @@ mod tests {
         assert!(!state.is_saved());
         press(&mut editor, &mut state, KeyCode::Tab, KeyMods::NONE);
         assert!(!state.active_pattern().unwrap().lines[3].highlighted);
-        assert_eq!(highlight(Pen::BACKGROUND), Pen::SHINE);
-        assert_eq!(highlight(pens::PINK), pens::BLUSH);
+        assert_eq!(pens::highlight(Pen::BACKGROUND), Pen::SHINE);
+        assert_eq!(pens::highlight(pens::PINK), pens::BLUSH);
     }
 
     #[test]
@@ -1177,7 +1178,7 @@ mod tests {
 
     fn mouse_down(x: i32, button: MouseButton) -> Event {
         return Event::MouseDown {
-            pos: [x, 100],
+            pos: Point::new(x, 100),
             button,
         };
     }
@@ -1204,7 +1205,7 @@ mod tests {
         editor.handle_event(
             &mut state,
             &Event::MouseUp {
-                pos: [x, 100],
+                pos: Point::new(x, 100),
                 button: MouseButton::Left,
             },
         );

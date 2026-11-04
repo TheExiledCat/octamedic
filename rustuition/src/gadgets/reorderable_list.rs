@@ -381,6 +381,7 @@ mod tests {
         event::{MouseButton, MouseEvent},
         gadgets::dialog::DROPDOWN_ROW_HEIGHT,
         palette::{Color, IntuitionColorPalette},
+        rect::Point,
         target::Framebuffer,
     };
 
@@ -417,7 +418,7 @@ mod tests {
     }
 
     fn click(list: &mut TestList, events: &mut Events, area: Rect) {
-        let pos = [area.x + area.w / 2, area.y + area.h / 2];
+        let pos = Point::new(area.x + area.w / 2, area.y + area.h / 2);
         let press = MouseEvent::Down {
             pos,
             button: MouseButton::Left,

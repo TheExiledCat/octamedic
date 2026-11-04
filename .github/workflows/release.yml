@@ -77,13 +77,13 @@ jobs:
           key: ${{ matrix.target }}
 
       - name: Build
-        run: cargo build --release --locked --target ${{ matrix.target }} -p octamed_cli -p octamedic_gui
+        run: cargo build --release --locked --target ${{ matrix.target }} -p mmd_cli -p octamedic_gui
 
       - name: Package (Unix)
         if: runner.os != 'Windows'
         run: |
           cd target/${{ matrix.target }}/release
-          for pair in cli:octamed_cli gui:octamedic_gui; do
+          for pair in cli:mmd_cli gui:octamedic_gui; do
             kind="${pair%%:*}"; bin="${pair#*:}"
             zip "$GITHUB_WORKSPACE/octamedic-${kind}-${GITHUB_REF_NAME}-${{ matrix.target }}.zip" "$bin"
           done
@@ -92,7 +92,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $bins = @{ cli = "octamed_cli"; gui = "octamedic_gui" }
+          $bins = @{ cli = "mmd_cli"; gui = "octamedic_gui" }
           foreach ($kind in $bins.Keys) {
             $archive = "octamedic-$kind-$env:GITHUB_REF_NAME-${{ matrix.target }}.zip"
             Compress-Archive -Path "target/${{ matrix.target }}/release/$($bins[$kind]).exe" -DestinationPath $archive

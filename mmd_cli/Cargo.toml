@@ -1,5 +1,5 @@
 [package]
-name = "octamed_cli"
+name = "mmd_cli"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
@@ -14,7 +14,7 @@ cpal = "0.17.3"
 figlet-rs = "1.0.0"
 hound = "3.5.1"
 inquire = "0.9.4"
-octamed = {path="../octamed"}
+mmd = {path="../mmd"}
 octamedic_core = {path="../octamedic_core"}
 progress_bar = "1.4.0"
 

@@ -1,4 +1,4 @@
-use octamed::mmd::module::{
+use mmd::mmd::module::{
     INSTRUMENT_NAME_LENGTH, OctamedMMD0ExpansionHeader, OctamedMMD0ExternalInstrument,
     OctamedMMD0Header, OctamedMMD0Song, OctamedMMDTrackLine, PALETTE_COLORS,
 };
@@ -10,7 +10,7 @@ use crate::data::{
     song::OctamedicSong,
 };
 
-// sizes from format.md that the octamed structs don't have as constants
+// sizes from format.md that the mmd structs don't have as constants
 const POINTER: usize = 4;
 const SAMPLE_HEADER: usize = 6;
 const SYNTH_HEADER: usize = 534;

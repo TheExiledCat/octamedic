@@ -1,7 +1,7 @@
 #[cfg(feature = "ggez")]
 pub use batched_canvas::BatchedCanvas;
 
-use crate::rect::Rect;
+use crate::rect::{Point, Rect};
 
 /// An 8-bit RGBA colour, what render targets fill with.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -101,7 +101,7 @@ impl Framebuffer {
 
     /// The pixel at `x`, `y`, or `None` off the edge.
     pub fn pixel(&self, x: i32, y: i32) -> Option<[u8; 3]> {
-        if !self.bounds().contains([x, y]) {
+        if !self.bounds().contains(Point::new(x, y)) {
             return None;
         }
         return Some(self.pixels[(y * self.width + x) as usize]);

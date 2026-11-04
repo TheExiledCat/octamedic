@@ -3,7 +3,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-use octamed::{mmd::module::SONG_TRACKS, utility::note::SEMITONES_PER_OCTAVE};
+use ggez::input::keyboard::KeyMods;
+use mmd::{mmd::module::SONG_TRACKS, utility::note::SEMITONES_PER_OCTAVE};
 use octamedic_core::{
     amiga::clock::VideoStandard,
     data::{
@@ -26,6 +27,7 @@ use crate::{
         cursor::EditCursor,
         files::browser::Browser,
         mode::{HeaderMode, MainMode},
+        prompt::Prompt,
         screen_filters::ScreenFilters,
     },
     framework::widgets::Dialog,
@@ -69,6 +71,27 @@ pub enum PlayStart {
     ContinueBlock,
 }
 
+/// The format the Files panel saves instruments in, picked in the sample editor.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum InstrumentSaveType {
+    #[default]
+    Raw,
+    Iff,
+    Wav,
+}
+
+impl InstrumentSaveType {
+    pub const ALL: [Self; 3] = [Self::Raw, Self::Iff, Self::Wav];
+
+    pub fn next(self) -> Self {
+        return Self::ALL[(self as usize + 1) % Self::ALL.len()];
+    }
+
+    pub fn previous(self) -> Self {
+        return Self::ALL[(self as usize + Self::ALL.len() - 1) % Self::ALL.len()];
+    }
+}
+
 // the E1, E2 and E3 switches
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Meters {
@@ -106,6 +129,11 @@ pub struct AppState {
     pub recording: bool,
     pub exit_requested: bool,
     pub notification: Option<String>,
+    // shown instead of the notification, and holding everything up until it's answered
+    pub prompt: Option<Prompt>,
+    // the sample editor's clipboard, CBUFF
+    pub copy_buffer: Vec<i8>,
+    pub instrument_save_type: InstrumentSaveType,
     pub palette: IntuitionColorPalette,
     // the D switch
     pub play_on_note: bool,
@@ -116,10 +144,14 @@ pub struct AppState {
     pending_dialogs: Vec<Dialog>,
     // right click: the title bar shows and the meters and scrolling stop
     pub displays_off: bool,
+    // the modifier keys down at the last mouse event, Amiga included
+    pub mouse_mods: KeyMods,
     video: VideoStandard,
     queued_sequence_index: Option<usize>,
     started: Option<PlayStart>,
     muted_tracks: [bool; SONG_TRACKS],
+    // the active instrument the engine was last told about
+    engine_active_instrument: Option<InstrumentId>,
     project: OctamedicProject,
     header_mode: HeaderMode,
     main_mode: MainMode,
@@ -163,6 +195,9 @@ impl AppState {
             recording: false,
             exit_requested: false,
             notification: None,
+            prompt: None,
+            copy_buffer: Vec::new(),
+            instrument_save_type: InstrumentSaveType::default(),
             palette,
             play_on_note: false,
             meters: Meters::default(),
@@ -170,10 +205,12 @@ impl AppState {
             screen_filters: ScreenFilters::default(),
             pending_dialogs: Vec::new(),
             displays_off: false,
+            mouse_mods: KeyMods::NONE,
             video: DEFAULT_VIDEO,
             queued_sequence_index: None,
             started: None,
             muted_tracks: [false; SONG_TRACKS],
+            engine_active_instrument: None,
             project,
             header_mode: HeaderMode::default(),
             main_mode: MainMode::default(),
@@ -342,6 +379,10 @@ impl AppState {
 
     pub fn is_saved(&self) -> bool {
         return !self.has_changes;
+    }
+
+    pub fn open_prompt(&mut self, prompt: Prompt) {
+        self.prompt = Some(prompt);
     }
 
     pub fn notify(&mut self, notification: impl Into<String>) {
@@ -781,12 +822,31 @@ impl AppState {
             self.sequence_changed = false;
             self.engine.set_sequence(song.sequence().to_vec());
         }
+        // it's set straight on the field in places, so it's caught here rather than at each
+        if self.engine_active_instrument != Some(self.active_instrument) {
+            self.engine_active_instrument = Some(self.active_instrument);
+            self.engine.set_active_instrument(self.active_instrument);
+        }
     }
 
     fn edit_sequence(&mut self, edit: impl FnOnce(&mut Vec<PatternId>)) {
         edit(self.song_mut().sequence_mut());
         self.set_sequence(self.active_sequence_index);
         self.sequence_changed = true;
+    }
+
+    pub fn clear_all(&mut self) {
+        self.load_project(OctamedicProject::new());
+    }
+
+    /// The song cleared but its instruments kept, with the editor back at its start.
+    pub fn clear_song(&mut self) {
+        self.stop();
+        self.song_mut().clear();
+        self.active_pattern = PatternId(0);
+        self.cursor = EditCursor::default();
+        self.active_sequence_index = 0;
+        self.send_all_to_engine();
     }
 }
 
@@ -812,6 +872,31 @@ mod tests {
         assert!(state.is_saved());
         assert!(!state.is_track_muted(2));
         assert_eq!(state.active_instrument, InstrumentId(1));
+    }
+
+    #[test]
+    fn clearing_the_song_keeps_its_instruments() {
+        let mut state = state();
+        state.set_song_name("old");
+        let instrument = Some(OctamedicInstrument::new("kept"));
+        state.song_mut().set_instrument(InstrumentId(1), instrument);
+        state.song_mut().sequence_mut().push(PatternId(0));
+        state.active_sequence_index = 1;
+        state.clear_song();
+        assert_eq!(state.song().name(), "");
+        assert_eq!(state.song().sequence(), [PatternId(0)]);
+        assert_eq!(state.active_sequence_index, 0);
+        assert!(state.song().instrument(InstrumentId(1)).is_some());
+    }
+
+    #[test]
+    fn clearing_all_drops_the_instruments_too() {
+        let mut state = state();
+        let instrument = Some(OctamedicInstrument::new("gone"));
+        state.song_mut().set_instrument(InstrumentId(1), instrument);
+        state.clear_all();
+        assert!(state.song().instrument(InstrumentId(1)).is_none());
+        assert!(state.is_saved());
     }
 
     #[test]

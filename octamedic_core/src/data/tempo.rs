@@ -1,4 +1,4 @@
-use octamed::utility::{frequency::Frequency, octamed_tempo::OctamedTempo};
+use mmd::utility::{frequency::Frequency, octamed_tempo::OctamedTempo};
 
 use crate::amiga::{clock::AmigaClock, m68k::divu};
 

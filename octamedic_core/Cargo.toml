@@ -7,7 +7,7 @@ rust-version.workspace = true
 [dependencies]
 octamedic_util = {path="../octamedic_util"}
 cpal = "0.17.3"
-octamed = {path="../octamed"}
+mmd = {path="../mmd"}
 symphonia = { version = "0.6.1", default-features = false, features = ["flac", "mp3", "pcm", "wav"] }
 
 [lints]

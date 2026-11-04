@@ -63,10 +63,10 @@ impl Screen {
     pub fn to_screen(self, viewport: Viewport, point: [f32; 2]) -> Point {
         let x = (point[0] - viewport.x) / viewport.w * self.width as f32;
         let y = (point[1] - viewport.y) / viewport.h * self.height as f32;
-        return [
+        return Point::new(
             (x.floor() as i32).clamp(0, self.width - 1),
             (y.floor() as i32).clamp(0, self.height - 1),
-        ];
+        );
     }
 
     fn shown_size(self) -> [f32; 2] {
@@ -146,10 +146,13 @@ mod tests {
     #[test]
     fn window_to_screen() {
         let viewport = SCREEN.viewport([1280.0, 1024.0], ScaleMode::Integer);
-        assert_eq!(SCREEN.to_screen(viewport, [0.0, 0.0]), [0, 0]);
+        assert_eq!(SCREEN.to_screen(viewport, [0.0, 0.0]), Point::new(0, 0));
         // 2x4 window pixels per screen pixel at this size
-        assert_eq!(SCREEN.to_screen(viewport, [21.0, 43.0]), [10, 10]);
-        assert_eq!(SCREEN.to_screen(viewport, [5000.0, -10.0]), [639, 0]);
+        assert_eq!(SCREEN.to_screen(viewport, [21.0, 43.0]), Point::new(10, 10));
+        assert_eq!(
+            SCREEN.to_screen(viewport, [5000.0, -10.0]),
+            Point::new(639, 0)
+        );
     }
 
     #[test]

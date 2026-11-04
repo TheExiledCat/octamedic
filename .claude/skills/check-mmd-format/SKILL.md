@@ -1,23 +1,23 @@
 ---
 name: check-mmd-format
-description: Check octamed's MMD parser and writer against octamed/format.md, the original MED/OctaMED MMD0-MMD3 file format documentation, and report what's read, written and round-tripped, and where the code disagrees with it. Use after changing the parser, writer or module structs in octamed/src/mmd, or when asked to "check the file format" or "check MMD support".
+description: Check mmd's MMD parser and writer against mmd/format.md, the original MED/OctaMED MMD0-MMD3 file format documentation, and report what's read, written and round-tripped, and where the code disagrees with it. Use after changing the parser, writer or module structs in mmd/src/mmd, or when asked to "check the file format" or "check MMD support".
 ---
 
 # Check MMD format support
 
-`octamed/format.md` is Teijo Kinnunen's MMD documentation (revision 6, 1996). It's the
+`mmd/format.md` is Teijo Kinnunen's MMD documentation (revision 6, 1996). It's the
 reference the code follows, not a description of the code: **never edit it**. This skill
 checks the code against it and reports.
 
 ## 1. Read the sources
 
-- `octamed/format.md`: the structures (`MMD0`, `MMD0song`, `MMD2song`, `MMD0Block`,
+- `mmd/format.md`: the structures (`MMD0`, `MMD0song`, `MMD2song`, `MMD0Block`,
   `MMD1Block`, `BlockInfo`, `InstrHdr`, `MMD0exp`, `InstrExt`, `MMDInstrInfo`, ...), their field
   offsets and sizes, and which format version each part belongs to.
-- `octamed/src/mmd/module.rs`: the Rust structs, their field order and `get_size`.
-- `octamed/src/mmd/parser.rs` and `writer.rs`: what's actually read and written, and which
+- `mmd/src/mmd/module.rs`: the Rust structs, their field order and `get_size`.
+- `mmd/src/mmd/parser.rs` and `writer.rs`: what's actually read and written, and which
   pointers are followed or written as null.
-- `octamed/src/mmd/conversion.rs` and `octamed/tests/parse_examples.rs`.
+- `mmd/src/mmd/conversion.rs` and `mmd/tests/parse_examples.rs`.
 - `git diff` / `git log` on those files to see what changed recently, but check the whole format
   anyway: earlier gaps may never have been listed.
 
@@ -39,7 +39,7 @@ say so instead of guessing.
 
 ## 3. Verify
 
-- `cargo test -p octamed`, and mention any failures rather than reporting around them.
+- `cargo test -p mmd`, and mention any failures rather than reporting around them.
 - Where the comparison raises a question a file can answer (a field's real values, whether
   round-tripping changes the bytes), check it with the example modules in
   `example_meds`. Write temporary files outside the repo and delete them after.

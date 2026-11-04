@@ -163,8 +163,8 @@ impl<S, E> Slider<S, E> {
 
     fn along(&self, pos: Point, area: Rect) -> i32 {
         return match self.direction {
-            SliderDirection::Horizontal => pos[0] - area.x,
-            SliderDirection::Vertical => pos[1] - area.y,
+            SliderDirection::Horizontal => pos.x - area.x,
+            SliderDirection::Vertical => pos.y - area.y,
         };
     }
 
@@ -209,7 +209,7 @@ impl<S, E: PointerEvent> Gadget<S, E> for Slider<S, E> {
                 button: MouseButton::Left,
             } if self.area.contains(pos) => {
                 let handle = self.handle_rect(self.area);
-                let handle_start = self.along([handle.x, handle.y], self.area);
+                let handle_start = self.along(Point::new(handle.x, handle.y), self.area);
                 let handle_length = self.handle_length(self.track(self.area));
                 // track click, handle jumps to the pointer
                 let grab = if handle.contains(pos) {
@@ -287,7 +287,7 @@ mod tests {
         let mut slider = slider(SliderDirection::Horizontal, false);
         slider.set_enabled(false);
         let press = MouseEvent::Down {
-            pos: [100, 22],
+            pos: Point::new(100, 22),
             button: MouseButton::Left,
         };
         assert!(!slider.handle_event(&mut (), &press));
@@ -338,13 +338,13 @@ mod tests {
         let left = MouseButton::Left;
         // grabbing the handle where it is doesn't move it
         let press = MouseEvent::Down {
-            pos: [12, 22],
+            pos: Point::new(12, 22),
             button: left,
         };
         assert!(slider.handle_event(&mut state, &press));
         assert_eq!(seen.get(), None);
         let moved = MouseEvent::Move {
-            pos: [12 + 8 * 4, 22],
+            pos: Point::new(12 + 8 * 4, 22),
         };
         slider.handle_event(&mut state, &moved);
         assert_eq!(
@@ -355,11 +355,16 @@ mod tests {
             })
         );
         let release = MouseEvent::Up {
-            pos: [44, 22],
+            pos: Point::new(44, 22),
             button: left,
         };
         assert!(slider.handle_event(&mut state, &release));
-        slider.handle_event(&mut state, &MouseEvent::Move { pos: [130, 22] });
+        slider.handle_event(
+            &mut state,
+            &MouseEvent::Move {
+                pos: Point::new(130, 22),
+            },
+        );
         assert_eq!(slider.value(), 4);
     }
 
@@ -367,7 +372,7 @@ mod tests {
     fn track_click_jumps() {
         let mut slider = slider(SliderDirection::Horizontal, false);
         let press = MouseEvent::Down {
-            pos: [10 + 64, 22],
+            pos: Point::new(10 + 64, 22),
             button: MouseButton::Left,
         };
         slider.handle_event(&mut (), &press);

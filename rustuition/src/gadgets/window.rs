@@ -116,6 +116,7 @@ mod tests {
     use crate::{
         event::{MouseButton, MouseEvent},
         palette::{Color, IntuitionColorPalette},
+        rect::Point,
         target::Framebuffer,
     };
 
@@ -129,7 +130,7 @@ mod tests {
         return screen;
     }
 
-    fn press(pos: [i32; 2]) -> MouseEvent {
+    fn press(pos: Point) -> MouseEvent {
         return MouseEvent::Down {
             pos,
             button: MouseButton::Left,
@@ -150,7 +151,7 @@ mod tests {
     fn close_gadget_click_is_taken_once() {
         let mut window = Window::new("Test");
         render(&mut window);
-        assert!(window.handle_event(&mut (), &press([AREA.x + 8, AREA.y + 5])));
+        assert!(window.handle_event(&mut (), &press(Point::new(AREA.x + 8, AREA.y + 5))));
         assert!(window.take_close_click());
         assert!(!window.take_close_click());
     }
@@ -159,7 +160,7 @@ mod tests {
     fn lets_other_clicks_through() {
         let mut window = Window::new("Test");
         render(&mut window);
-        assert!(!window.handle_event(&mut (), &press([AREA.x + 100, AREA.y + 40])));
+        assert!(!window.handle_event(&mut (), &press(Point::new(AREA.x + 100, AREA.y + 40))));
         assert!(!window.take_close_click());
     }
 
@@ -167,7 +168,7 @@ mod tests {
     fn no_close_gadget() {
         let mut window = Window::new("Test").closable(false);
         render(&mut window);
-        assert!(!window.handle_event(&mut (), &press([AREA.x + 8, AREA.y + 5])));
+        assert!(!window.handle_event(&mut (), &press(Point::new(AREA.x + 8, AREA.y + 5))));
     }
 
     #[test]

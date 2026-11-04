@@ -1,5 +1,6 @@
 use std::{
     fmt::Display,
+    ops::Range,
     sync::{
         Arc,
         atomic::{AtomicU8, AtomicU32, AtomicUsize, Ordering},
@@ -73,6 +74,15 @@ pub enum EngineCommand {
     },
     /// Plays a sample that isn't in the song on the first track, or stops it with `None`.
     Preview(Option<(Arc<OctamedicSample>, OctamedicNote)>),
+    /// The instrument whose voice's place in its sample is in the status.
+    SetActiveInstrument(InstrumentId),
+    /// Plays `range` of an instrument's sample data once on the first track, for the sample
+    /// editor. Stopped like a preview.
+    PlaySample {
+        instrument: InstrumentId,
+        range: Range<usize>,
+        note: OctamedicNote,
+    },
 }
 
 impl EngineCommand {
@@ -118,12 +128,16 @@ pub struct NoteTrigger {
     pub volume: u8,
 }
 
+// stored while the active instrument isn't sounding
+const NOT_PLAYING: usize = usize::MAX;
+
 pub struct EngineStatus {
     play_mode: AtomicU8,
     sequence_index: AtomicUsize,
     pattern: AtomicUsize,
     row: AtomicUsize,
     scopes: Arc<Scopes>,
+    sample_position: AtomicUsize,
     // a NoteTrigger per track, packed so it's read in one go
     triggers: Vec<AtomicU32>,
 }
@@ -136,6 +150,7 @@ impl Default for EngineStatus {
             pattern: AtomicUsize::default(),
             row: AtomicUsize::default(),
             scopes: Arc::default(),
+            sample_position: AtomicUsize::new(NOT_PLAYING),
             triggers: (0..MAX_TRACKS).map(|_| AtomicU32::default()).collect(),
         };
     }
@@ -183,6 +198,16 @@ impl EngineStatus {
 
     pub fn scopes(&self) -> &Arc<Scopes> {
         return &self.scopes;
+    }
+
+    pub fn sample_position(&self) -> Option<usize> {
+        let position = self.sample_position.load(Ordering::Relaxed);
+        return (position != NOT_PLAYING).then_some(position);
+    }
+
+    pub fn set_sample_position(&self, position: Option<usize>) {
+        let stored = position.unwrap_or(NOT_PLAYING);
+        self.sample_position.store(stored, Ordering::Relaxed);
     }
 
     pub fn set_play_mode(&self, mode: PlayMode) {
@@ -373,6 +398,18 @@ impl EngineHandle {
 
     pub fn preview(&self, sample: Arc<OctamedicSample>, note: OctamedicNote) {
         self.send(EngineCommand::Preview(Some((sample, note))));
+    }
+
+    pub fn set_active_instrument(&self, instrument: InstrumentId) {
+        self.send(EngineCommand::SetActiveInstrument(instrument));
+    }
+
+    pub fn play_sample(&self, instrument: InstrumentId, range: Range<usize>, note: OctamedicNote) {
+        self.send(EngineCommand::PlaySample {
+            instrument,
+            range,
+            note,
+        });
     }
 
     pub fn stop_preview(&self) {

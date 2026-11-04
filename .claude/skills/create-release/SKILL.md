@@ -33,14 +33,14 @@ vague ("uiredo", "voicetest"), so the diff is the source of truth.
 
 - `git log --reverse --format='%h %s%n%b' <prev>..HEAD`
 - `git diff --stat <prev>..HEAD`
-- `git diff <prev>..HEAD -- octamed octamed_cli octamedic_core octamedic_gui rustuition README.md Cargo.toml`
+- `git diff <prev>..HEAD -- mmd mmd_cli octamedic_core octamedic_gui rustuition README.md Cargo.toml`
   and read the hunks. Open the changed files where the diff alone doesn't make the behavior
   clear.
 - The README diff for roadmap items that were ticked off.
 - `Cargo.toml` dependency changes (workspace root and each crate).
 
-The workspace ships two programs: the CLI (`octamed_cli`) and the GUI (`octamedic_gui`), built
-on `octamedic_core` (engine/playback) and `octamed` (OctaMED module parsing/writing). Work out
+The workspace ships two programs: the CLI (`mmd_cli`) and the GUI (`octamedic_gui`), built
+on `octamedic_core` (engine/playback) and `mmd` (OctaMED module parsing/writing). Work out
 what changed for someone using either program: new features, changed behavior, commands and
 keys, module format support (reading/writing MMD files), fixes. Say which program a change
 affects when it's only one of them. Internal refactors only get a line if they change
@@ -85,11 +85,11 @@ they ask for.
 ## 5. Bump, commit, tag, push
 
 - Set `version = "X.Y.Z"` under `[package]` in every workspace member's `Cargo.toml`
-  (`octamed`, `octamed_cli`, `octamedic_core`, `octamedic_gui`) so they stay in step. Leave
+  (`mmd`, `mmd_cli`, `octamedic_core`, `octamedic_gui`) so they stay in step. Leave
   `rustuition` alone, it's versioned on its own since it'll be a separate library. Run a
   plain `cargo build` so `Cargo.lock` picks up the new versions (CI builds with `--locked`,
   which fails on a stale lock), then
-  `cargo build --release --locked -p octamed_cli -p octamedic_gui` to make sure both release
+  `cargo build --release --locked -p mmd_cli -p octamedic_gui` to make sure both release
   binaries build. If it doesn't build, stop and report; don't tag broken code.
 - Stage the member `Cargo.toml`s, `Cargo.lock`, `docs/CHANGELOG.md` and whatever the user
   agreed to include.

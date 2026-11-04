@@ -7,13 +7,13 @@ in the same order the original player writes to it.
 The path a song takes:
 
 ```
-.mmd file -> octamed::mmd::parser -> OctamedMMD (the file as stored)
+.mmd file -> mmd::mmd::parser -> OctamedMMD (the file as stored)
           -> from_module()        -> OctamedicProject (songs, patterns, instruments)
           -> EngineHandle         -> EngineCommands to the audio thread
           -> OctamedicEngine::process() -> Paula writes -> PaulaRenderer -> audio
 ```
 
-`octamed` only knows the file format. The engine lives in the audio callback and the UI never
+`mmd` only knows the file format. The engine lives in the audio callback and the UI never
 touches it: it sends `EngineCommand`s through an `EngineHandle` (play, stop, a changed pattern, a
 new tempo) and reads the position back from `EngineStatus`. Patterns are shared as `Arc`s, so
 editing one while it plays makes a copy.

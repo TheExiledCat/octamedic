@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap_derive::Args;
 use hound::{WavSpec, WavWriter};
-use octamed::utility::{frequency::Frequency, period::AmigaPalPeriod};
+use mmd::utility::{frequency::Frequency, period::AmigaPalPeriod};
 use progress_bar::{
     Color, Style, finalize_progress_bar, inc_progress_bar, init_progress_bar,
     set_progress_bar_action, set_progress_bar_width,
@@ -29,7 +29,7 @@ pub struct WavExportCommand {
 }
 
 impl Command for WavExportCommand {
-    fn run(&self, mmd: &mut octamed::mmd::module::OctamedMMD) -> CommandResult {
+    fn run(&self, mmd: &mut mmd::mmd::module::OctamedMMD) -> CommandResult {
         let header = mmd.sample_table.headers[self.sample_number]
             .as_ref()
             .ok_or(CommandError::Generic(format!(

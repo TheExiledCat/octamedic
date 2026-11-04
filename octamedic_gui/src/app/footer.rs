@@ -238,7 +238,7 @@ fn raise(slots: &mut [u8], number: u8, level: u8) {
 #[cfg(test)]
 mod tests {
     use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
-    use rustuition::target::Framebuffer;
+    use rustuition::{rect::Point, target::Framebuffer};
 
     use super::*;
     use crate::framework::event::MouseButton;
@@ -334,7 +334,7 @@ mod tests {
         footer.update(&mut state);
         draw(&mut footer, &state);
         let click = Event::MouseDown {
-            pos: [600, 200],
+            pos: Point::new(600, 200),
             button: MouseButton::Left,
         };
         assert!(footer.handle_event(&mut state, &click));
@@ -344,7 +344,7 @@ mod tests {
         assert_eq!(state.song().name(), "fairlight");
         assert!(!state.is_saved());
         let elsewhere = Event::MouseDown {
-            pos: [300, 100],
+            pos: Point::new(300, 100),
             button: MouseButton::Left,
         };
         assert!(!footer.handle_event(&mut state, &elsewhere));
@@ -358,7 +358,7 @@ mod tests {
         footer.update(&mut state);
         draw(&mut footer, &state);
         let click = Event::MouseDown {
-            pos: [200, 200],
+            pos: Point::new(200, 200),
             button: MouseButton::Left,
         };
         assert!(footer.handle_event(&mut state, &click));

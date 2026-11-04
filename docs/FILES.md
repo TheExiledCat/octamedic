@@ -1,6 +1,6 @@
 # Files
 
-What OctaMEDIC reads and writes besides what `octamed/format.md` (the original MMD
+What OctaMEDIC reads and writes besides what `mmd/format.md` (the original MMD
 documentation) covers, and how OctaMED's own files and samples work.
 
 ## Loading instruments
@@ -155,7 +155,7 @@ So compared with the module struct:
 The fields and the waveforms themselves (a length in words, then the data) are the same as in
 `format.md`.
 
-`octamed` reads both layouts into `OctamedMMD0SynthInstrument` (`octamed/src/mmd/synth.rs`), and the
+`mmd` reads both layouts into `OctamedMMD0SynthInstrument` (`mmd/src/mmd/synth.rs`), and the
 project keeps them as `InstrumentKind::Synth` or `InstrumentKind::Hybrid` with an `OctamedicSynth`.
 `MshLoader` loads `MSH` files (they start with `"MSH\0"`) straight into an instrument, taking the
 synth's default decay. The engine doesn't play synths yet, and they aren't written back to modules

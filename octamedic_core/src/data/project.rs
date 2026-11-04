@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use octamed::mmd::{
+use mmd::mmd::{
     conversion::{FromModule, ToModule},
     module::{
         AMIGA_CHANNELS, OctamedMMD, OctamedMMD0Sample, OctamedMMD0SampleHeader,
@@ -71,7 +71,7 @@ impl Default for OctamedicProject {
 }
 
 impl FromModule for OctamedicProject {
-    fn from_module(module: &octamed::mmd::module::OctamedMMD) -> Self {
+    fn from_module(module: &mmd::mmd::module::OctamedMMD) -> Self {
         let mut s = Self {
             songs: vec![],
             ..Self::new()
@@ -194,7 +194,7 @@ fn instrument_kind(
 }
 
 impl ToModule for OctamedicProject {
-    fn to_module(&mut self) -> octamed::mmd::module::OctamedMMD {
+    fn to_module(&mut self) -> mmd::mmd::module::OctamedMMD {
         todo!()
     }
 }
@@ -203,7 +203,7 @@ impl ToModule for OctamedicProject {
 mod tests {
     use std::path::Path;
 
-    use octamed::mmd::parser::OctamedMMDParser;
+    use mmd::mmd::parser::OctamedMMDParser;
 
     use super::*;
 

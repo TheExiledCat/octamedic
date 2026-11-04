@@ -55,9 +55,9 @@ To install download a release from the [releases](https://github.com/TheExiledCa
 It is also possible to build from source using the rust cargo toolchain. This way you get the newest changes (but also the breaking ones!) immediately.
 
 ## In this repo
-- octamed
+- mmd
     - parser and structs for original octamed files
-- octamed_cli
+- mmd_cli
     - cli tool for reading octamed mmds and extracting wav files
 - octamedic_core
     - core library for octamedic, including the playback engine
