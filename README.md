@@ -68,6 +68,9 @@ It is also possible to build from source using the rust cargo toolchain. This wa
 - rustuition
     - custom made UI toolkit to recreate the AmigaOS look from intution
 ## Roadmap
+
+What's needed for the first release is tracked in [V0.01TARGETS.md](V0.01TARGETS.md).
+
 - [X] Loading real mmd file's metadata, note and instrument data
 - [ ] Loading protracker/soundtracker supported modules
 - [X] Loading extra metadata from mmd files
