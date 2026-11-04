@@ -71,6 +71,29 @@ pub enum PlayStart {
     ContinueBlock,
 }
 
+/// The format the Files panel saves instruments in, picked in the sample editor. Raw unless
+/// another's picked.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum InstrumentSaveType {
+    #[default]
+    Raw,
+    Iff,
+    Wav,
+}
+
+impl InstrumentSaveType {
+    pub const ALL: [Self; 3] = [Self::Raw, Self::Iff, Self::Wav];
+
+    /// The one after it, back round to the first after the last.
+    pub fn next(self) -> Self {
+        return Self::ALL[(self as usize + 1) % Self::ALL.len()];
+    }
+
+    pub fn previous(self) -> Self {
+        return Self::ALL[(self as usize + Self::ALL.len() - 1) % Self::ALL.len()];
+    }
+}
+
 // the E1, E2 and E3 switches
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Meters {
@@ -112,6 +135,7 @@ pub struct AppState {
     pub prompt: Option<Prompt>,
     // the sample editor's clipboard, CBUFF
     pub copy_buffer: Vec<i8>,
+    pub instrument_save_type: InstrumentSaveType,
     pub palette: IntuitionColorPalette,
     // the D switch
     pub play_on_note: bool,
@@ -128,6 +152,8 @@ pub struct AppState {
     queued_sequence_index: Option<usize>,
     started: Option<PlayStart>,
     muted_tracks: [bool; SONG_TRACKS],
+    // the active instrument the engine was last told about
+    engine_active_instrument: Option<InstrumentId>,
     project: OctamedicProject,
     header_mode: HeaderMode,
     main_mode: MainMode,
@@ -173,6 +199,7 @@ impl AppState {
             notification: None,
             prompt: None,
             copy_buffer: Vec::new(),
+            instrument_save_type: InstrumentSaveType::default(),
             palette,
             play_on_note: false,
             meters: Meters::default(),
@@ -185,6 +212,7 @@ impl AppState {
             queued_sequence_index: None,
             started: None,
             muted_tracks: [false; SONG_TRACKS],
+            engine_active_instrument: None,
             project,
             header_mode: HeaderMode::default(),
             main_mode: MainMode::default(),
@@ -797,12 +825,32 @@ impl AppState {
             self.sequence_changed = false;
             self.engine.set_sequence(song.sequence().to_vec());
         }
+        // it's set straight on the field in places, so it's caught here rather than at each
+        if self.engine_active_instrument != Some(self.active_instrument) {
+            self.engine_active_instrument = Some(self.active_instrument);
+            self.engine.set_active_instrument(self.active_instrument);
+        }
     }
 
     fn edit_sequence(&mut self, edit: impl FnOnce(&mut Vec<PatternId>)) {
         edit(self.song_mut().sequence_mut());
         self.set_sequence(self.active_sequence_index);
         self.sequence_changed = true;
+    }
+
+    /// A new project, as if one had been loaded.
+    pub fn clear_all(&mut self) {
+        self.load_project(OctamedicProject::new());
+    }
+
+    /// The song cleared but its instruments kept, with the editor back at its start.
+    pub fn clear_song(&mut self) {
+        self.stop();
+        self.song_mut().clear();
+        self.active_pattern = PatternId(0);
+        self.cursor = EditCursor::default();
+        self.active_sequence_index = 0;
+        self.send_all_to_engine();
     }
 }
 
@@ -828,6 +876,31 @@ mod tests {
         assert!(state.is_saved());
         assert!(!state.is_track_muted(2));
         assert_eq!(state.active_instrument, InstrumentId(1));
+    }
+
+    #[test]
+    fn clearing_the_song_keeps_its_instruments() {
+        let mut state = state();
+        state.set_song_name("old");
+        let instrument = Some(OctamedicInstrument::new("kept"));
+        state.song_mut().set_instrument(InstrumentId(1), instrument);
+        state.song_mut().sequence_mut().push(PatternId(0));
+        state.active_sequence_index = 1;
+        state.clear_song();
+        assert_eq!(state.song().name(), "");
+        assert_eq!(state.song().sequence(), [PatternId(0)]);
+        assert_eq!(state.active_sequence_index, 0);
+        assert!(state.song().instrument(InstrumentId(1)).is_some());
+    }
+
+    #[test]
+    fn clearing_all_drops_the_instruments_too() {
+        let mut state = state();
+        let instrument = Some(OctamedicInstrument::new("gone"));
+        state.song_mut().set_instrument(InstrumentId(1), instrument);
+        state.clear_all();
+        assert!(state.song().instrument(InstrumentId(1)).is_none());
+        assert!(state.is_saved());
     }
 
     #[test]

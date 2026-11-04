@@ -186,7 +186,7 @@ fn load_selected_song(state: &mut AppState) {
         return;
     }
     state.open_prompt(Prompt::yes_no(
-        "Current song has been modified. Are you sure? (Y/N)",
+        "Current song has been modified. Are you sure?",
         move |state| load_song(state, &path),
     ));
 }

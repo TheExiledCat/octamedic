@@ -92,6 +92,12 @@ pub trait Renderer: Send {
 
     /// Adds to `out`, interleaved.
     fn render(&mut self, out: &mut [f32], channels: usize);
+    /// Where `channel` is in the sample it's playing, in bytes from the start of the sample's
+    /// data. Nothing once DMA's off or a one-shot sample has ended.
+    #[allow(unused_variables)]
+    fn sample_position(&self, channel: usize) -> Option<usize> {
+        return None;
+    }
 }
 
 #[derive(Clone)]
@@ -141,6 +147,15 @@ impl Channel {
             }
             PaulaWrite::DmaOff => self.playing = None,
         }
+    }
+
+    // the silence a one-shot ends on isn't a sample anyone's playing
+    fn sample_position(&self) -> Option<usize> {
+        let playing = self.playing.as_ref()?;
+        if Arc::ptr_eq(&playing.range.sample, &SILENCE) {
+            return None;
+        }
+        return Some(playing.position as usize);
     }
 
     // one output frame = `step` bytes. each byte is weighted by how long it's held in the frame,
@@ -227,6 +242,10 @@ impl Renderer for PaulaRenderer {
         if let Some(channel) = self.channels.get_mut(channel) {
             channel.write(write);
         }
+    }
+
+    fn sample_position(&self, channel: usize) -> Option<usize> {
+        return self.channels.get(channel)?.sample_position();
     }
 
     fn render(&mut self, out: &mut [f32], channels: usize) {
@@ -393,6 +412,20 @@ mod tests {
         renderer.write(0, PaulaWrite::DmaOff);
         render(&mut renderer, SCOPE_LENGTH);
         assert!(scopes.read(0).iter().all(|&sample| sample == 0));
+    }
+
+    #[test]
+    fn position_follows_the_sample_until_it_ends() {
+        let mut renderer = renderer();
+        assert_eq!(renderer.sample_position(0), None);
+        let data = sample(vec![1; 10]);
+        let silence = range(&SILENCE, 0, SILENCE.data.len());
+        play(&mut renderer, range(&data, 4, 6), 5, silence);
+        render(&mut renderer, 3);
+        assert_eq!(renderer.sample_position(0), Some(7));
+        render(&mut renderer, 5);
+        assert_eq!(renderer.sample_position(0), None);
+        assert_eq!(renderer.sample_position(9), None);
     }
 
     #[test]

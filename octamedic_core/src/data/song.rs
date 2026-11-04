@@ -122,12 +122,34 @@ impl OctamedicSong {
     pub fn instrument(&self, id: InstrumentId) -> Option<&OctamedicInstrument> {
         return self.instruments.get(id.index()?)?.as_ref();
     }
+
+    /// Everything but the instruments back to how a new song starts.
+    pub fn clear(&mut self) {
+        let instruments = std::mem::replace(&mut self.instruments, std::array::from_fn(|_| None));
+        *self = Self {
+            instruments,
+            ..Self::new("")
+        };
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::data::note::OctamedicNote;
+
+    #[test]
+    fn clearing_keeps_the_instruments() {
+        let mut song = OctamedicSong::new("test");
+        song.instruments[0] = Some(OctamedicInstrument::new("kept"));
+        song.patterns.push(Arc::new(OctamedicPattern::new()));
+        song.sequence_mut().push(PatternId(1));
+        song.clear();
+        assert_eq!(song.patterns.len(), 1);
+        assert_eq!(song.sequence(), [PatternId(0)]);
+        assert_eq!(song.name(), "");
+        assert!(song.instruments[0].is_some());
+    }
 
     #[test]
     fn pattern_cow() {

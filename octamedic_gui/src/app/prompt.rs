@@ -35,12 +35,14 @@ impl Prompt {
         };
     }
 
-    /// Does `on_yes` if the answer's Y, and nothing for any other key.
+    /// `question` with (Y/N) after it. Does `on_yes` if the answer's Y, and nothing for any other
+    /// key.
     pub fn yes_no(
         question: impl Into<String>,
         on_yes: impl FnOnce(&mut AppState) + 'static,
     ) -> Self {
-        return Self::new(question, |state, key| {
+        let text = format!("{} (Y/N)", question.into());
+        return Self::new(text, |state, key| {
             if key == KeyCode::Y {
                 on_yes(state);
             }
@@ -119,7 +121,7 @@ mod tests {
             let mut state = state();
             let said_yes = Rc::new(Cell::new(false));
             let flag = said_yes.clone();
-            state.open_prompt(Prompt::yes_no("Sure? (Y/N)", move |_| flag.set(true)));
+            state.open_prompt(Prompt::yes_no("Sure?", move |_| flag.set(true)));
             handle_event(&mut state, &key(answer));
             assert_eq!(said_yes.get(), done, "{answer:?}");
         }

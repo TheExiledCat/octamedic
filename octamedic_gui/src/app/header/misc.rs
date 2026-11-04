@@ -13,6 +13,7 @@ use rustuition::{
 use crate::{
     app::{
         fonts,
+        prompt::Prompt,
         state::{AppState, screen_palette},
     },
     framework::{
@@ -59,6 +60,12 @@ const CLEAR_ALL: Rect = Rect::new(0, 0, 118, 11);
 const CLEAR_SONG: Rect = Rect::new(0, 11, 118, 11);
 const QUIT: Rect = Rect::new(0, 22, 118, 11);
 const CONFIRM: Rect = Rect::new(0, 33, 118, 12);
+// which of danger_buttons is picked, before CONFIRM does it. CONFIRM is the last
+const CLEAR_ALL_CHOICE: usize = 0;
+const CLEAR_SONG_CHOICE: usize = 1;
+const QUIT_CHOICE: usize = 2;
+// CONFIRM only asks again when there's something to lose
+const UNSAVED_PROMPT: &str = "Song has unsaved changes";
 
 // within the button's frame
 const HOST_TO_BUFFER_PARTS: [i32; 3] = [4, 14, 23];
@@ -81,12 +88,13 @@ pub struct Misc {
     undo: Button,
     // not hooked up yet, each with where it goes in its section
     prefs: Vec<(Button, Rect)>,
-    project: Vec<(Button, Rect)>,
+    danger_buttons: Vec<(Button, Rect)>,
     selected_color: usize,
     // the level last set on each slider, so a drag shows up as a change
     levels: [u8; Channel::ALL.len()],
     // the palette when the panel was first shown, which UNDO restores
     undo_palette: Option<IntuitionColorPalette>,
+    danger_button_selected: Option<usize>,
 }
 
 impl Misc {
@@ -114,15 +122,19 @@ impl Misc {
                 .map(|(label, rect, font)| (label_button(label, font), rect))
                 .chain([(unhooked(Button::new(host_to_buffer)), HOST_TO_BUFFER)])
                 .collect(),
-            project: vec![
-                (label_button("CLEAR ALL", fonts::LABEL), CLEAR_ALL),
-                (label_button("CLEAR SONG ONLY", fonts::LABEL), CLEAR_SONG),
-                (unhooked(Button::new("QUIT").font(fonts::PANEL)), QUIT),
-                (unhooked(Button::new(confirm)), CONFIRM),
+            danger_buttons: vec![
+                (Button::new("CLEAR ALL").font(fonts::LABEL), CLEAR_ALL),
+                (
+                    Button::new("CLEAR SONG ONLY").font(fonts::LABEL),
+                    CLEAR_SONG,
+                ),
+                (Button::new("QUIT").font(fonts::PANEL), QUIT),
+                (Button::new(confirm), CONFIRM),
             ],
             selected_color: 0,
             levels: [0; Channel::ALL.len()],
             undo_palette: None,
+            danger_button_selected: None,
         };
     }
 
@@ -145,6 +157,32 @@ impl Misc {
             boxes.h,
         );
     }
+    // does what's picked, then nothing is
+    fn danger(&mut self, state: &mut AppState) {
+        let Some(choice) = self.danger_button_selected.take() else {
+            return;
+        };
+        for (button, _) in &mut self.danger_buttons {
+            button.set_toggled(false);
+        }
+        let action: fn(&mut AppState) = match choice {
+            CLEAR_ALL_CHOICE => AppState::clear_all,
+            CLEAR_SONG_CHOICE => AppState::clear_song,
+            QUIT_CHOICE => AppState::request_exit,
+            _ => return,
+        };
+        if state.is_saved() {
+            action(state);
+        } else {
+            state.open_prompt(Prompt::yes_no(UNSAVED_PROMPT, action));
+        }
+    }
+}
+
+impl Default for Misc {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Gadget<AppState, Event> for Misc {
@@ -157,6 +195,21 @@ impl Gadget<AppState, Event> for Misc {
         }
         if self.undo.clicked().is_some() {
             state.palette = undo_palette.clone();
+        }
+        let (confirm, choices) = self
+            .danger_buttons
+            .split_last_mut()
+            .expect("CONFIRM and its choices");
+        for (choice, (button, _)) in choices.iter_mut().enumerate() {
+            if button.clicked().is_some() {
+                self.danger_button_selected = Some(choice);
+            }
+        }
+        for (choice, (button, _)) in choices.iter_mut().enumerate() {
+            button.set_toggled(self.danger_button_selected == Some(choice));
+        }
+        if confirm.0.clicked().is_some() {
+            self.danger(state);
         }
         for (pen, button) in self.color_buttons.iter_mut().enumerate() {
             if button.clicked().is_some() {
@@ -186,7 +239,7 @@ impl Gadget<AppState, Event> for Misc {
             || self
                 .prefs
                 .iter_mut()
-                .chain(&mut self.project)
+                .chain(&mut self.danger_buttons)
                 .any(|(button, _)| button.handle_event(state, event))
             || self
                 .sliders
@@ -226,7 +279,7 @@ impl Gadget<AppState, Event> for Misc {
             );
         }
         let project = PROJECT_SECTION.within(area);
-        for (button, rect) in &mut self.project {
+        for (button, rect) in &mut self.danger_buttons {
             button.render(state, rect.within(project), painter);
         }
     }
@@ -277,5 +330,39 @@ fn confirm(area: ContentArea, pen: Pen, painter: &mut Painter) {
             let shine = Rect::new(centre + half, y, CONFIRM_ARROW_SHINE, 1);
             painter.fill(shine, Pen::SHINE);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
+
+    use super::*;
+
+    fn confirm_quit(state: &mut AppState) {
+        let mut misc = Misc::new();
+        misc.danger_button_selected = Some(QUIT_CHOICE);
+        misc.danger(state);
+        assert_eq!(misc.danger_button_selected, None);
+    }
+
+    #[test]
+    fn saved_goes_ahead_without_asking() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        confirm_quit(&mut state);
+        assert!(state.exit_requested);
+        assert!(state.prompt.is_none());
+    }
+
+    #[test]
+    fn unsaved_asks_first() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        state.set_song_name("changed");
+        confirm_quit(&mut state);
+        assert!(!state.exit_requested);
+        assert_eq!(
+            state.prompt.as_ref().map(Prompt::text),
+            Some("Song has unsaved changes (Y/N)")
+        );
     }
 }

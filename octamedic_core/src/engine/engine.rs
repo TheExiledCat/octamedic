@@ -1,4 +1,7 @@
-use std::sync::{Arc, mpsc::Receiver};
+use std::{
+    ops::Range,
+    sync::{Arc, mpsc::Receiver},
+};
 
 use mmd::mmd::module::SONG_TRACKS;
 
@@ -68,6 +71,9 @@ pub struct OctamedicEngine {
     renderer: Box<dyn Renderer>,
     // last instrument per track, for notes with no instrument number
     track_instruments: [Option<InstrumentId>; MAX_TRACKS],
+    // the instrument each track's voice was last started with, None for a preview
+    voices: [Option<InstrumentId>; MAX_TRACKS],
+    active_instrument: Option<InstrumentId>,
 }
 
 impl OctamedicEngine {
@@ -114,6 +120,8 @@ impl OctamedicEngine {
             clock: None,
             renderer,
             track_instruments: [None; MAX_TRACKS],
+            voices: [None; MAX_TRACKS],
+            active_instrument: None,
         };
     }
 
@@ -147,6 +155,16 @@ impl OctamedicEngine {
         let gain = self.output_volume as f32 / MAX_INSTRUMENT_VOLUME as f32;
         out.iter_mut()
             .for_each(|sample| *sample = (*sample * gain).clamp(-1.0, 1.0));
+        self.publish_sample_position();
+    }
+
+    fn publish_sample_position(&self) {
+        let position = self.active_instrument.and_then(|active| {
+            return (0..MAX_TRACKS)
+                .filter(|&track| self.voices[track] == Some(active))
+                .find_map(|track| self.renderer.sample_position(track));
+        });
+        self.status.set_sample_position(position);
     }
 
     fn apply(&mut self, command: EngineCommand) {
@@ -194,8 +212,17 @@ impl OctamedicEngine {
             EngineCommand::Preview(Some((sample, note))) => {
                 let played = sample_note(note.value, 0, 0, sample.octaves);
                 self.trigger(0, sample, played, MAX_INSTRUMENT_VOLUME);
+                self.voices[0] = None;
             }
             EngineCommand::Preview(None) => self.release(0),
+            EngineCommand::SetActiveInstrument(instrument) => {
+                self.active_instrument = Some(instrument)
+            }
+            EngineCommand::PlaySample {
+                instrument,
+                range,
+                note,
+            } => self.play_sample(instrument, range, note),
         }
     }
 
@@ -441,6 +468,7 @@ impl OctamedicEngine {
                 .note_triggered(track, note.value, instrument, volume as u8);
         }
         self.trigger(track, sample, played, volume as u8);
+        self.voices[track] = instrument_id;
     }
 
     // same order the 68k player does it: dma off, sample, period, volume, dma on, then the
@@ -486,6 +514,44 @@ impl OctamedicEngine {
         for write in writes {
             self.write(channel, write);
         }
+    }
+
+    // the range is in bytes of the whole sample, so the note only picks the period, never an
+    // octave copy
+    fn play_sample(&mut self, instrument: InstrumentId, range: Range<usize>, note: OctamedicNote) {
+        let Some(sample) = instrument
+            .index()
+            .and_then(|index| self.instruments.get(index))
+            .and_then(Option::as_ref)
+            .and_then(|instrument| instrument.sample().cloned())
+        else {
+            return;
+        };
+        let end = range.end.min(sample.data.len());
+        if range.start >= end {
+            return;
+        }
+        let period = sample_note(note.value, 0, 0, sample.octaves).period;
+        let writes = [
+            PaulaWrite::DmaOff,
+            PaulaWrite::Sample {
+                sample,
+                start: range.start,
+                len: end - range.start,
+            },
+            PaulaWrite::Period(period),
+            PaulaWrite::Volume(MAX_INSTRUMENT_VOLUME),
+            PaulaWrite::DmaOn,
+            PaulaWrite::Sample {
+                sample: SILENCE.clone(),
+                start: 0,
+                len: SILENCE.data.len(),
+            },
+        ];
+        for write in writes {
+            self.write(0, write);
+        }
+        self.voices[0] = Some(instrument);
     }
 
     fn release(&mut self, track: usize) {
@@ -737,6 +803,119 @@ mod tests {
             .filter(|(channel, _)| *channel == 0)
             .map(|(_, write)| write.clone())
             .collect();
+    }
+
+    #[test]
+    fn play_sample_plays_just_the_range_once() {
+        let (mut engine, commands, recorder) = recording_engine();
+        let id = InstrumentId(1);
+        // 4 bytes long
+        let instrument = instrument();
+        let sample = instrument.sample().cloned().unwrap();
+        let set = EngineCommand::SetInstrument {
+            id,
+            instrument: Some(instrument),
+        };
+        commands.send(set).unwrap();
+        let note = OctamedicNote { value: 13 };
+        // past the end is cut short, and all of it past the end plays nothing. so does an
+        // instrument that isn't there
+        let plays = [
+            (id, 1..3),
+            (id, 2..9),
+            (id, 100..200),
+            (InstrumentId(2), 0..4),
+        ];
+        for (instrument, range) in plays {
+            let command = EngineCommand::PlaySample {
+                instrument,
+                range,
+                note,
+            };
+            commands.send(command).unwrap();
+        }
+        run(&mut engine, 1);
+        let writes = recorder.writes.lock().unwrap();
+        let channel_0: Vec<&PaulaWrite> = writes
+            .iter()
+            .filter(|(channel, _)| *channel == 0)
+            .map(|(_, write)| write)
+            .collect();
+        let played: Vec<(usize, usize)> = channel_0
+            .iter()
+            .filter_map(|write| match write {
+                PaulaWrite::Sample {
+                    sample: played,
+                    start,
+                    len,
+                } if Arc::ptr_eq(played, &sample) => Some((*start, *len)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(played, [(1, 2), (2, 2)]);
+        assert!(channel_0.contains(&&PaulaWrite::Period(note_period(13, 0, 0))));
+        // no loop: silence takes over at the end
+        let silence = PaulaWrite::Sample {
+            sample: SILENCE.clone(),
+            start: 0,
+            len: SILENCE.data.len(),
+        };
+        assert_eq!(channel_0.last(), Some(&&silence));
+    }
+
+    #[test]
+    fn status_follows_the_active_instruments_voice() {
+        let (mut engine, commands, status) = engine();
+        let mut long = instrument();
+        long.kind = InstrumentKind::Sample(Arc::new(OctamedicSample {
+            data: vec![1; 50_000],
+            repeat: None,
+            octaves: SampleOctaves::One,
+        }));
+        for id in [InstrumentId(1), InstrumentId(2)] {
+            let instrument = Some(long.clone());
+            commands
+                .send(EngineCommand::SetInstrument { id, instrument })
+                .unwrap();
+        }
+        let note = OctamedicNote { value: 13 };
+        let play_sample = EngineCommand::PlaySample {
+            instrument: InstrumentId(1),
+            range: 20_000..50_000,
+            note,
+        };
+        commands.send(play_sample).unwrap();
+        let play_note = EngineCommand::PlayNote {
+            track: 3,
+            note,
+            instrument: InstrumentId(2),
+        };
+        commands.send(play_note).unwrap();
+        // nothing's active yet
+        run(&mut engine, 64);
+        assert_eq!(status.sample_position(), None);
+        commands
+            .send(EngineCommand::SetActiveInstrument(InstrumentId(1)))
+            .unwrap();
+        run(&mut engine, 64);
+        let first = status.sample_position().unwrap();
+        assert!(first > 20_000, "{first}");
+        run(&mut engine, 64);
+        let later = status.sample_position().unwrap();
+        assert!(later > first, "{later} {first}");
+        // instrument 2's on track 3, started from its beginning
+        commands
+            .send(EngineCommand::SetActiveInstrument(InstrumentId(2)))
+            .unwrap();
+        run(&mut engine, 64);
+        let other = status.sample_position().unwrap();
+        assert!(other < 20_000, "{other}");
+        // stopped, so not sounding
+        commands
+            .send(EngineCommand::ReleaseNote { track: 3 })
+            .unwrap();
+        run(&mut engine, 64);
+        assert_eq!(status.sample_position(), None);
     }
 
     #[test]

@@ -1,8 +1,9 @@
 use std::{ops::Range, sync::Arc};
 
 use ggez::input::keyboard::KeyCode;
-use octamedic_core::data::instrument::{
-    InstrumentId, InstrumentKind, OctamedicSample, SampleOctaves,
+use octamedic_core::data::{
+    instrument::{InstrumentId, InstrumentKind, OctamedicSample, SampleOctaves},
+    note::OctamedicNote,
 };
 use rustuition::{
     font::Font,
@@ -10,7 +11,10 @@ use rustuition::{
     gadgets::button::{ContentArea, Triangle},
     painter::{Painter, Pen},
     rect::Rect,
-    shape::Direction::{self, Down, Left, Right, Up},
+    shape::{
+        Direction::{self, Down, Left, Right, Up},
+        Sides,
+    },
 };
 
 use crate::{
@@ -19,7 +23,7 @@ use crate::{
         main::{wave_view::WaveView, waveform_mouse::WaveformMouse},
         pens,
         prompt::Prompt,
-        state::AppState,
+        state::{AppState, InstrumentSaveType},
     },
     framework::{
         event::{Event, MouseButton},
@@ -98,6 +102,11 @@ const BUFFER_PROMPT: &str = "Clear or retain sample? (C/R)";
 // the notes PITCH and DEST are, grey rather than black
 const NOTE_BOXES: [Rect; 2] = [on_row(0, 598, 32), on_row(1, 598, 32)];
 
+// what's shown in the waveform, or the range, played once without the loop
+const PLAY_DISPLAY: &str = "PLAY DISPLAY";
+const PLAY_RANGE: &str = "PLAY RANGE";
+// C-2, what the PITCH box shows until it's hooked up
+const PLAY_NOTE: OctamedicNote = OctamedicNote { value: 13 };
 // S is on: the loop's start is what the arrows move
 const SELECTED: &str = "S";
 const ZOOM_IN: &str = "ZOOM IN";
@@ -124,11 +133,14 @@ const MIX: &str = "MIX";
 const FREEHAND: &str = "FREEHAND";
 // dot pixels: each sample on its own, without the line from the one before
 const D_PIXELS: &str = "D.PIXELS";
+// cycles through the formats the Files panel saves instruments in, nothing's saved here. this is
+// the label it starts with, and how it's found in BUTTONS
+const SAVE_TYPE: &str = "SAVE RAW";
 
 #[rustfmt::skip]
 const BUTTONS: [(&str, Rect); 32] = [
-    ("PLAY DISPLAY", on_row(0, 134, 92)),
-    ("PLAY RANGE", on_row(0, 226, 92)),
+    (PLAY_DISPLAY, on_row(0, 134, 92)),
+    (PLAY_RANGE, on_row(0, 226, 92)),
     (SAMPLE_TO_BUFFER, on_row(0, 318, 62)),
     ("MONITOR", on_row(0, 380, 70)),
     ("RECORD", on_row(0, 450, 70)),
@@ -161,7 +173,7 @@ const BUTTONS: [(&str, Rect); 32] = [
     (PASTE, on_row(4, 134, 64)),
     ("NOISE", on_row(4, 198, 54)),
     ("ECHO", on_row(4, 288, 44)),
-    ("SAVE IFF", on_row(4, 522, 58)),
+    (SAVE_TYPE, on_row(4, 522, 58)),
     (D_PIXELS, on_row(4, 580, 58)),
 ];
 // the buttons that do something so far, the rest are ghosted
@@ -182,6 +194,9 @@ const HOOKED_UP: &[&str] = &[
     BUFFER_TO_SAMPLE,
     D_PIXELS,
     FREEHAND,
+    SAVE_TYPE,
+    PLAY_DISPLAY,
+    PLAY_RANGE,
 ];
 
 // after S and E
@@ -277,6 +292,22 @@ fn resize_buffer(state: &mut AppState, size: usize, clear: bool) {
         }
         return resized;
     });
+}
+
+// whether the active instrument has a sample with `part` in it
+fn can_play(state: &AppState, part: &Range<usize>) -> bool {
+    let length = active_sample(state).map_or(0, |sample| sample.data.len());
+    return !part.is_empty() && part.end <= length;
+}
+
+// once, without the loop, from the engine's copy of the instrument. its voice's place in the
+// sample is then in the engine's status
+fn play_part(state: &AppState, part: Range<usize>) {
+    if can_play(state, &part) {
+        state
+            .engine
+            .play_sample(state.active_instrument, part, PLAY_NOTE);
+    }
 }
 
 fn sample_of(data: Vec<i8>) -> OctamedicSample {
@@ -408,6 +439,14 @@ fn render_waveform(
             }
         }
     }
+}
+
+fn save_type_label(save_type: InstrumentSaveType) -> &'static str {
+    return match save_type {
+        InstrumentSaveType::Raw => "SAVE RAW",
+        InstrumentSaveType::Iff => "SAVE IFF",
+        InstrumentSaveType::Wav => "SAVE WAV",
+    };
 }
 
 // the label font, or the narrow one when it wouldn't fit inside the frame
@@ -730,16 +769,31 @@ impl Gadget<AppState, Event> for SampleEditor {
             let range = self.range();
             self.view.show(range);
         }
+        if self.clicked(PLAY_DISPLAY) {
+            play_part(state, self.view.visible());
+        }
+        if self.clicked(PLAY_RANGE) {
+            play_part(state, self.range());
+        }
         if self.clicked(D_PIXELS) {
             self.dot_pixels = !self.dot_pixels;
         }
         if self.clicked(FREEHAND) {
             self.free_hand = !self.free_hand;
         }
+        if let Some(click) = self.button(SAVE_TYPE).clicked() {
+            let chosen = state.instrument_save_type;
+            state.instrument_save_type = match click.button {
+                MouseButton::Right => chosen.previous(),
+                _ => chosen.next(),
+            };
+        }
         let dot_pixels = self.dot_pixels;
         let free_hand = self.free_hand;
         self.button(D_PIXELS).set_toggled(dot_pixels);
         self.button(FREEHAND).set_toggled(free_hand);
+        let label = save_type_label(state.instrument_save_type);
+        self.button(SAVE_TYPE).set_text(label);
         if std::mem::take(&mut self.buffer_size_entered) {
             ask_buffer_size(state, self.boxes[BUFFSIZE_BOX].0.text(), length);
         }
@@ -790,6 +844,15 @@ impl Gadget<AppState, Event> for SampleEditor {
             range_columns,
             self.dot_pixels,
         );
+        if let Some(pos) = state.engine.status().sample_position() {
+            let column = self.view.column_of(pos, WAVEFORM.w);
+            painter.rect(
+                Rect::new(waveform.x + column, waveform.y, 1, waveform.h),
+                Some(Pen::SHADOW),
+                None,
+                Sides::NONE,
+            );
+        }
         if sample_length(state) == 0 {
             let [x, y] = NO_SAMPLE_POSITION;
             painter.text(waveform.x + x, waveform.y + y, NO_SAMPLE, Pen::SHINE);
@@ -954,21 +1017,23 @@ mod tests {
     }
 
     fn click(editor: &mut SampleEditor, state: &mut AppState, label: &str) {
+        click_with(editor, state, label, MouseButton::Left);
+    }
+
+    fn click_with(
+        editor: &mut SampleEditor,
+        state: &mut AppState,
+        label: &str,
+        button: MouseButton,
+    ) {
         let index = BUTTONS
             .iter()
             .position(|&(name, ..)| name == label)
             .unwrap();
         let area = editor.buttons[index].0.area();
         let pos = Point::new(area.x + area.w / 2, area.y + area.h / 2);
-        let down = Event::MouseDown {
-            pos,
-            button: crate::framework::event::MouseButton::Left,
-        };
-        let up = Event::MouseUp {
-            pos,
-            button: crate::framework::event::MouseButton::Left,
-        };
-        editor.handle_event(state, &down);
+        editor.handle_event(state, &Event::MouseDown { pos, button });
+        let up = Event::MouseUp { pos, button };
         editor.handle_event(state, &up);
         editor.update(state);
     }
@@ -1303,6 +1368,50 @@ mod tests {
         assert!(editor.dot_pixels && editor.button(D_PIXELS).is_toggled());
         click(&mut editor, &mut state, D_PIXELS);
         assert!(!editor.dot_pixels);
+    }
+
+    #[test]
+    fn only_a_part_thats_there_plays() {
+        let mut state = state();
+        assert!(!can_play(&state, &(0..10)));
+        with_sample(&mut state, 100);
+        assert!(can_play(&state, &(20..30)));
+        assert!(can_play(&state, &(0..100)));
+        assert!(!can_play(&state, &(40..40)));
+        assert!(!can_play(&state, &(90..110)));
+    }
+
+    #[test]
+    fn save_type_cycles_through_the_formats() {
+        use InstrumentSaveType::{Iff, Raw, Wav};
+        let mut state = state();
+        let mut editor = SampleEditor::new();
+        editor.update(&mut state);
+        let mut screen = Framebuffer::new(AREA.w, AREA.h);
+        editor.render(&state, AREA, &mut Painter::new(&mut screen, &state.palette));
+        assert_eq!(state.instrument_save_type, Raw);
+        let mut chosen = Vec::new();
+        for _ in 0..3 {
+            click(&mut editor, &mut state, SAVE_TYPE);
+            chosen.push(state.instrument_save_type);
+        }
+        assert_eq!(chosen, [Iff, Wav, Raw]);
+        click_with(&mut editor, &mut state, SAVE_TYPE, MouseButton::Right);
+        assert_eq!(state.instrument_save_type, Wav);
+    }
+
+    #[test]
+    fn every_save_type_fits_the_button() {
+        let (_, rect) = BUTTONS[BUTTONS
+            .iter()
+            .position(|&(name, _)| name == SAVE_TYPE)
+            .unwrap()];
+        // the font's picked for the label it starts with
+        let font = label_font(SAVE_TYPE, rect.w);
+        for save_type in InstrumentSaveType::ALL {
+            let label = save_type_label(save_type);
+            assert!(font.width(label) <= rect.w - 2, "{label}");
+        }
     }
 
     #[test]
