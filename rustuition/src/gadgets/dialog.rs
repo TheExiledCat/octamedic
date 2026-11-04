@@ -15,14 +15,14 @@ use crate::{
 const DEFAULT_WIDTH: i32 = 320;
 // around the components and buttons, inside the window
 const PADDING: [i32; 2] = [8, 4];
-pub(crate) const COMPONENT_GAP: i32 = 3;
+pub const COMPONENT_GAP: i32 = 3;
 const BUTTONS_GAP: i32 = 6;
 const BUTTON_HEIGHT: i32 = CHAR_HEIGHT + 4;
-pub(crate) const BUTTON_LABEL_PADDING: i32 = 8;
-pub(crate) const FIELD_HEIGHT: i32 = CHAR_HEIGHT + 3;
+pub const BUTTON_LABEL_PADDING: i32 = 8;
+pub const FIELD_HEIGHT: i32 = CHAR_HEIGHT + 3;
 // tall pixels, so it's about square
 const CHECKBOX_SIZE: [i32; 2] = [26, FIELD_HEIGHT];
-pub(crate) const DROPDOWN_ROW_HEIGHT: i32 = CHAR_HEIGHT + 2;
+pub const DROPDOWN_ROW_HEIGHT: i32 = CHAR_HEIGHT + 2;
 // the arrow at the right of a dropdown's button, rows of 6, 4 and 2
 const DROPDOWN_ARROW_WIDTH: i32 = 6;
 const DROPDOWN_ARROW_SPACE: i32 = DROPDOWN_ARROW_WIDTH + 6;
@@ -1108,7 +1108,7 @@ impl<S, E> Dropdown<S, E> {
         return text_width(&self.label) + CHAR_WIDTH;
     }
 
-    pub(crate) fn button_width(&self) -> i32 {
+    pub fn button_width(&self) -> i32 {
         let widest = self.options.iter().map(|option| text_width(option)).max();
         return widest.unwrap_or(0) + 2 * BUTTON_LABEL_PADDING + DROPDOWN_ARROW_SPACE;
     }

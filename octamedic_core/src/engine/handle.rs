@@ -205,7 +205,7 @@ impl EngineStatus {
         return (position != NOT_PLAYING).then_some(position);
     }
 
-    pub(crate) fn set_sample_position(&self, position: Option<usize>) {
+    pub fn set_sample_position(&self, position: Option<usize>) {
         let stored = position.unwrap_or(NOT_PLAYING);
         self.sample_position.store(stored, Ordering::Relaxed);
     }
