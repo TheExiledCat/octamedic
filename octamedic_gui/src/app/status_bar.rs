@@ -378,7 +378,7 @@ impl KeyActions for StatusBar {
 #[cfg(test)]
 mod tests {
     use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
-    use rustuition::target::Framebuffer;
+    use rustuition::{rect::Point, target::Framebuffer};
 
     use super::*;
 
@@ -394,7 +394,7 @@ mod tests {
             .render(&state, area, &mut Painter::new(&mut screen, &state.palette));
         let cell = status.mutes.cell_area(area, 9);
         let press = Event::MouseDown {
-            pos: [cell.x + 1, cell.y + 1],
+            pos: Point::new(cell.x + 1, cell.y + 1),
             button: MouseButton::Left,
         };
         assert!(status.mutes.cells()[9].is_toggled());
@@ -416,7 +416,7 @@ mod tests {
         status.render(&state, area, &mut Painter::new(&mut screen, &state.palette));
         let sp = status.boxes[SP].area();
         let press = Event::MouseDown {
-            pos: [sp.x + 3, sp.y + 3],
+            pos: Point::new(sp.x + 3, sp.y + 3),
             button: MouseButton::Left,
         };
         status.handle_event(&mut state, &press);
@@ -433,7 +433,7 @@ mod tests {
         status.update(&mut state);
         status.render(&state, area, &mut Painter::new(&mut screen, &state.palette));
         let octaves = status.boxes[OCTAVES].area();
-        let at = [octaves.x + 3, octaves.y + 3];
+        let at = Point::new(octaves.x + 3, octaves.y + 3);
         let press = |button| Event::MouseDown { pos: at, button };
         let release = |button| Event::MouseUp { pos: at, button };
         let mut shown = vec![octaves_text(state.current_octave)];

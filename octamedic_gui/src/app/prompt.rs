@@ -72,6 +72,7 @@ mod tests {
     use std::{cell::Cell, rc::Rc};
 
     use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
+    use rustuition::rect::Point;
 
     use super::*;
 
@@ -94,7 +95,7 @@ mod tests {
         let given = answer.clone();
         state.open_prompt(Prompt::new("Which?", move |_, key| given.set(Some(key))));
         let click = Event::MouseDown {
-            pos: [10, 10],
+            pos: Point::new(10, 10),
             button: crate::framework::event::MouseButton::Left,
         };
         // everything else is held up, modifiers on their own included

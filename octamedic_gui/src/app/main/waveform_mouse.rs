@@ -13,8 +13,8 @@ pub struct WaveformMouse {
     pressed: Option<MouseButton>,
     released: Option<MouseButton>,
     shifted: bool,
-    column: i32,
-    press_column: i32,
+    pos: Point,
+    press_pos: Point,
 }
 
 impl WaveformMouse {
@@ -32,7 +32,7 @@ impl WaveformMouse {
                 self.pressed = Some(button);
                 self.shifted = mods.contains(KeyMods::SHIFT);
                 self.follow(pos);
-                self.press_column = self.column;
+                self.press_pos = self.pos;
                 return true;
             }
             Event::MouseMove { pos } if self.held.is_some() => {
@@ -69,20 +69,23 @@ impl WaveformMouse {
         return self.held;
     }
 
-    /// The waveform's column under the mouse, from 0 at its left, as of the last press, release
-    /// or move while held. Kept inside the waveform when the mouse leaves it.
-    pub fn column(&self) -> i32 {
-        return self.column;
+    /// The mouse's column and row on the waveform, from 0 at its top left, as of the last press,
+    /// release or move while held. Kept inside the waveform when the mouse leaves it.
+    pub fn pos(&self) -> Point {
+        return self.pos;
     }
 
-    /// The column the press that's held, or the last one, was on, as the mouse can have moved on
-    /// by the time the press is looked at.
-    pub fn press_column(&self) -> i32 {
-        return self.press_column;
+    /// Where the press that's held, or the last one, was, as the mouse can have moved on by the
+    /// time the press is looked at.
+    pub fn press_pos(&self) -> Point {
+        return self.press_pos;
     }
 
-    fn follow(&mut self, [x, _]: Point) {
-        self.column = (x - self.area.x).clamp(0, (self.area.w - 1).max(0));
+    fn follow(&mut self, Point { x, y }: Point) {
+        self.pos = Point::new(
+            (x - self.area.x).clamp(0, (self.area.w - 1).max(0)),
+            (y - self.area.y).clamp(0, (self.area.h - 1).max(0)),
+        );
     }
 }
 
@@ -102,39 +105,60 @@ mod tests {
         let left = MouseButton::Left;
         assert!(mouse.handle_event(
             &Event::MouseDown {
-                pos: [110, 30],
+                pos: Point::new(110, 30),
                 button: left
             },
             KeyMods::NONE
         ));
         assert_eq!((mouse.take_press(), mouse.take_press()), (Some(left), None));
-        assert_eq!((mouse.held(), mouse.column()), (Some(left), 100));
+        assert_eq!(
+            (mouse.held(), mouse.pos()),
+            (Some(left), Point::new(100, 10))
+        );
         // past either edge it stays on the waveform
-        mouse.handle_event(&Event::MouseMove { pos: [2000, 500] }, KeyMods::NONE);
-        assert_eq!((mouse.column(), mouse.press_column()), (639, 100));
-        mouse.handle_event(&Event::MouseMove { pos: [0, 30] }, KeyMods::NONE);
-        assert_eq!(mouse.column(), 0);
+        mouse.handle_event(
+            &Event::MouseMove {
+                pos: Point::new(2000, 500),
+            },
+            KeyMods::NONE,
+        );
+        assert_eq!(
+            (mouse.pos(), mouse.press_pos()),
+            (Point::new(639, 63), Point::new(100, 10))
+        );
+        mouse.handle_event(
+            &Event::MouseMove {
+                pos: Point::new(0, 0),
+            },
+            KeyMods::NONE,
+        );
+        assert_eq!(mouse.pos(), Point::new(0, 0));
         // only the button that pressed lets go
         let right = MouseButton::Right;
         let up = |button| Event::MouseUp {
-            pos: [50, 30],
+            pos: Point::new(50, 30),
             button,
         };
         assert!(!mouse.handle_event(&up(right), KeyMods::NONE));
         assert!(mouse.handle_event(&up(left), KeyMods::NONE));
         assert_eq!((mouse.held(), mouse.take_release()), (None, Some(left)));
-        assert_eq!(mouse.column(), 40);
+        assert_eq!(mouse.pos(), Point::new(40, 10));
     }
 
     #[test]
     fn presses_elsewhere_arent_its() {
         let mut mouse = mouse();
         let down = Event::MouseDown {
-            pos: [110, 200],
+            pos: Point::new(110, 200),
             button: MouseButton::Left,
         };
         assert!(!mouse.handle_event(&down, KeyMods::NONE));
-        assert!(!mouse.handle_event(&Event::MouseMove { pos: [110, 30] }, KeyMods::NONE));
+        assert!(!mouse.handle_event(
+            &Event::MouseMove {
+                pos: Point::new(110, 30)
+            },
+            KeyMods::NONE
+        ));
         assert_eq!((mouse.held(), mouse.take_press()), (None, None));
     }
 
@@ -142,13 +166,18 @@ mod tests {
     fn remembers_shift_for_the_press() {
         let mut mouse = mouse();
         let down = Event::MouseDown {
-            pos: [110, 30],
+            pos: Point::new(110, 30),
             button: MouseButton::Left,
         };
         mouse.handle_event(&down, KeyMods::SHIFT);
         assert!(mouse.shifted());
         // letting go of shift first doesn't change what the press was
-        mouse.handle_event(&Event::MouseMove { pos: [120, 30] }, KeyMods::NONE);
+        mouse.handle_event(
+            &Event::MouseMove {
+                pos: Point::new(120, 30),
+            },
+            KeyMods::NONE,
+        );
         assert!(mouse.shifted());
     }
 }

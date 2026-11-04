@@ -1119,7 +1119,7 @@ impl<S, E> Dropdown<S, E> {
             return;
         };
         if self.list_area.contains(pos) {
-            let row = (pos[1] - self.list_area.y - 1) / DROPDOWN_ROW_HEIGHT;
+            let row = (pos.y - self.list_area.y - 1) / DROPDOWN_ROW_HEIGHT;
             self.choose(row.max(0) as usize);
         }
         self.open = false;
@@ -1236,6 +1236,7 @@ mod tests {
     use crate::{
         event::{MouseButton, MouseEvent},
         palette::{Color, IntuitionColorPalette},
+        rect::Point,
         target::Framebuffer,
     };
 
@@ -1293,7 +1294,7 @@ mod tests {
         dialog.render(log, SCREEN, &mut Painter::new(&mut screen, &palette));
     }
 
-    fn click(dialog: &mut TestDialog, log: &mut Log, pos: [i32; 2]) {
+    fn click(dialog: &mut TestDialog, log: &mut Log, pos: Point) {
         let press = TestEvent::Mouse(MouseEvent::Down {
             pos,
             button: MouseButton::Left,
@@ -1303,7 +1304,11 @@ mod tests {
 
     fn click_button(dialog: &mut TestDialog, log: &mut Log, index: usize) {
         let area = dialog.buttons[index].button.area();
-        click(dialog, log, [area.x + area.w / 2, area.y + area.h / 2]);
+        click(
+            dialog,
+            log,
+            Point::new(area.x + area.w / 2, area.y + area.h / 2),
+        );
     }
 
     fn key(dialog: &mut TestDialog, log: &mut Log, key: EditKey) {
@@ -1378,7 +1383,11 @@ mod tests {
         let mut dialog = logged(Dialog::confirm("Sure?", "Really?"));
         render(&mut dialog, &log);
         let window = dialog.window_rect(SCREEN);
-        click(&mut dialog, &mut log, [window.x + 8, window.y + 5]);
+        click(
+            &mut dialog,
+            &mut log,
+            Point::new(window.x + 8, window.y + 5),
+        );
         assert!(log.cancelled);
     }
 
@@ -1399,7 +1408,7 @@ mod tests {
         click(
             &mut dialog,
             &mut log,
-            [content.x + PADDING[0] + 5, checkbox_y],
+            Point::new(content.x + PADDING[0] + 5, checkbox_y),
         );
         key(&mut dialog, &mut log, EditKey::Enter);
         assert_eq!(log.text.as_deref(), Some("bass 2"));
@@ -1448,11 +1457,11 @@ mod tests {
         let mut log = Log::default();
         let mut dialog = logged(Dialog::confirm("Sure?", "Really?"));
         render(&mut dialog, &log);
-        click(&mut dialog, &mut log, [1, 1]);
+        click(&mut dialog, &mut log, Point::new(1, 1));
         assert!(!dialog.is_closed());
         key(&mut dialog, &mut log, EditKey::Escape);
         let press = TestEvent::Mouse(MouseEvent::Down {
-            pos: [1, 1],
+            pos: Point::new(1, 1),
             button: MouseButton::Left,
         });
         assert!(!dialog.handle_event(&mut log, &press));
@@ -1469,7 +1478,11 @@ mod tests {
         render(&mut dialog, &log);
         key(&mut dialog, &mut log, EditKey::Escape);
         let window = dialog.window_rect(SCREEN);
-        click(&mut dialog, &mut log, [window.x + 8, window.y + 5]);
+        click(
+            &mut dialog,
+            &mut log,
+            Point::new(window.x + 8, window.y + 5),
+        );
         assert!(!dialog.is_closed() && !log.cancelled);
         click_button(&mut dialog, &mut log, 1);
         assert_eq!(log.button, Some(1));
@@ -1529,13 +1542,13 @@ mod tests {
         click(
             &mut dialog,
             &mut log,
-            [button_x, content.y + PADDING[1] + 5],
+            Point::new(button_x, content.y + PADDING[1] + 5),
         );
         key(&mut dialog, &mut log, EditKey::Enter);
         assert_eq!(chosen.get(), Some(0));
     }
 
-    fn right_click(dialog: &mut TestDialog, log: &mut Log, pos: [i32; 2]) {
+    fn right_click(dialog: &mut TestDialog, log: &mut Log, pos: Point) {
         let press = TestEvent::Mouse(MouseEvent::Down {
             pos,
             button: MouseButton::Right,
@@ -1544,10 +1557,10 @@ mod tests {
     }
 
     // the first component's row, past its label
-    fn first_row(dialog: &TestDialog, label: &str) -> [i32; 2] {
+    fn first_row(dialog: &TestDialog, label: &str) -> Point {
         let content = TestWindow::content_area(dialog.window_rect(SCREEN));
         let x = content.x + PADDING[0] + text_width(label) + CHAR_WIDTH + 5;
-        return [x, content.y + PADDING[1] + 5];
+        return Point::new(x, content.y + PADDING[1] + 5);
     }
 
     #[test]
@@ -1578,12 +1591,15 @@ mod tests {
     }
 
     // the number box and the + button, past the label
-    fn number_parts(dialog: &TestDialog) -> ([i32; 2], [i32; 2]) {
+    fn number_parts(dialog: &TestDialog) -> (Point, Point) {
         let content = TestWindow::content_area(dialog.window_rect(SCREEN));
         let field = NumberField::<Log, TestEvent>::new("Strength", 0.0, 1.0, 0.25);
         let x = content.x + PADDING[0] + text_width("Strength") + CHAR_WIDTH;
         let y = content.y + PADDING[1] + 5;
-        return ([x + 4, y], [x + field.box_width() + 3 * CHAR_WIDTH, y]);
+        return (
+            Point::new(x + 4, y),
+            Point::new(x + field.box_width() + 3 * CHAR_WIDTH, y),
+        );
     }
 
     #[test]
@@ -1647,7 +1663,7 @@ mod tests {
         assert_eq!(seen.get(), 1.0);
         type_text(&mut dialog, &mut log, "x");
         assert_eq!(seen.get(), 1.0);
-        click(&mut dialog, &mut log, [1, 1]);
+        click(&mut dialog, &mut log, Point::new(1, 1));
         click(&mut dialog, &mut log, plus);
         assert_eq!(seen.get(), 1.0);
     }
@@ -1685,8 +1701,8 @@ mod tests {
         click(&mut dialog, &mut log, at);
         render(&mut dialog, &log);
         // the list opens under the button, a row per option
-        let list = Rect::new(0, at[1] - 5 + FIELD_HEIGHT, 0, 0);
-        let third = [at[0], list.y + 1 + 2 * DROPDOWN_ROW_HEIGHT + 3];
+        let list = Rect::new(0, at.y - 5 + FIELD_HEIGHT, 0, 0);
+        let third = Point::new(at.x, list.y + 1 + 2 * DROPDOWN_ROW_HEIGHT + 3);
         click(&mut dialog, &mut log, third);
         key(&mut dialog, &mut log, EditKey::Enter);
         assert_eq!(log.button, Some(2));
@@ -1703,7 +1719,7 @@ mod tests {
         key(&mut dialog, &mut log, EditKey::Enter);
         assert!(!dialog.is_closed() && log.button.is_none());
         // closes on a click outside it, and then Enter submits again
-        click(&mut dialog, &mut log, [1, 1]);
+        click(&mut dialog, &mut log, Point::new(1, 1));
         key(&mut dialog, &mut log, EditKey::Enter);
         assert_eq!(log.button, Some(0));
     }
@@ -1725,7 +1741,7 @@ mod tests {
         let content = TestWindow::content_area(dialog.window_rect(SCREEN));
         let cycle_y = content.y + PADDING[1] + CHAR_HEIGHT + COMPONENT_GAP + 5;
         let x = content.x + PADDING[0] + text_width("Channel:") + CHAR_WIDTH + 5;
-        click(&mut dialog, &mut log, [x, cycle_y]);
+        click(&mut dialog, &mut log, Point::new(x, cycle_y));
         assert_eq!(shown(&mut dialog), "Using Right");
     }
 
@@ -1759,7 +1775,7 @@ mod tests {
         click(
             &mut dialog,
             &mut log,
-            [content.x + PADDING[0] + 5, content.y + PADDING[1] + 5],
+            Point::new(content.x + PADDING[0] + 5, content.y + PADDING[1] + 5),
         );
         key(&mut dialog, &mut log, EditKey::Enter);
         assert_eq!(log.checked, Some(false));

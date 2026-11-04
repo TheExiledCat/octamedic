@@ -413,7 +413,7 @@ impl<S, E: PointerEvent + TextEvent> Gadget<S, E> for Textbox<S, E> {
                 pos,
                 button: MouseButton::Left,
             }) if self.area.contains(pos) => {
-                self.click(pos[0]);
+                self.click(pos.x);
                 return true;
             }
             Some(MouseEvent::Down { .. }) => {
@@ -421,7 +421,7 @@ impl<S, E: PointerEvent + TextEvent> Gadget<S, E> for Textbox<S, E> {
                 return false;
             }
             Some(MouseEvent::Move { pos }) if self.dragging => {
-                self.cursor = self.index_at(pos[0]);
+                self.cursor = self.index_at(pos.x);
                 return false;
             }
             Some(MouseEvent::Up {
@@ -488,6 +488,7 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use super::*;
+    use crate::rect::Point;
 
     const AREA: Rect = Rect::new(0, 0, 100, 10);
 
@@ -540,7 +541,7 @@ mod tests {
         textbox.set_enabled(false);
         assert!(!textbox.is_focused());
         let down = MouseEvent::Down {
-            pos: [char_x(2), 5],
+            pos: Point::new(char_x(2), 5),
             button: MouseButton::Left,
         };
         assert!(!textbox.handle_event(&mut (), &down));
@@ -551,14 +552,14 @@ mod tests {
     fn click_focuses_and_places_cursor() {
         let mut textbox = textbox("hello");
         let down = MouseEvent::Down {
-            pos: [char_x(2), 5],
+            pos: Point::new(char_x(2), 5),
             button: MouseButton::Left,
         };
         assert!(textbox.handle_event(&mut (), &down));
         assert!(textbox.is_focused());
         assert_eq!(textbox.cursor, 2);
         let past_end = MouseEvent::Down {
-            pos: [90, 5],
+            pos: Point::new(90, 5),
             button: MouseButton::Left,
         };
         textbox.handle_event(&mut (), &past_end);
@@ -570,7 +571,7 @@ mod tests {
         let mut textbox = textbox("hello");
         textbox.set_focused(true);
         let away = MouseEvent::Down {
-            pos: [200, 5],
+            pos: Point::new(200, 5),
             button: MouseButton::Left,
         };
         assert!(!textbox.handle_event(&mut (), &away));
@@ -581,20 +582,20 @@ mod tests {
     fn drag_selects() {
         let mut textbox = textbox("hello world");
         let down = MouseEvent::Down {
-            pos: [char_x(1), 5],
+            pos: Point::new(char_x(1), 5),
             button: MouseButton::Left,
         };
         textbox.handle_event(&mut (), &down);
         textbox.handle_event(
             &mut (),
             &MouseEvent::Move {
-                pos: [char_x(4), 5],
+                pos: Point::new(char_x(4), 5),
             },
         );
         textbox.handle_event(
             &mut (),
             &MouseEvent::Up {
-                pos: [char_x(4), 5],
+                pos: Point::new(char_x(4), 5),
                 button: MouseButton::Left,
             },
         );
@@ -607,7 +608,7 @@ mod tests {
     fn typing_while_held_keeps_every_char() {
         let mut textbox = textbox("");
         let down = MouseEvent::Down {
-            pos: [char_x(0), 5],
+            pos: Point::new(char_x(0), 5),
             button: MouseButton::Left,
         };
         textbox.handle_event(&mut (), &down);
@@ -666,11 +667,11 @@ mod tests {
     fn double_click_selects_word() {
         let mut textbox = textbox("one two three");
         let down = MouseEvent::Down {
-            pos: [char_x(5), 5],
+            pos: Point::new(char_x(5), 5),
             button: MouseButton::Left,
         };
         let up = MouseEvent::Up {
-            pos: [char_x(5), 5],
+            pos: Point::new(char_x(5), 5),
             button: MouseButton::Left,
         };
         for event in [down, up, down] {

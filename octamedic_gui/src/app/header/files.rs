@@ -243,6 +243,7 @@ fn render_stacked_pair(
 #[cfg(test)]
 mod tests {
     use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
+    use rustuition::rect::Point;
 
     use super::*;
 
@@ -302,7 +303,7 @@ mod tests {
         let area = screen.bounds();
         files.render(state, area, &mut Painter::new(&mut screen, &state.palette));
         let press = Event::MouseDown {
-            pos: [SONG.x + 5, SONG.y + 3],
+            pos: Point::new(SONG.x + 5, SONG.y + 3),
             button: rustuition::event::MouseButton::Left,
         };
         assert!(files.handle_event(state, &press));

@@ -28,38 +28,66 @@ use crate::{
     },
 };
 
-// from the editor's top left. nothing here does anything yet
+// all from the editor's top left: the waveform across the top, then rows of gadgets under it
 const WAVEFORM: Rect = Rect::new(0, 0, 640, 64);
-const ZERO_LINE_Y: i32 = 32;
+const ZERO_LINE_Y: i32 = WAVEFORM.h / 2;
 // shows which part of the sample is in view, along the waveform's bottom
-const SCROLLBAR: Rect = Rect::new(0, 59, 640, 4);
+const SCROLLBAR: Rect = Rect::new(0, WAVEFORM.h - 5, WAVEFORM.w, 4);
 // under the waveform, across the whole editor
-const DIVIDER_Y: i32 = 64;
-// the sample's length, top right of the waveform
-const LENGTH_RIGHT: i32 = 620;
-const LENGTH_Y: i32 = 2;
+const DIVIDER_Y: i32 = WAVEFORM.bottom();
+// the sample's length near the waveform's top right, right aligned to end here
+const LENGTH_END: [i32; 2] = [620, 2];
 // in Topaz near the top of the waveform when there's no sample, or an empty one. OctaMED has it
 // a little left of the middle
 const NO_SAMPLE: &str = "No sample loaded.";
 const NO_SAMPLE_POSITION: [i32; 2] = [230, 7];
 
+const FIRST_ROW_Y: i32 = DIVIDER_Y + 1;
 const ROW_HEIGHT: i32 = 11;
-const ROWS: [i32; 5] = [65, 76, 87, 98, 109];
 const LABEL_Y: i32 = 3;
 
+// `width` wide from `x` on the rows under the waveform, the top one row 0
+const fn on_row(row: i32, x: i32, width: i32) -> Rect {
+    return Rect::new(x, FIRST_ROW_Y + row * ROW_HEIGHT, width, ROW_HEIGHT);
+}
+
+// where a label's text starts on a row, lined up with the gadgets' text
+const fn label_on(row: i32, x: i32) -> [i32; 2] {
+    return [x, on_row(row, x, 0).y + LABEL_Y];
+}
+
 // right aligned, the last of their ink at the same place
-const RIGHT_LABELS: [(&str, usize); 3] = [("BUFFSIZE:", 0), ("RNGSTART:", 1), ("RNGEND:", 2)];
-const RIGHT_LABELS_END: i32 = 68;
+const RIGHT_LABELS: [(&str, [i32; 2]); 3] = [
+    ("BUFFSIZE:", label_on(0, 68)),
+    ("RNGSTART:", label_on(1, 68)),
+    ("RNGEND:", label_on(2, 68)),
+];
 // the ones squeezed in before their boxes are in the narrow font
-const LABELS: [(&str, i32, usize, Font); 5] = [
-    ("PITCH", 523, 0, fonts::NARROW_LABEL),
-    ("DEST", 523, 1, fonts::LABEL),
-    ("RATE:", 334, 4, fonts::NARROW_LABEL),
-    ("DECR:", 411, 4, fonts::NARROW_LABEL),
-    ("N:", 480, 4, fonts::LABEL),
+const LABELS: [(&str, [i32; 2], Font); 5] = [
+    ("PITCH", label_on(0, 523), fonts::NARROW_LABEL),
+    ("DEST", label_on(1, 523), fonts::LABEL),
+    ("RATE:", label_on(4, 334), fonts::NARROW_LABEL),
+    ("DECR:", label_on(4, 411), fonts::NARROW_LABEL),
+    ("N:", label_on(4, 480), fonts::LABEL),
 ];
 
-// value, x, width and row of each sunk in number box
+// the value each sunk in number box starts with, and where it is
+const BOXES: [(&str, Rect); 13] = [
+    ("0", on_row(0, 74, 60)),
+    ("0", on_row(1, 74, 60)),
+    ("0", on_row(2, 74, 60)),
+    ("428", on_row(0, 554, 44)),
+    ("428", on_row(1, 554, 44)),
+    ("200", on_row(2, 432, 34)),
+    ("200", on_row(2, 485, 35)),
+    ("16", on_row(3, 270, 36)),
+    ("1", on_row(3, 306, 36)),
+    ("20", on_row(4, 252, 36)),
+    ("400", on_row(4, 365, 44)),
+    ("0", on_row(4, 442, 36)),
+    ("2", on_row(4, 492, 28)),
+];
+// the boxes in BOXES that do something
 const BUFFSIZE_BOX: usize = 0;
 const RANGE_START_BOX: usize = 1;
 const RANGE_END_BOX: usize = 2;
@@ -67,64 +95,9 @@ const RANGE_DIGITS: usize = 8;
 // the most BUFFSIZE takes, from the manual
 const MAX_BUFFER_SIZE: usize = 131072;
 const BUFFER_PROMPT: &str = "Clear or retain sample? (C/R)";
-const BOXES: [(&str, i32, i32, usize); 13] = [
-    ("0", 74, 60, 0),
-    ("0", 74, 60, 1),
-    ("0", 74, 60, 2),
-    ("428", 554, 44, 0),
-    ("428", 554, 44, 1),
-    ("200", 432, 34, 2),
-    ("200", 485, 35, 2),
-    ("16", 270, 36, 3),
-    ("1", 306, 36, 3),
-    ("20", 252, 36, 4),
-    ("400", 365, 44, 4),
-    ("0", 442, 36, 4),
-    ("2", 492, 28, 4),
-];
 // the notes PITCH and DEST are, grey rather than black
-const NOTE_BOXES: [(i32, i32, usize); 2] = [(598, 32, 0), (598, 32, 1)];
+const NOTE_BOXES: [Rect; 2] = [on_row(0, 598, 32), on_row(1, 598, 32)];
 
-// label, x, width and row
-#[rustfmt::skip]
-const BUTTONS: [(&str, i32, i32, usize); 32] = [
-    ("PLAY DISPLAY", 134, 92, 0),
-    ("PLAY RANGE", 226, 92, 0),
-    ("S>CBUFF", 318, 62, 0),
-    ("MONITOR", 380, 70, 0),
-    ("RECORD", 450, 70, 0),
-
-    ("SHOW RANGE", 134, 92, 1),
-    ("SHOW ALL", 226, 92, 1),
-    ("CBUFF>S", 318, 62, 1),
-    ("R>SY", 380, 37, 1),
-    ("DEL CB", 417, 43, 1),
-    ("REV", 460, 30, 1),
-    ("MIX", 490, 30, 1),
-
-    ("ZOOM IN", 134, 92, 2),
-    ("ZOOM OUT", 226, 92, 2),
-    ("FREEHAND", 318, 62, 2),
-    ("CHG.VOL.", 380, 52, 2),
-    ("CHANGE RATE", 522, 116, 2),
-
-    ("CLEAR", 6, 64, 3),
-    ("DEL", 70, 64, 3),
-    ("RANGE ALL", 134, 64, 3),
-    ("FILT", 198, 30, 3),
-    ("BOOST", 228, 42, 3),
-    ("LOOP ON", 342, 68, 3),
-    ("S", 410, 16, 3),
-    ("E", 426, 14, 3),
-
-    ("CUT", 6, 64, 4),
-    ("COPY", 70, 64, 4),
-    ("PASTE", 134, 64, 4),
-    ("NOISE", 198, 54, 4),
-    ("ECHO", 288, 44, 4),
-    ("SAVE IFF", 522, 58, 4),
-    (D_PIXELS, 580, 58, 4),
-];
 // S is on: the loop's start is what the arrows move
 const SELECTED: &str = "S";
 const ZOOM_IN: &str = "ZOOM IN";
@@ -147,10 +120,52 @@ const BUFFER_TO_SAMPLE: &str = "CBUFF>S";
 const REVERSE: &str = "REV";
 // the copy buffer mixed in from the range's start, only as far as its end if there's a range
 const MIX: &str = "MIX";
+// drawing on the waveform with the mouse
+const FREEHAND: &str = "FREEHAND";
 // dot pixels: each sample on its own, without the line from the one before
 const D_PIXELS: &str = "D.PIXELS";
+
+#[rustfmt::skip]
+const BUTTONS: [(&str, Rect); 32] = [
+    ("PLAY DISPLAY", on_row(0, 134, 92)),
+    ("PLAY RANGE", on_row(0, 226, 92)),
+    (SAMPLE_TO_BUFFER, on_row(0, 318, 62)),
+    ("MONITOR", on_row(0, 380, 70)),
+    ("RECORD", on_row(0, 450, 70)),
+
+    (SHOW_RANGE, on_row(1, 134, 92)),
+    (SHOW_ALL, on_row(1, 226, 92)),
+    (BUFFER_TO_SAMPLE, on_row(1, 318, 62)),
+    ("R>SY", on_row(1, 380, 37)),
+    ("DEL CB", on_row(1, 417, 43)),
+    (REVERSE, on_row(1, 460, 30)),
+    (MIX, on_row(1, 490, 30)),
+
+    (ZOOM_IN, on_row(2, 134, 92)),
+    (ZOOM_OUT, on_row(2, 226, 92)),
+    (FREEHAND, on_row(2, 318, 62)),
+    ("CHG.VOL.", on_row(2, 380, 52)),
+    ("CHANGE RATE", on_row(2, 522, 116)),
+
+    (CLEAR, on_row(3, 6, 64)),
+    (DELETE, on_row(3, 70, 64)),
+    (RANGE_ALL, on_row(3, 134, 64)),
+    ("FILT", on_row(3, 198, 30)),
+    ("BOOST", on_row(3, 228, 42)),
+    ("LOOP ON", on_row(3, 342, 68)),
+    (SELECTED, on_row(3, 410, 16)),
+    ("E", on_row(3, 426, 14)),
+
+    (CUT, on_row(4, 6, 64)),
+    (COPY, on_row(4, 70, 64)),
+    (PASTE, on_row(4, 134, 64)),
+    ("NOISE", on_row(4, 198, 54)),
+    ("ECHO", on_row(4, 288, 44)),
+    ("SAVE IFF", on_row(4, 522, 58)),
+    (D_PIXELS, on_row(4, 580, 58)),
+];
 // the buttons that do something so far, the rest are ghosted
-const HOOKED_UP: [&str; 15] = [
+const HOOKED_UP: &[&str] = &[
     REVERSE,
     MIX,
     ZOOM_IN,
@@ -166,13 +181,12 @@ const HOOKED_UP: [&str; 15] = [
     SAMPLE_TO_BUFFER,
     BUFFER_TO_SAMPLE,
     D_PIXELS,
+    FREEHAND,
 ];
 
-// along row 4, after S and E
-const LOOP_ARROWS: [i32; 2] = [440, 454];
-const LOOP_ARROW_WIDTH: i32 = 14;
-const TO_ZERO: [i32; 2] = [468, 494];
-const TO_ZERO_WIDTH: i32 = 26;
+// after S and E
+const LOOP_ARROWS: [Rect; 2] = [on_row(3, 440, 14), on_row(3, 454, 14)];
+const TO_ZERO: [Rect; 2] = [on_row(3, 468, 26), on_row(3, 494, 26)];
 // an arrow to the nearest zero crossing, left and right
 const LEFT_TO_ZERO: &[&str] = &[
     "....##....###.",
@@ -189,13 +203,12 @@ const RIGHT_TO_ZERO: &[&str] = &[
     ".###....##....",
 ];
 
-const OCTAVES: [i32; 2] = [522, 580];
-const OCTAVE_WIDTH: i32 = 58;
+const OCTAVES: [Rect; 2] = [on_row(3, 522, 58), on_row(3, 580, 58)];
 const OCTAVE_ARROW: [i32; 2] = [9, 5];
 const OCTAVE_ARROW_GAP: i32 = 6;
 
 // between CHG.VOL.'s two boxes
-const CHANGE_VOLUME_ARROW: Rect = Rect::new(466, 87, 19, 11);
+const CHANGE_VOLUME_ARROW: Rect = on_row(2, 466, 19);
 const CHANGE_VOLUME_ARROW_SIZE: [i32; 2] = [8, 7];
 
 fn active_sample(state: &AppState) -> Option<&OctamedicSample> {
@@ -334,6 +347,12 @@ fn sample_y(value: i8, waveform: Rect) -> i32 {
     return middle + value as i32 * ZERO_LINE_Y / 128;
 }
 
+// the value a row on the waveform stands for, the other way round from sample_y
+fn row_value(row: i32) -> i8 {
+    let value = (row - ZERO_LINE_Y) * 128 / ZERO_LINE_Y;
+    return value.clamp(i8::MIN as i32, i8::MAX as i32) as i8;
+}
+
 // the bar along the bottom spans the part in view
 fn scrollbar(waveform: Rect, visible: &Range<usize>, length: usize) -> Rect {
     let track = SCROLLBAR.within(waveform);
@@ -391,10 +410,6 @@ fn render_waveform(
     }
 }
 
-fn row_rect(x: i32, width: i32, row: usize) -> Rect {
-    return Rect::new(x, ROWS[row], width, ROW_HEIGHT);
-}
-
 // the label font, or the narrow one when it wouldn't fit inside the frame
 fn label_font(label: &str, width: i32) -> Font {
     let inside = width - 4;
@@ -435,6 +450,7 @@ pub struct SampleEditor {
     // the instrument the view is of, so picking another starts it over
     viewed: InstrumentId,
     dot_pixels: bool,
+    free_hand: bool,
     // the range is the samples from its start up to, not including, its end
     range_start: usize,
     range_end: usize,
@@ -450,7 +466,7 @@ impl SampleEditor {
         let boxes = BOXES
             .into_iter()
             .enumerate()
-            .map(|(index, (text, x, width, row))| {
+            .map(|(index, (text, rect))| {
                 let mut textbox = Textbox::new()
                     .font(fonts::INTERFACE)
                     .pens(Pen::BACKGROUND, Pen::SHINE, Pen::FILL, pens::RED)
@@ -459,38 +475,32 @@ impl SampleEditor {
                 textbox.set_text(text);
                 textbox
                     .set_enabled([BUFFSIZE_BOX, RANGE_START_BOX, RANGE_END_BOX].contains(&index));
-                return (textbox, row_rect(x, width, row));
+                return (textbox, rect);
             })
             .collect();
         let note_boxes = NOTE_BOXES
             .into_iter()
-            .map(|(x, width, row)| {
-                let note = Button::new("C-2").font(fonts::INTERFACE);
-                return (note, row_rect(x, width, row));
-            })
+            .map(|rect| (Button::new("C-2").font(fonts::INTERFACE), rect))
             .collect();
-        let labelled = BUTTONS.into_iter().map(|(label, x, width, row)| {
+        let labelled = BUTTONS.into_iter().map(|(label, rect)| {
             let mut button = Button::new(label)
-                .font(label_font(label, width))
+                .font(label_font(label, rect.w))
                 .enabled(HOOKED_UP.contains(&label));
             button.set_toggled(label == SELECTED);
-            return (button, row_rect(x, width, row));
+            return (button, rect);
         });
         let loop_arrows = LOOP_ARROWS
             .into_iter()
             .zip([Left, Right])
-            .map(|(x, direction)| {
-                let button = Button::new(Triangle::arrow(direction));
-                return (button, row_rect(x, LOOP_ARROW_WIDTH, 3));
-            });
+            .map(|(rect, direction)| (Button::new(Triangle::arrow(direction)), rect));
         let to_zero = TO_ZERO
             .into_iter()
             .zip([LEFT_TO_ZERO, RIGHT_TO_ZERO])
-            .map(|(x, rows)| (Button::new(picture(rows)), row_rect(x, TO_ZERO_WIDTH, 3)));
-        let octaves = OCTAVES.into_iter().zip([Up, Down]).map(|(x, direction)| {
-            let button = Button::new(octave_label(direction));
-            return (button, row_rect(x, OCTAVE_WIDTH, 3));
-        });
+            .map(|(rect, rows)| (Button::new(picture(rows)), rect));
+        let octaves = OCTAVES
+            .into_iter()
+            .zip([Up, Down])
+            .map(|(rect, direction)| (Button::new(octave_label(direction)), rect));
         let pictures = loop_arrows
             .chain(to_zero)
             .chain(octaves)
@@ -520,6 +530,7 @@ impl SampleEditor {
             range_anchor: None,
             buffer_size_entered: false,
             mouse: WaveformMouse::default(),
+            free_hand: false,
         };
     }
 }
@@ -572,19 +583,32 @@ impl SampleEditor {
         return self.view.sample_at(column, WAVEFORM.w);
     }
 
-    // a right press starts a range there, like OctaMED, or with shift stretches the one there is
-    fn press_waveform(&mut self, button: MouseButton, length: usize) {
-        if button != MouseButton::Right || length == 0 {
+    fn press_waveform(&mut self, button: MouseButton, sample_length: usize) {
+        let pos = self.mouse.press_pos();
+        let index = self.sample_at(pos.x);
+        if button != MouseButton::Right || sample_length == 0 {
             return;
         }
-        let sample = self.sample_at(self.mouse.press_column());
         self.range_anchor = if self.mouse.shifted() {
-            stretch_anchor(self.range(), sample)
+            stretch_anchor(self.range(), index)
         } else {
-            Some(sample)
+            Some(index)
         };
     }
+    // only the sample under the mouse each frame, so a fast drag leaves gaps like OctaMED's
+    fn draw_waveform(&mut self, state: &mut AppState) {
+        if let Some(button) = self.mouse.held()
+            && self.free_hand
+            && button == MouseButton::Left
+        {
+            let pos = self.mouse.pos();
+            let new_value = row_value(pos.y);
 
+            edit_sample(state, |sample| {
+                sample.with_value(self.sample_at(pos.x), new_value)
+            });
+        }
+    }
     // the buttons that change the sample or the copy buffer
     fn edit_range(&mut self, state: &mut AppState) {
         let range = self.range();
@@ -627,6 +651,7 @@ impl SampleEditor {
             }
             edit_sample(state, |sample| sample.mixed(range.start, &buffer));
             self.view.resized(sample_length(state));
+            state.notify("Sample mixed");
         }
         if self.clicked(BUFFER_TO_SAMPLE) && !state.copy_buffer.is_empty() {
             let buffer = state.copy_buffer.clone();
@@ -639,7 +664,7 @@ impl SampleEditor {
         let Some(anchor) = self.range_anchor else {
             return;
         };
-        self.set_range(spanning(anchor, self.sample_at(self.mouse.column())));
+        self.set_range(spanning(anchor, self.sample_at(self.mouse.pos().x)));
         if self.mouse.held().is_none() {
             self.range_anchor = None;
         }
@@ -685,6 +710,7 @@ impl Gadget<AppState, Event> for SampleEditor {
         }
         self.mouse.take_release();
         self.drag_range();
+        self.draw_waveform(state);
         if self.clicked(RANGE_ALL) {
             self.set_range(0..length);
         }
@@ -707,8 +733,13 @@ impl Gadget<AppState, Event> for SampleEditor {
         if self.clicked(D_PIXELS) {
             self.dot_pixels = !self.dot_pixels;
         }
+        if self.clicked(FREEHAND) {
+            self.free_hand = !self.free_hand;
+        }
         let dot_pixels = self.dot_pixels;
+        let free_hand = self.free_hand;
         self.button(D_PIXELS).set_toggled(dot_pixels);
+        self.button(FREEHAND).set_toggled(free_hand);
         if std::mem::take(&mut self.buffer_size_entered) {
             ask_buffer_size(state, self.boxes[BUFFSIZE_BOX].0.text(), length);
         }
@@ -767,17 +798,16 @@ impl Gadget<AppState, Event> for SampleEditor {
         painter.fill(divider, Pen::SHINE);
 
         let shown = self.view.visible().len().to_string();
-        let x = area.x + LENGTH_RIGHT - fonts::INTERFACE.width(&shown);
-        painter.text_in_font(x, area.y + LENGTH_Y, &shown, pens::PINK, fonts::INTERFACE);
+        let [end, y] = LENGTH_END;
+        let x = area.x + end - fonts::INTERFACE.width(&shown);
+        painter.text_in_font(x, area.y + y, &shown, pens::PINK, fonts::INTERFACE);
 
-        for (label, row) in RIGHT_LABELS {
-            let x = area.x + RIGHT_LABELS_END - fonts::LABEL.width(label);
-            let y = area.y + ROWS[row] + LABEL_Y;
-            painter.text_in_font(x, y, label, Pen::BACKGROUND, fonts::LABEL);
+        for (label, [end, y]) in RIGHT_LABELS {
+            let x = area.x + end - fonts::LABEL.width(label);
+            painter.text_in_font(x, area.y + y, label, Pen::BACKGROUND, fonts::LABEL);
         }
-        for (label, x, row, font) in LABELS {
-            let y = area.y + ROWS[row] + LABEL_Y;
-            painter.text_in_font(area.x + x, y, label, Pen::BACKGROUND, font);
+        for (label, [x, y], font) in LABELS {
+            painter.text_in_font(area.x + x, area.y + y, label, Pen::BACKGROUND, font);
         }
         for (textbox, rect) in &mut self.boxes {
             let rect = rect.within(area);
@@ -818,6 +848,7 @@ mod tests {
     };
     use rustuition::{
         painter::{CHAR_HEIGHT, text_width},
+        rect::Point,
         target::Framebuffer,
     };
 
@@ -846,20 +877,21 @@ mod tests {
 
     #[test]
     fn labels_fit_their_buttons() {
-        for (label, _, width, _) in BUTTONS {
-            let font = label_font(label, width);
-            assert!(font.width(label) <= width - 2, "{label}");
+        for (label, rect) in BUTTONS {
+            let font = label_font(label, rect.w);
+            assert!(font.width(label) <= rect.w - 2, "{label}");
         }
     }
 
     #[test]
     fn labels_stop_before_their_boxes() {
-        for (label, x, row, font) in LABELS {
+        for (label, [x, y], font) in LABELS {
             let end = x + font.width(label);
             let next = BOXES
                 .iter()
-                .filter(|&&(_, box_x, _, box_row)| box_row == row && box_x >= x)
-                .map(|&(_, box_x, _, _)| box_x)
+                .map(|&(_, rect)| rect)
+                .filter(|rect| rect.y + LABEL_Y == y && rect.x >= x)
+                .map(|rect| rect.x)
                 .min();
             assert!(next.is_none_or(|next| end <= next), "{label}");
         }
@@ -871,6 +903,16 @@ mod tests {
         assert_eq!(sample_y(-128, waveform), 0);
         assert_eq!(sample_y(0, waveform), ZERO_LINE_Y);
         assert!(sample_y(100, waveform) > ZERO_LINE_Y);
+    }
+
+    #[test]
+    fn a_drawn_value_lands_on_its_row() {
+        let waveform = Rect::new(0, 0, 640, 64);
+        for row in 0..waveform.h {
+            assert_eq!(sample_y(row_value(row), waveform), row, "{row}");
+        }
+        assert_eq!(row_value(0), i8::MIN);
+        assert_eq!(row_value(ZERO_LINE_Y), 0);
     }
 
     #[test]
@@ -917,7 +959,7 @@ mod tests {
             .position(|&(name, ..)| name == label)
             .unwrap();
         let area = editor.buttons[index].0.area();
-        let pos = [area.x + area.w / 2, area.y + area.h / 2];
+        let pos = Point::new(area.x + area.w / 2, area.y + area.h / 2);
         let down = Event::MouseDown {
             pos,
             button: crate::framework::event::MouseButton::Left,
@@ -968,7 +1010,7 @@ mod tests {
         state.mouse_mods = ggez::input::keyboard::KeyMods::SHIFT;
         let waveform = WAVEFORM.within(AREA);
         let mut click_column = |state: &mut AppState, column: i32| {
-            let pos = [waveform.x + column, waveform.y + 10];
+            let pos = Point::new(waveform.x + column, waveform.y + 10);
             let button = crate::framework::event::MouseButton::Right;
             editor.handle_event(state, &Event::MouseDown { pos, button });
             editor.handle_event(state, &Event::MouseUp { pos, button });
@@ -983,7 +1025,7 @@ mod tests {
         state.mouse_mods = ggez::input::keyboard::KeyMods::NONE;
         assert_eq!(click_column(&mut state, 320), (500, 501));
         // the left button doesn't select
-        let pos = [waveform.x + 64, waveform.y + 10];
+        let pos = Point::new(waveform.x + 64, waveform.y + 10);
         let button = crate::framework::event::MouseButton::Left;
         editor.handle_event(&mut state, &Event::MouseDown { pos, button });
         editor.handle_event(&mut state, &Event::MouseUp { pos, button });
@@ -1000,7 +1042,7 @@ mod tests {
         let mut screen = Framebuffer::new(AREA.w, AREA.h);
         editor.render(&state, AREA, &mut Painter::new(&mut screen, &state.palette));
         let waveform = WAVEFORM.within(AREA);
-        let at = |column: i32| [waveform.x + column, waveform.y + 10];
+        let at = |column: i32| Point::new(waveform.x + column, waveform.y + 10);
         let button = crate::framework::event::MouseButton::Right;
         editor.handle_event(
             &mut state,
@@ -1013,11 +1055,16 @@ mod tests {
         editor.update(&mut state);
         assert_eq!(editor.range(), 100..501);
         // past the edge it stops at the first sample in view, and letting go keeps it
-        editor.handle_event(&mut state, &Event::MouseMove { pos: [-50, 0] });
+        editor.handle_event(
+            &mut state,
+            &Event::MouseMove {
+                pos: Point::new(-50, 0),
+            },
+        );
         editor.handle_event(
             &mut state,
             &Event::MouseUp {
-                pos: [-50, 0],
+                pos: Point::new(-50, 0),
                 button,
             },
         );
@@ -1039,7 +1086,7 @@ mod tests {
         let mut screen = Framebuffer::new(AREA.w, AREA.h);
         editor.render(&state, AREA, &mut Painter::new(&mut screen, &state.palette));
         let end_box = editor.boxes[RANGE_END_BOX].1.within(AREA);
-        let pos = [end_box.x + 2, end_box.y + 2];
+        let pos = Point::new(end_box.x + 2, end_box.y + 2);
         let button = crate::framework::event::MouseButton::Left;
         editor.handle_event(&mut state, &Event::MouseDown { pos, button });
         editor.handle_event(&mut state, &Event::MouseUp { pos, button });
@@ -1123,7 +1170,7 @@ mod tests {
         };
         let mut enter_size = |state: &mut AppState, size: &str, finish: KeyCode| {
             let rect = editor.boxes[BUFFSIZE_BOX].1.within(AREA);
-            let pos = [rect.x + 2, rect.y + 2];
+            let pos = Point::new(rect.x + 2, rect.y + 2);
             let button = crate::framework::event::MouseButton::Left;
             editor.handle_event(state, &Event::MouseDown { pos, button });
             editor.handle_event(state, &Event::MouseUp { pos, button });

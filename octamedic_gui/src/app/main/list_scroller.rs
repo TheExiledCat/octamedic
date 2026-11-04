@@ -58,7 +58,7 @@ impl ListScroller {
 #[cfg(test)]
 mod tests {
     use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
-    use rustuition::target::Framebuffer;
+    use rustuition::{rect::Point, target::Framebuffer};
 
     use super::*;
     use crate::framework::event::MouseButton;
@@ -119,7 +119,7 @@ mod tests {
         let mut painter = Painter::new(&mut screen, &state.palette);
         scroller.render(&state, area, 20, &mut painter);
         let press = |y| Event::MouseDown {
-            pos: [5, y],
+            pos: Point::new(5, y),
             button: MouseButton::Left,
         };
         let down = area.bottom() - ARROW_HEIGHT / 2;

@@ -18,7 +18,7 @@ use rustuition::{
     font::Font,
     gadget::Gadget,
     painter::{CHAR_HEIGHT, CHAR_WIDTH, Painter, Pen},
-    rect::Rect,
+    rect::{Point, Rect},
 };
 
 use crate::{
@@ -173,7 +173,11 @@ impl BlockEditor {
             return false;
         }
         let click = self.clickable.handle(event);
-        if let Click::Clicked { pos: [x, _], .. } = click {
+        if let Click::Clicked {
+            pos: Point { x, .. },
+            ..
+        } = click
+        {
             let layout = state
                 .active_pattern()
                 .map(|pattern| Layout::new(self.area, pattern.track_count()));
@@ -1174,7 +1178,7 @@ mod tests {
 
     fn mouse_down(x: i32, button: MouseButton) -> Event {
         return Event::MouseDown {
-            pos: [x, 100],
+            pos: Point::new(x, 100),
             button,
         };
     }
@@ -1201,7 +1205,7 @@ mod tests {
         editor.handle_event(
             &mut state,
             &Event::MouseUp {
-                pos: [x, 100],
+                pos: Point::new(x, 100),
                 button: MouseButton::Left,
             },
         );

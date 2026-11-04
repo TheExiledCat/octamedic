@@ -182,6 +182,7 @@ mod tests {
     use crate::{
         event::{MouseButton, MouseEvent},
         palette::{Color, IntuitionColorPalette},
+        rect::Point,
         target::Framebuffer,
     };
 
@@ -196,7 +197,7 @@ mod tests {
 
     fn press(stepped: &mut SteppedSlider<(), MouseEvent>, arrow: usize) {
         let area = stepped.arrows()[arrow].area();
-        let pos = [area.x + area.w / 2, area.y + area.h / 2];
+        let pos = Point::new(area.x + area.w / 2, area.y + area.h / 2);
         stepped.handle_event(
             &mut (),
             &MouseEvent::Down {

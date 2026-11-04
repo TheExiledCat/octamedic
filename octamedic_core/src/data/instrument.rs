@@ -184,6 +184,11 @@ impl OctamedicSample {
         };
     }
 
+    pub fn with_value(&self, index: usize, value: i8) -> Self {
+        let mut data = self.data.clone();
+        data[index] = value;
+        return Self { data, ..*self };
+    }
     /// Everything ends up 8-bit mono: 16-bit keeps the high byte, stereo gets mixed down.
     pub fn from_octamed(
         bytes: &[i8],

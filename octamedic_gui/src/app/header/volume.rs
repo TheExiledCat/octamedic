@@ -264,7 +264,7 @@ fn typed_volume(textbox: &Textbox, hex: bool) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
-    use rustuition::target::Framebuffer;
+    use rustuition::{rect::Point, target::Framebuffer};
 
     use super::*;
 
@@ -279,7 +279,7 @@ mod tests {
         return (volume, state);
     }
 
-    fn click(volume: &mut Volume, state: &mut AppState, pos: [i32; 2]) {
+    fn click(volume: &mut Volume, state: &mut AppState, pos: Point) {
         let down = Event::MouseDown {
             pos,
             button: MouseButton::Left,
@@ -293,8 +293,8 @@ mod tests {
         volume.update(state);
     }
 
-    fn centre(rect: Rect) -> [i32; 2] {
-        return [rect.x + rect.w / 2, rect.y + rect.h / 2];
+    fn centre(rect: Rect) -> Point {
+        return Point::new(rect.x + rect.w / 2, rect.y + rect.h / 2);
     }
 
     #[test]

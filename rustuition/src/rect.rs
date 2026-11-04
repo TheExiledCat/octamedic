@@ -1,5 +1,16 @@
-/// An `[x, y]` position in screen pixels.
-pub type Point = [i32; 2];
+/// A position in screen pixels.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Point {
+    pub x: i32,
+    pub y: i32,
+}
+
+impl Point {
+    /// The point at `x`, `y`.
+    pub const fn new(x: i32, y: i32) -> Self {
+        return Self { x, y };
+    }
+}
 
 /// A rectangle in screen pixels, `x` and `y` its top left.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -28,7 +39,7 @@ impl Rect {
 
     /// Whether `point` is inside it.
     pub fn contains(self, point: Point) -> bool {
-        let [x, y] = point;
+        let Point { x, y } = point;
         return x >= self.x && x < self.right() && y >= self.y && y < self.bottom();
     }
 
@@ -137,10 +148,10 @@ mod tests {
     #[test]
     fn contains_edges() {
         let rect = Rect::new(10, 10, 20, 10);
-        assert!(rect.contains([10, 10]));
-        assert!(rect.contains([29, 19]));
-        assert!(!rect.contains([30, 15]));
-        assert!(!rect.contains([15, 20]));
+        assert!(rect.contains(Point::new(10, 10)));
+        assert!(rect.contains(Point::new(29, 19)));
+        assert!(!rect.contains(Point::new(30, 15)));
+        assert!(!rect.contains(Point::new(15, 20)));
     }
 
     #[test]

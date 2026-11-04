@@ -432,7 +432,7 @@ mod tests {
         },
         engine::handle::EngineHandle,
     };
-    use rustuition::target::Framebuffer;
+    use rustuition::{rect::Point, target::Framebuffer};
 
     use super::*;
     use crate::framework::event::MouseButton;
@@ -462,7 +462,7 @@ mod tests {
     }
 
     fn click(panel: &mut Instrument, state: &mut AppState, area: Rect) {
-        let pos = [area.x + area.w / 2, area.y + area.h / 2];
+        let pos = Point::new(area.x + area.w / 2, area.y + area.h / 2);
         let down = Event::MouseDown {
             pos,
             button: MouseButton::Left,

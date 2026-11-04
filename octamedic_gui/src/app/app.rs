@@ -75,7 +75,7 @@ impl App {
             cursor_pixels: CursorPixels::decode(CURSOR)?,
             scale_mode: ScaleMode::default(),
             viewport: Viewport::default(),
-            pointer: [0, 0],
+            pointer: Point::new(0, 0),
             next_frame: Instant::now(),
             key_repeated: false,
             prompt_took_key: false,
@@ -189,7 +189,7 @@ impl App {
             self.dialogs.render(&self.state, area, &mut painter);
         }
         // after the batched fills are flushed, so it's on top
-        let [x, y] = self.pointer;
+        let Point { x, y } = self.pointer;
         let cursor = DrawParam::new()
             .dest([x as f32, y as f32])
             .scale(CURSOR_SCALE);
@@ -370,7 +370,7 @@ impl CursorPixels {
         });
     }
 
-    fn paint(&self, frame: &mut Framebuffer, [x, y]: Point) {
+    fn paint(&self, frame: &mut Framebuffer, Point { x, y }: Point) {
         let [scale_x, scale_y] = CURSOR_SCALE.map(|scale| scale as i32);
         for (index, &[r, g, b, a]) in self.rgba.iter().enumerate() {
             if a == 0 {
@@ -402,7 +402,7 @@ mod tests {
     fn cursor_paints_into_the_framebuffer() {
         let cursor = CursorPixels::decode(CURSOR).unwrap();
         let mut frame = Framebuffer::new(64, 32);
-        cursor.paint(&mut frame, [10, 5]);
+        cursor.paint(&mut frame, Point::new(10, 5));
         let changed: Vec<(i32, i32)> = (0..32)
             .flat_map(|y| (0..64).map(move |x| (x, y)))
             .filter(|&(x, y)| frame.pixel(x, y) != Some([0, 0, 0]))

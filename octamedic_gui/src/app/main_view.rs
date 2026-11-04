@@ -348,12 +348,13 @@ impl KeyActions for MainView {
 #[cfg(test)]
 mod tests {
     use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
+    use rustuition::rect::Point;
 
     use super::*;
 
     fn right_click(view: &mut MainView, state: &mut AppState) -> bool {
         let event = Event::MouseDown {
-            pos: [300, 150],
+            pos: Point::new(300, 150),
             button: MouseButton::Right,
         };
         return view.handle_event(state, &event);
@@ -501,7 +502,7 @@ mod tests {
             &mut Painter::new(&mut screen, &state.palette),
         );
         let song_name = Event::MouseDown {
-            pos: [600, 200],
+            pos: Point::new(600, 200),
             button: MouseButton::Left,
         };
         assert!(view.handle_event(&mut state, &song_name));

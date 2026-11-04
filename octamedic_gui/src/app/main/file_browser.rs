@@ -5,7 +5,7 @@ use rustuition::{
     event::{MouseButton, MouseEvent, PointerEvent},
     gadget::Gadget,
     painter::{CHAR_HEIGHT, CHAR_WIDTH, Painter, Pen, text_width},
-    rect::Rect,
+    rect::{Point, Rect},
 };
 
 use crate::{
@@ -52,16 +52,16 @@ impl FileBrowser {
         };
     }
 
-    fn entry_under(&self, pos: [i32; 2]) -> Option<(usize, usize)> {
+    fn entry_under(&self, pos: Point) -> Option<(usize, usize)> {
         let list = self.list_areas.iter().position(|area| area.contains(pos))?;
-        let line = (pos[1] - self.list_areas[list].y - ENTRY_OFFSET[1]).max(0) / CHAR_HEIGHT;
+        let line = (pos.y - self.list_areas[list].y - ENTRY_OFFSET[1]).max(0) / CHAR_HEIGHT;
         return Some((
             list,
             self.scrollers[list].first_visible_entry + line as usize,
         ));
     }
 
-    fn click(&self, state: &mut AppState, pos: [i32; 2]) -> bool {
+    fn click(&self, state: &mut AppState, pos: Point) -> bool {
         let Some((list, index)) = self.entry_under(pos) else {
             return false;
         };
@@ -348,7 +348,7 @@ mod tests {
         } + 20;
         let y = SCREEN_AREA.y + LISTS_TOP + ENTRY_OFFSET[1] + line * CHAR_HEIGHT + 3;
         let press = Event::MouseDown {
-            pos: [x, y],
+            pos: Point::new(x, y),
             button: MouseButton::Left,
         };
         assert!(browser.handle_event(state, &press));

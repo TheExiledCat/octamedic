@@ -68,7 +68,7 @@ impl ButtonContent for Line<'static> {
 
     fn index_at(&self, area: ContentArea, pos: Point) -> Option<usize> {
         let (line, x) = place_line(self, area);
-        return line.index_at(pos[0] - x);
+        return line.index_at(pos.x - x);
     }
 }
 
@@ -82,7 +82,7 @@ impl ButtonContent for str {
     fn index_at(&self, area: ContentArea, pos: Point) -> Option<usize> {
         let line = label_line(self, area);
         let (line, x) = place_line(&line, area);
-        return line.index_at(pos[0] - x);
+        return line.index_at(pos.x - x);
     }
 }
 
@@ -681,7 +681,7 @@ mod tests {
         let mut button = next_button(|clicks, _| *clicks += 1);
         let mut clicks = 0;
         button.set_enabled(false);
-        click(&mut button, &mut clicks, [5, 5]);
+        click(&mut button, &mut clicks, Point::new(5, 5));
         assert_eq!(clicks, 0);
         let palette =
             IntuitionColorPalette::new([Color(0x000), Color(0xFFF), Color(0x666), Color(0xAAA)]);
@@ -697,7 +697,7 @@ mod tests {
         assert_eq!(ghost_dot(&mut button), [0, 0, 0]);
         button.set_enabled(true);
         assert_eq!(ghost_dot(&mut button), [0xAA, 0xAA, 0xAA]);
-        click(&mut button, &mut clicks, [5, 5]);
+        click(&mut button, &mut clicks, Point::new(5, 5));
         assert_eq!(clicks, 1);
     }
 
@@ -707,7 +707,7 @@ mod tests {
         let inverted = (Pen::BACKGROUND, Pen::FILL);
         let mut button = next_button(|_, _| {});
         let down = MouseEvent::Down {
-            pos: [5, 5],
+            pos: Point::new(5, 5),
             button: MouseButton::Left,
         };
         button.handle_event(&mut 0, &down);
@@ -739,7 +739,7 @@ mod tests {
     fn click_kept() {
         let mut button = next_button(|_, _| {});
         assert_eq!(button.clicked(), None);
-        click(&mut button, &mut 0, [5, 5]);
+        click(&mut button, &mut 0, Point::new(5, 5));
         let clicked = button.clicked().unwrap();
         assert_eq!(clicked.button, MouseButton::Left);
         assert_eq!(clicked.char_index, Some(0));
@@ -751,7 +751,7 @@ mod tests {
         let mut clicks = 0;
         let template = next_button(|clicks, _| *clicks += 1);
         let mut copy = template.clone();
-        click(&mut copy, &mut clicks, [5, 5]);
+        click(&mut copy, &mut clicks, Point::new(5, 5));
         assert_eq!(clicks, 1);
     }
 
@@ -781,8 +781,8 @@ mod tests {
     fn click_runs_handler() {
         let mut clicks = 0;
         let mut button = next_button(|clicks, _| *clicks += 1);
-        click(&mut button, &mut clicks, [5, 5]);
-        click(&mut button, &mut clicks, [5, 5]);
+        click(&mut button, &mut clicks, Point::new(5, 5));
+        click(&mut button, &mut clicks, Point::new(5, 5));
         assert_eq!(clicks, 2);
     }
 
@@ -799,7 +799,7 @@ mod tests {
             (2, None),
             (37, None),
         ] {
-            click(&mut button, &mut state, [x, 5]);
+            click(&mut button, &mut state, Point::new(x, 5));
             assert_eq!(clicked.get(), Some(index), "x {x}");
         }
     }
@@ -851,7 +851,7 @@ mod tests {
             .on_click(move |_, _| counted.set(counted.get() + 1));
         button.clickable.set_area(Rect::new(0, 0, 10, 10));
         let press = MouseEvent::Down {
-            pos: [5, 5],
+            pos: Point::new(5, 5),
             button: MouseButton::Left,
         };
         let start = Instant::now();
@@ -866,15 +866,25 @@ mod tests {
         button.repeat_at(&mut (), repeating + DEFAULT_REPEAT_INTERVAL);
         assert_eq!(clicks.get(), 3);
         // off the button it waits, and letting go stops it
-        button.handle_event(&mut (), &MouseEvent::Move { pos: [50, 50] });
+        button.handle_event(
+            &mut (),
+            &MouseEvent::Move {
+                pos: Point::new(50, 50),
+            },
+        );
         button.repeat_at(&mut (), repeating + 4 * DEFAULT_REPEAT_INTERVAL);
         assert_eq!(clicks.get(), 3);
         let release = MouseEvent::Up {
-            pos: [50, 50],
+            pos: Point::new(50, 50),
             button: MouseButton::Left,
         };
         button.handle_event(&mut (), &release);
-        button.handle_event(&mut (), &MouseEvent::Move { pos: [5, 5] });
+        button.handle_event(
+            &mut (),
+            &MouseEvent::Move {
+                pos: Point::new(5, 5),
+            },
+        );
         button.repeat_at(&mut (), repeating + 8 * DEFAULT_REPEAT_INTERVAL);
         assert_eq!(clicks.get(), 3);
     }

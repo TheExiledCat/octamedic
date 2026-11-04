@@ -91,14 +91,14 @@ mod tests {
 
     fn down(x: i32, y: i32) -> MouseEvent {
         return MouseEvent::Down {
-            pos: [x, y],
+            pos: Point::new(x, y),
             button: MouseButton::Left,
         };
     }
 
     fn up(x: i32, y: i32) -> MouseEvent {
         return MouseEvent::Up {
-            pos: [x, y],
+            pos: Point::new(x, y),
             button: MouseButton::Left,
         };
     }
@@ -110,7 +110,7 @@ mod tests {
             clickable.handle(&down(15, 15)),
             Click::Clicked {
                 button: MouseButton::Left,
-                pos: [15, 15],
+                pos: Point::new(15, 15),
             }
         );
         assert!(clickable.is_pressed());
@@ -129,9 +129,13 @@ mod tests {
     fn pressed_while_hovered() {
         let mut clickable = clickable();
         clickable.handle(&down(15, 15));
-        clickable.handle(&MouseEvent::Move { pos: [100, 0] });
+        clickable.handle(&MouseEvent::Move {
+            pos: Point::new(100, 0),
+        });
         assert!(!clickable.is_pressed());
-        clickable.handle(&MouseEvent::Move { pos: [15, 15] });
+        clickable.handle(&MouseEvent::Move {
+            pos: Point::new(15, 15),
+        });
         assert!(clickable.is_pressed());
     }
 
@@ -141,7 +145,7 @@ mod tests {
         clickable.handle(&down(15, 15));
         assert!(clickable.handle(&down(15, 15)) != Click::Ignored);
         let right = MouseEvent::Down {
-            pos: [15, 15],
+            pos: Point::new(15, 15),
             button: MouseButton::Right,
         };
         assert_eq!(clickable.handle(&right), Click::Ignored);
