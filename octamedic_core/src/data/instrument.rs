@@ -85,8 +85,7 @@ pub struct OctaveCopy {
 }
 
 impl OctamedicSample {
-    /// A copy with the samples in `range` silenced. Like the rest of these, the range has to be
-    /// inside the sample.
+    /// A copy with `range` silenced. Like the rest of these, `range` has to be inside the sample.
     pub fn cleared(&self, range: Range<usize>) -> Self {
         let mut data = self.data.clone();
         data[range].fill(0);
@@ -111,7 +110,6 @@ impl OctamedicSample {
         };
     }
 
-    /// A copy with the samples in `range` the other way round.
     pub fn reversed(&self, range: Range<usize>) -> Self {
         let mut data = self.data.clone();
         data[range].reverse();
@@ -132,7 +130,6 @@ impl OctamedicSample {
         return Self { data, ..*self };
     }
 
-    /// A copy `length` long, cut short or padded at the end with silence.
     pub fn resized(&self, length: usize) -> Self {
         if length <= self.data.len() {
             return self.without(length..self.data.len());
@@ -376,7 +373,6 @@ mod tests {
         let deleted = ramp().without(2..5);
         assert_eq!(deleted.data, [1, 2, 6, 7, 8, 9, 10]);
         assert_eq!(deleted.repeat, Some((3, 6)));
-        // cutting into the loop shortens it, cutting all of it drops it
         assert_eq!(ramp().without(7..8).repeat, Some((6, 8)));
         assert_eq!(ramp().without(4..7).repeat, Some((4, 6)));
         assert_eq!(ramp().without(5..9).repeat, None);

@@ -100,7 +100,6 @@ mod tests {
             pos: Point::new(10, 10),
             button: crate::framework::event::MouseButton::Left,
         };
-        // everything else is held up, modifiers on their own included
         for event in [click, Event::text('z'), key(KeyCode::LShift)] {
             assert!(handle_event(&mut state, &event));
         }

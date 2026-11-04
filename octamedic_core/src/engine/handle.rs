@@ -128,7 +128,7 @@ pub struct NoteTrigger {
     pub volume: u8,
 }
 
-// stored for the sample position while the active instrument isn't sounding
+// stored while the active instrument isn't sounding
 const NOT_PLAYING: usize = usize::MAX;
 
 pub struct EngineStatus {

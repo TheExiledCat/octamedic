@@ -71,8 +71,7 @@ pub enum PlayStart {
     ContinueBlock,
 }
 
-/// The format the Files panel saves instruments in, picked in the sample editor. Raw unless
-/// another's picked.
+/// The format the Files panel saves instruments in, picked in the sample editor.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum InstrumentSaveType {
     #[default]
@@ -84,7 +83,6 @@ pub enum InstrumentSaveType {
 impl InstrumentSaveType {
     pub const ALL: [Self; 3] = [Self::Raw, Self::Iff, Self::Wav];
 
-    /// The one after it, back round to the first after the last.
     pub fn next(self) -> Self {
         return Self::ALL[(self as usize + 1) % Self::ALL.len()];
     }
@@ -383,7 +381,6 @@ impl AppState {
         return !self.has_changes;
     }
 
-    /// Shows `prompt` in the notification bar, holding everything up until a key answers it.
     pub fn open_prompt(&mut self, prompt: Prompt) {
         self.prompt = Some(prompt);
     }
@@ -838,7 +835,6 @@ impl AppState {
         self.sequence_changed = true;
     }
 
-    /// A new project, as if one had been loaded.
     pub fn clear_all(&mut self) {
         self.load_project(OctamedicProject::new());
     }

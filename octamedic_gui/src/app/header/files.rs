@@ -215,8 +215,6 @@ fn delete_selected_file(state: &mut AppState) {
     state.open_dialog(dialog);
 }
 
-// into the folder that's open, named after the instrument, in the format the sample editor's
-// SAVE button shows
 fn save_active_instrument(state: &mut AppState) {
     let Some(instrument) = state.song().instrument(state.active_instrument) else {
         state.notify("There's no instrument to save");
@@ -239,6 +237,10 @@ fn save_active_instrument(state: &mut AppState) {
     };
     let file_name = instrument_file_name(name, save_type);
     let path = state.browser.path().join(&file_name);
+    if path.is_dir() {
+        state.notify(format!("There's a folder called {file_name}"));
+        return;
+    }
     if !path.exists() {
         write_instrument(state, path, &bytes);
         return;
@@ -249,8 +251,7 @@ fn save_active_instrument(state: &mut AppState) {
     }));
 }
 
-// a name can't reach into another folder. raw and IFF go without an extension like on the
-// Amiga, the loaders go by what's in a file rather than its name anyway
+// a name can't reach into another folder. raw and IFF go without an extension like on the Amiga
 fn instrument_file_name(name: &str, save_type: InstrumentSaveType) -> String {
     let name = name.replace(['/', '\\'], "_");
     let wav = save_type == InstrumentSaveType::Wav;
@@ -489,7 +490,6 @@ mod tests {
         assert!(state.take_pending_dialogs().is_empty());
     }
 
-    // an empty folder open in the browser, with a sample named `name` as instrument 1
     fn saving(name: &str) -> (AppState, PathBuf) {
         let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
         let folder = std::env::temp_dir().join(format!(
@@ -553,6 +553,18 @@ mod tests {
         let replaced = std::fs::read(&path).unwrap();
         let _ = std::fs::remove_dir_all(&folder);
         assert_eq!(replaced.len(), 4);
+    }
+
+    #[test]
+    fn save_instr_wont_replace_a_folder() {
+        let (mut state, folder) = saving("..");
+        save_active_instrument(&mut state);
+        assert_eq!(
+            state.notification.as_deref(),
+            Some("There's a folder called ..")
+        );
+        assert!(state.prompt.is_none());
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     #[test]

@@ -17,7 +17,6 @@ pub struct WaveView {
 }
 
 impl WaveView {
-    /// The part of the sample in view.
     pub fn visible(&self) -> Range<usize> {
         return self.start..self.start + self.visible_length(self.zoom);
     }
@@ -78,8 +77,8 @@ impl WaveView {
             .min(self.length - visible);
     }
 
-    /// Moves the view half its length towards the start, or towards the end when `next` is true, as far
-    /// as the sample goes.
+    /// Moves the view half its length towards the start, or the end when `next` is true, as far as
+    /// the sample goes.
     pub fn scroll(&mut self, next: bool) {
         let visible = self.visible_length(self.zoom);
         let step = (visible / 2).max(1);
@@ -91,7 +90,6 @@ impl WaveView {
         self.start = start.min(self.length - visible);
     }
 
-    /// The sample drawn at `column` of a waveform `width` wide.
     pub fn sample_at(&self, column: i32, width: i32) -> usize {
         let visible = self.visible_length(self.zoom);
         let column = column.clamp(0, (width - 1).max(0)) as usize;
@@ -184,11 +182,9 @@ mod tests {
         assert_eq!(view.visible(), 750..1000);
         view.zoom_in();
         assert_eq!(view.visible(), 812..937);
-        // zooming out against the end stays inside the sample
         view.zoom_out();
         view.zoom_out();
         assert_eq!(view.visible(), 500..1000);
-        // all of it in view goes nowhere
         view.show_all();
         view.scroll(true);
         assert_eq!(view.visible(), 0..1000);
@@ -225,7 +221,6 @@ mod tests {
             (11, 640)
         );
         assert_eq!(view.column_of(900, 640), 640);
-        // each column's sample starts at or before it
         for column in 0..640 {
             let sample = view.sample_at(column, 640);
             assert!(view.column_of(sample, 640) <= column);
@@ -242,14 +237,12 @@ mod tests {
         assert_eq!(view.visible(), 125..175);
         view.zoom_out();
         assert_eq!(view.visible(), 100..200);
-        // past the range it doubles, kept inside the sample
         view.zoom_out();
         assert_eq!(view.visible(), 50..250);
         view.zoom_out();
         view.zoom_out();
         view.zoom_out();
         assert_eq!(view.visible(), 0..1000);
-        // nothing in range shows nothing new
         view.show(300..300);
         assert_eq!(view.visible(), 0..1000);
         view.show(900..1200);
@@ -265,7 +258,6 @@ mod tests {
         view.resized(900);
         view.follow(900);
         assert_eq!(view.visible(), 375..625);
-        // when the sample no longer reaches the end of the view it moves back
         view.resized(500);
         assert_eq!(view.visible(), 250..500);
         view.resized(100);

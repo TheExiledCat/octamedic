@@ -64,7 +64,6 @@ impl WaveformMouse {
         return self.shifted;
     }
 
-    /// The button that was pressed on the waveform, while it's still down.
     pub fn held(&self) -> Option<MouseButton> {
         return self.held;
     }
@@ -115,7 +114,6 @@ mod tests {
             (mouse.held(), mouse.pos()),
             (Some(left), Point::new(100, 10))
         );
-        // past either edge it stays on the waveform
         mouse.handle_event(
             &Event::MouseMove {
                 pos: Point::new(2000, 500),
@@ -133,7 +131,6 @@ mod tests {
             KeyMods::NONE,
         );
         assert_eq!(mouse.pos(), Point::new(0, 0));
-        // only the button that pressed lets go
         let right = MouseButton::Right;
         let up = |button| Event::MouseUp {
             pos: Point::new(50, 30),
@@ -171,7 +168,6 @@ mod tests {
         };
         mouse.handle_event(&down, KeyMods::SHIFT);
         assert!(mouse.shifted());
-        // letting go of shift first doesn't change what the press was
         mouse.handle_event(
             &Event::MouseMove {
                 pos: Point::new(120, 30),

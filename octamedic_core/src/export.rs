@@ -1,5 +1,4 @@
-//! Instruments written out as files, the other way round from `import`. Only samples: a synth
-//! sound has a format of its own.
+//! Samples written out as files, the other way round from `import`.
 
 use crate::{
     data::instrument::{
@@ -11,7 +10,6 @@ use crate::{
 /// The rate a sample plays at for C-2 on a PAL Amiga, which is what the raw loader assumes.
 pub const NOMINAL_RATE: u32 = 8287;
 
-/// Signed 8-bit, nothing else, the Amiga's own format.
 pub fn raw(sample: &OctamedicSample) -> Vec<u8> {
     return sample.data.iter().map(|&value| value as u8).collect();
 }
@@ -63,9 +61,8 @@ pub fn iff(name: &str, instrument: &OctamedicInstrument, sample: &OctamedicSampl
     return bytes;
 }
 
-/// 8-bit mono PCM at the nominal rate. WAV's 8-bit samples are unsigned, silence is 128. A loop
-/// goes in a `smpl` chunk for samplers that read it, only for a single octave sample: the loop
-/// of a multi-octave one is in its shortest copy.
+/// 8-bit WAV samples are unsigned. A loop goes in a `smpl` chunk, only for a single octave
+/// sample as a multi-octave one's loop is in its shortest copy.
 pub fn wav(sample: &OctamedicSample) -> Vec<u8> {
     let data: Vec<u8> = sample
         .data
@@ -122,7 +119,7 @@ fn sampler_loop(start: usize, end: usize) -> Vec<u8> {
         .collect();
 }
 
-// the MIDI note the sample plays at its own rate
+// the MIDI note the sample plays at its own rate, which is OctaMED's C-2
 const MIDI_C_2: u32 = 60;
 const NAME: &[u8] = b"NAME";
 const UNCOMPRESSED: u8 = 0;

@@ -32,14 +32,11 @@ use crate::{
     },
 };
 
-// all from the editor's top left: the waveform across the top, then rows of gadgets under it
+// all from the editor's top left
 const WAVEFORM: Rect = Rect::new(0, 0, 640, 64);
 const ZERO_LINE_Y: i32 = WAVEFORM.h / 2;
-// shows which part of the sample is in view, along the waveform's bottom
 const SCROLLBAR: Rect = Rect::new(0, WAVEFORM.h - 5, WAVEFORM.w, 4);
-// under the waveform, across the whole editor
 const DIVIDER_Y: i32 = WAVEFORM.bottom();
-// the sample's length near the waveform's top right, right aligned to end here
 const LENGTH_END: [i32; 2] = [620, 2];
 // in Topaz near the top of the waveform when there's no sample, or an empty one. OctaMED has it
 // a little left of the middle
@@ -50,12 +47,10 @@ const FIRST_ROW_Y: i32 = DIVIDER_Y + 1;
 const ROW_HEIGHT: i32 = 11;
 const LABEL_Y: i32 = 3;
 
-// `width` wide from `x` on the rows under the waveform, the top one row 0
 const fn on_row(row: i32, x: i32, width: i32) -> Rect {
     return Rect::new(x, FIRST_ROW_Y + row * ROW_HEIGHT, width, ROW_HEIGHT);
 }
 
-// where a label's text starts on a row, lined up with the gadgets' text
 const fn label_on(row: i32, x: i32) -> [i32; 2] {
     return [x, on_row(row, x, 0).y + LABEL_Y];
 }
@@ -91,18 +86,18 @@ const BOXES: [(&str, Rect); 13] = [
     ("0", on_row(4, 442, 36)),
     ("2", on_row(4, 492, 28)),
 ];
-// the boxes in BOXES that do something
+// indices into BOXES
 const BUFFSIZE_BOX: usize = 0;
 const RANGE_START_BOX: usize = 1;
 const RANGE_END_BOX: usize = 2;
 const RANGE_DIGITS: usize = 8;
 // the most BUFFSIZE takes, from the manual
 const MAX_BUFFER_SIZE: usize = 131072;
+const MULTI_OCTAVE_LENGTH: &str = "Can't change a multi-octave sample's length";
 const BUFFER_PROMPT: &str = "Clear or retain sample? (C/R)";
 // the notes PITCH and DEST are, grey rather than black
 const NOTE_BOXES: [Rect; 2] = [on_row(0, 598, 32), on_row(1, 598, 32)];
 
-// what's shown in the waveform, or the range, played once without the loop
 const PLAY_DISPLAY: &str = "PLAY DISPLAY";
 const PLAY_RANGE: &str = "PLAY RANGE";
 // C-2, what the PITCH box shows until it's hooked up
@@ -114,27 +109,21 @@ const ZOOM_OUT: &str = "ZOOM OUT";
 const SHOW_ALL: &str = "SHOW ALL";
 const SHOW_RANGE: &str = "SHOW RANGE";
 const RANGE_ALL: &str = "RANGE ALL";
-// silences the range
 const CLEAR: &str = "CLEAR";
-// cuts the range out
 const DELETE: &str = "DEL";
-// the copy buffer: the range into it, cut out to it, or it put in at the range's start
 const CUT: &str = "CUT";
 const COPY: &str = "COPY";
 const PASTE: &str = "PASTE";
-// all of the sample into the copy buffer, or the sample swapped for it
 const SAMPLE_TO_BUFFER: &str = "S>CBUFF";
 const BUFFER_TO_SAMPLE: &str = "CBUFF>S";
-// the range backwards
 const REVERSE: &str = "REV";
 // the copy buffer mixed in from the range's start, only as far as its end if there's a range
 const MIX: &str = "MIX";
-// drawing on the waveform with the mouse
 const FREEHAND: &str = "FREEHAND";
 // dot pixels: each sample on its own, without the line from the one before
 const D_PIXELS: &str = "D.PIXELS";
-// cycles through the formats the Files panel saves instruments in, nothing's saved here. this is
-// the label it starts with, and how it's found in BUTTONS
+// only picks the format the Files panel saves instruments in, nothing's saved here. its label
+// changes as it cycles, this is the one it starts with and how it's found in BUTTONS
 const SAVE_TYPE: &str = "SAVE RAW";
 
 #[rustfmt::skip]
@@ -199,7 +188,6 @@ const HOOKED_UP: &[&str] = &[
     PLAY_RANGE,
 ];
 
-// after S and E
 const LOOP_ARROWS: [Rect; 2] = [on_row(3, 440, 14), on_row(3, 454, 14)];
 const TO_ZERO: [Rect; 2] = [on_row(3, 468, 26), on_row(3, 494, 26)];
 // an arrow to the nearest zero crossing, left and right
@@ -235,7 +223,6 @@ fn sample_length(state: &AppState) -> usize {
     return active_sample(state).map_or(0, |sample| sample.data.len());
 }
 
-// every sample from `anchor` to `sample`, whichever way round
 fn spanning(anchor: usize, sample: usize) -> Range<usize> {
     return anchor.min(sample)..anchor.max(sample) + 1;
 }
@@ -252,7 +239,6 @@ fn stretch_anchor(range: Range<usize>, sample: usize) -> Option<usize> {
     return None;
 }
 
-// a new size typed into BUFFSIZE asks whether to clear the sample or keep it
 fn ask_buffer_size(state: &mut AppState, typed: &str, length: usize) {
     let Ok(size) = typed.parse::<usize>() else {
         return;
@@ -268,22 +254,32 @@ fn ask_buffer_size(state: &mut AppState, typed: &str, length: usize) {
     }));
 }
 
-// swaps the active instrument's sample for `edit` of it. one without a sound of its own is edited
-// as an empty sample, synths are left alone
+// an instrument without a sound of its own is edited as an empty sample, synths are left alone
+// a multi-octave sample's copies are laid out by its length and its loop is in the shortest
+// copy, so an edit that changes its length is turned down
+// TODO: REV over a range that crosses from one octave copy into another moves data between the
+// copies and scrambles them too, even though the length stays the same
 fn edit_sample(state: &mut AppState, edit: impl FnOnce(&OctamedicSample) -> OctamedicSample) {
+    let instrument = state.song().instrument(state.active_instrument);
+    let edited = match instrument.map(|instrument| &instrument.kind) {
+        Some(InstrumentKind::Sample(sample)) => {
+            let edited = edit(sample);
+            let resized = edited.data.len() != sample.data.len();
+            if resized && edited.octaves.copies() > 1 {
+                state.notify(MULTI_OCTAVE_LENGTH);
+                return;
+            }
+            edited
+        }
+        None | Some(InstrumentKind::Empty) => edit(&sample_of(Vec::new())),
+        _ => return,
+    };
     state.edit_active_instrument(|instrument| {
-        let edited = match &instrument.kind {
-            InstrumentKind::Sample(sample) => edit(sample),
-            InstrumentKind::Empty => edit(&sample_of(Vec::new())),
-            _ => return,
-        };
         instrument.kind = InstrumentKind::Sample(Arc::new(edited));
     });
 }
 
-// a buffer `size` long for the active instrument, silent with `clear` or else the sample there
-// was, cut short or padded with silence. an instrument without a sound of its own gets one, but
-// synths are left alone
+// an instrument without a sound of its own gets one, synths are left alone
 fn resize_buffer(state: &mut AppState, size: usize, clear: bool) {
     edit_sample(state, |sample| {
         let resized = sample.resized(size);
@@ -294,14 +290,13 @@ fn resize_buffer(state: &mut AppState, size: usize, clear: bool) {
     });
 }
 
-// whether the active instrument has a sample with `part` in it
 fn can_play(state: &AppState, part: &Range<usize>) -> bool {
     let length = active_sample(state).map_or(0, |sample| sample.data.len());
     return !part.is_empty() && part.end <= length;
 }
 
-// once, without the loop, from the engine's copy of the instrument. its voice's place in the
-// sample is then in the engine's status
+// once, without the loop. the engine plays its own copy of the instrument so the play position
+// follows it
 fn play_part(state: &AppState, part: Range<usize>) {
     if can_play(state, &part) {
         state
@@ -332,7 +327,6 @@ fn overlap(pens: &[Pen]) -> Pen {
     return Pen(pens.iter().fold(0, |bits, pen| bits | pen.0));
 }
 
-// the row of the sample each column shows, one sample a column across the width
 fn sample_rows(data: &[i8], waveform: Rect) -> Vec<i32> {
     if data.is_empty() {
         return Vec::new();
@@ -384,7 +378,6 @@ fn row_value(row: i32) -> i8 {
     return value.clamp(i8::MIN as i32, i8::MAX as i32) as i8;
 }
 
-// the bar along the bottom spans the part in view
 fn scrollbar(waveform: Rect, visible: &Range<usize>, length: usize) -> Rect {
     let track = SCROLLBAR.within(waveform);
     if length == 0 {
@@ -413,7 +406,6 @@ fn render_waveform(
         range.len() as i32,
         waveform.h,
     );
-    // the range is highlighted, everything in its columns
     painter.fill(waveform, Pen::BACKGROUND);
     painter.fill(ranged, pens::highlight(Pen::BACKGROUND));
     for (layer, pen) in [(zero, Pen::SHADOW), (bar, pens::PINK)] {
@@ -458,7 +450,6 @@ fn label_font(label: &str, width: i32) -> Font {
     return fonts::NARROW_LABEL;
 }
 
-// OCT then an arrow pointing `direction`
 fn octave_label(direction: Direction) -> impl Fn(ContentArea, Pen, &mut Painter) {
     return move |area, pen, painter| {
         let [width, height] = OCTAVE_ARROW;
@@ -641,14 +632,15 @@ impl SampleEditor {
             && button == MouseButton::Left
         {
             let pos = self.mouse.pos();
-            let new_value = row_value(pos.y);
-
-            edit_sample(state, |sample| {
-                sample.with_value(self.sample_at(pos.x), new_value)
-            });
+            let index = self.sample_at(pos.x);
+            let value = row_value(pos.y);
+            // held still it'd copy the whole sample every frame for nothing
+            let current = active_sample(state).and_then(|sample| sample.data.get(index));
+            if current.is_some_and(|&current| current != value) {
+                edit_sample(state, |sample| sample.with_value(index, value));
+            }
         }
     }
-    // the buttons that change the sample or the copy buffer
     fn edit_range(&mut self, state: &mut AppState) {
         let range = self.range();
         let data = active_sample(state).map_or(&[][..], |sample| &sample.data[..]);
@@ -840,11 +832,12 @@ impl Gadget<AppState, Event> for SampleEditor {
             painter,
             waveform,
             active_sample(state),
-            visible,
+            visible.clone(),
             range_columns,
             self.dot_pixels,
         );
-        if let Some(pos) = state.engine.status().sample_position() {
+        let playing = state.engine.status().sample_position();
+        if let Some(pos) = playing.filter(|pos| visible.contains(pos)) {
             let column = self.view.column_of(pos, WAVEFORM.w);
             painter.rect(
                 Rect::new(waveform.x + column, waveform.y, 1, waveform.h),
@@ -988,9 +981,7 @@ mod tests {
     fn lines_split_between_the_columns() {
         // 10 down to 16: 10 to 13 in the first column, 14 to 16 in the second
         assert_eq!(column_spans(&[10, 16], false), [(10, 13), (14, 16)]);
-        // a step of one touches diagonally
         assert_eq!(column_spans(&[10, 11], false), [(10, 10), (11, 11)]);
-        // up works the same way
         assert_eq!(column_spans(&[16, 10], false), [(13, 16), (10, 12)]);
         // a column takes the second half of the line in and the first half of the line out
         assert_eq!(column_spans(&[0, 10, 0], false)[1], (5, 10));
@@ -1053,10 +1044,8 @@ mod tests {
         assert_eq!(editor.view.visible(), 250..750);
         click(&mut editor, &mut state, SHOW_ALL);
         assert_eq!(editor.view.visible(), 0..1000);
-        // BUFFSIZE stays the whole sample
         click(&mut editor, &mut state, ZOOM_IN);
         assert_eq!(editor.boxes[0].0.text(), "1000");
-        // another instrument starts over, even one as long
         state.set_instrument(2);
         with_sample(&mut state, 1000);
         editor.update(&mut state);
@@ -1086,10 +1075,8 @@ mod tests {
         assert_eq!(click_column(&mut state, 64), (100, 600));
         assert_eq!(click_column(&mut state, 448), (100, 701));
         assert_eq!(click_column(&mut state, 320), (100, 701));
-        // without shift a click is just the sample under it
         state.mouse_mods = ggez::input::keyboard::KeyMods::NONE;
         assert_eq!(click_column(&mut state, 320), (500, 501));
-        // the left button doesn't select
         let pos = Point::new(waveform.x + 64, waveform.y + 10);
         let button = crate::framework::event::MouseButton::Left;
         editor.handle_event(&mut state, &Event::MouseDown { pos, button });
@@ -1119,7 +1106,6 @@ mod tests {
         editor.handle_event(&mut state, &Event::MouseMove { pos: at(64) });
         editor.update(&mut state);
         assert_eq!(editor.range(), 100..501);
-        // past the edge it stops at the first sample in view, and letting go keeps it
         editor.handle_event(
             &mut state,
             &Event::MouseMove {
@@ -1160,11 +1146,9 @@ mod tests {
         textbox.set_text("250");
         editor.update(&mut state);
         assert_eq!(editor.range(), 0..250);
-        // past the end of the sample is the end
         editor.boxes[RANGE_END_BOX].0.set_text("5000");
         editor.update(&mut state);
         assert_eq!(editor.range(), 0..1000);
-        // the piano doesn't get what's typed
         assert!(editor.handle_event(&mut state, &Event::text('5')));
     }
 
@@ -1185,7 +1169,6 @@ mod tests {
         click(&mut editor, &mut state, RANGE_ALL);
         assert_eq!(editor.range(), 0..1000);
 
-        // SHOW ALL lets go of the range
         click(&mut editor, &mut state, SHOW_ALL);
         assert_eq!(editor.range(), 0..0);
 
@@ -1198,7 +1181,6 @@ mod tests {
 
         click(&mut editor, &mut state, DELETE);
         assert_eq!(sample_length(&state), 900);
-        // the view stays put, what was after the range moving up into it
         assert_eq!(editor.view.visible(), 100..200);
         assert!(
             active_sample(&state)
@@ -1209,7 +1191,6 @@ mod tests {
         );
         assert_eq!(editor.range(), 100..100);
         assert_eq!(editor.boxes[BUFFSIZE_BOX].0.text(), "900");
-        // with nothing in range they leave it be
         click(&mut editor, &mut state, DELETE);
         assert_eq!(sample_length(&state), 900);
     }
@@ -1244,7 +1225,6 @@ mod tests {
             editor.update(state);
         };
 
-        // leaving it any other way than Enter changes nothing
         enter_size(&mut state, "1500", KeyCode::Escape);
         assert!(state.prompt.is_none());
         enter_size(&mut state, "1500", KeyCode::Return);
@@ -1261,7 +1241,6 @@ mod tests {
         let data = &active_sample(&state).unwrap().data;
         assert!(data.len() == 500 && data.iter().all(|&value| value == 0));
 
-        // escape answers by leaving it, and it's never past the limit
         enter_size(&mut state, "999999", KeyCode::Return);
         crate::app::prompt::handle_event(&mut state, &key(KeyCode::Escape));
         assert_eq!(sample_length(&state), 500);
@@ -1322,7 +1301,6 @@ mod tests {
         assert_eq!(data(&state)[..3], [2, 3, 4]);
         assert_eq!(editor.range(), 0..0);
 
-        // pasted in at the range's start, and then it's the range
         editor.set_range(3..5);
         click(&mut editor, &mut state, PASTE);
         assert_eq!(data(&state)[..6], [2, 3, 4, 0, 1, 5]);
@@ -1337,7 +1315,6 @@ mod tests {
         assert_eq!(data(&state), [7; 5]);
         state.copy_buffer = vec![7; 5];
 
-        // mixed in from the range's start, only over the range when there is one
         editor.set_range(4..4);
         click(&mut editor, &mut state, MIX);
         assert_eq!(data(&state), [7, 7, 7, 7, 7, 3, 3, 3, 3]);
@@ -1349,7 +1326,6 @@ mod tests {
         click(&mut editor, &mut state, REVERSE);
         assert_eq!(data(&state), [7, 0, 3, 7, 7, 0, 3, 3, 3]);
 
-        // an empty slot gets a sample from what's pasted
         state.set_instrument(2);
         editor.update(&mut state);
         click(&mut editor, &mut state, PASTE);
@@ -1379,6 +1355,63 @@ mod tests {
         assert!(can_play(&state, &(0..100)));
         assert!(!can_play(&state, &(40..40)));
         assert!(!can_play(&state, &(90..110)));
+    }
+
+    // FREEHAND on, a left click at `row` of the middle column
+    fn draw_at(editor: &mut SampleEditor, state: &mut AppState, row: i32) {
+        editor.free_hand = true;
+        editor.update(state);
+        let mut screen = Framebuffer::new(AREA.w, AREA.h);
+        editor.render(state, AREA, &mut Painter::new(&mut screen, &state.palette));
+        let waveform = WAVEFORM.within(AREA);
+        let pos = Point::new(waveform.x + waveform.w / 2, waveform.y + row);
+        let button = MouseButton::Left;
+        editor.handle_event(state, &Event::MouseDown { pos, button });
+        editor.update(state);
+        editor.handle_event(state, &Event::MouseUp { pos, button });
+    }
+
+    #[test]
+    fn freehand_on_an_empty_slot_draws_nothing() {
+        let mut state = state();
+        draw_at(&mut SampleEditor::new(), &mut state, 0);
+        assert_eq!(sample_length(&state), 0);
+    }
+
+    #[test]
+    fn freehand_only_writes_a_change() {
+        let mut state = state();
+        with_sample(&mut state, 1000);
+        let before = active_instrument_sample(&state);
+        let mut editor = SampleEditor::new();
+        // silence already sits on the zero line
+        draw_at(&mut editor, &mut state, ZERO_LINE_Y);
+        assert!(Arc::ptr_eq(&before, &active_instrument_sample(&state)));
+        draw_at(&mut editor, &mut state, 0);
+        assert!(active_instrument_sample(&state).data.contains(&i8::MIN));
+    }
+
+    #[test]
+    fn a_multi_octave_samples_length_stays_put() {
+        let mut state = state();
+        let octaves = OctamedicSample {
+            data: vec![0; 7],
+            repeat: Some((0, 1)),
+            octaves: SampleOctaves::Three,
+        };
+        state.edit_active_instrument(|instrument| {
+            instrument.kind = InstrumentKind::Sample(Arc::new(octaves));
+        });
+        edit_sample(&mut state, |sample| sample.without(0..1));
+        assert_eq!(sample_length(&state), 7);
+        assert_eq!(state.notification.as_deref(), Some(MULTI_OCTAVE_LENGTH));
+        edit_sample(&mut state, |sample| sample.cleared(0..7));
+        assert_eq!(sample_length(&state), 7);
+    }
+
+    fn active_instrument_sample(state: &AppState) -> Arc<OctamedicSample> {
+        let instrument = state.song().instrument(state.active_instrument).unwrap();
+        return instrument.sample().unwrap().clone();
     }
 
     #[test]

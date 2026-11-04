@@ -64,7 +64,6 @@ const CONFIRM: Rect = Rect::new(0, 33, 118, 12);
 const CLEAR_ALL_CHOICE: usize = 0;
 const CLEAR_SONG_CHOICE: usize = 1;
 const QUIT_CHOICE: usize = 2;
-// CONFIRM only asks again when there's something to lose
 const UNSAVED_PROMPT: &str = "Song has unsaved changes";
 
 // within the button's frame
@@ -157,7 +156,6 @@ impl Misc {
             boxes.h,
         );
     }
-    // does what's picked, then nothing is
     fn danger(&mut self, state: &mut AppState) {
         let Some(choice) = self.danger_button_selected.take() else {
             return;

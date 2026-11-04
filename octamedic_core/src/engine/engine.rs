@@ -891,7 +891,6 @@ mod tests {
             instrument: InstrumentId(2),
         };
         commands.send(play_note).unwrap();
-        // nothing's active yet
         run(&mut engine, 64);
         assert_eq!(status.sample_position(), None);
         commands
@@ -903,14 +902,12 @@ mod tests {
         run(&mut engine, 64);
         let later = status.sample_position().unwrap();
         assert!(later > first, "{later} {first}");
-        // instrument 2's on track 3, started from its beginning
         commands
             .send(EngineCommand::SetActiveInstrument(InstrumentId(2)))
             .unwrap();
         run(&mut engine, 64);
         let other = status.sample_position().unwrap();
         assert!(other < 20_000, "{other}");
-        // stopped, so not sounding
         commands
             .send(EngineCommand::ReleaseNote { track: 3 })
             .unwrap();
