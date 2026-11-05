@@ -116,6 +116,46 @@ impl OctamedicPattern {
         self.lines[line].tracks[track] = OctamedicPatternTrack::new();
     }
 
+    /// `track` as a block of its own, one track wide.
+    pub fn copy_track(&self, track: usize) -> OctamedicPattern {
+        let lines = self
+            .lines
+            .iter()
+            .map(|line| OctamedicPatternLine {
+                tracks: vec![line.tracks.get(track).copied().unwrap_or_default()],
+                highlighted: false,
+            })
+            .collect();
+        return OctamedicPattern {
+            lines,
+            name: String::new(),
+        };
+    }
+
+    /// Overwrites `track` with `from`'s first track, for as many lines as both have.
+    pub fn paste_track(&mut self, track: usize, from: &OctamedicPattern) {
+        for (line, from) in self.lines.iter_mut().zip(&from.lines) {
+            if let (Some(cell), Some(&from)) = (line.tracks.get_mut(track), from.tracks.first()) {
+                *cell = from;
+            }
+        }
+    }
+
+    pub fn clear_track(&mut self, track: usize) {
+        for line in &mut self.lines {
+            if let Some(cell) = line.tracks.get_mut(track) {
+                *cell = OctamedicPatternTrack::new();
+            }
+        }
+    }
+
+    /// Empties every cell, keeping the block's size and highlights.
+    pub fn clear(&mut self) {
+        for line in &mut self.lines {
+            line.tracks.fill(OctamedicPatternTrack::new());
+        }
+    }
+
     /// Inserts an empty track at `index` in every line; the rightmost track is dropped, so the
     /// track count doesn't change.
     pub fn insert_track(&mut self, index: usize) {
@@ -440,6 +480,34 @@ mod tests {
             .map(|l| l.tracks[0].note.value)
             .collect();
         assert_eq!(notes, [1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn copying_and_pasting_a_track() {
+        let mut pattern = numbered(3, 2);
+        let copied = pattern.copy_track(0);
+        assert_eq!((copied.line_count(), copied.track_count()), (3, 1));
+        assert_eq!(notes(&copied, 0), [1, 2, 3]);
+        pattern.paste_track(1, &copied);
+        assert_eq!(notes(&pattern, 1), [1, 2, 3]);
+        pattern.clear_track(0);
+        assert_eq!(notes(&pattern, 0), [0, 0, 0]);
+        // a shorter buffer only overwrites the lines it has
+        let mut longer = numbered(5, 1);
+        longer.paste_track(0, &numbered(2, 1).copy_track(0));
+        assert_eq!(notes(&longer, 0), [1, 2, 3, 4, 5]);
+        longer.paste_track(0, &pattern.copy_track(0));
+        assert_eq!(notes(&longer, 0), [0, 0, 0, 4, 5]);
+    }
+
+    #[test]
+    fn clearing_keeps_size_and_highlights() {
+        let mut pattern = numbered(3, 2);
+        pattern.lines[1].highlighted = true;
+        pattern.clear();
+        assert_eq!((pattern.line_count(), pattern.track_count()), (3, 2));
+        assert_eq!(notes(&pattern, 0), [0, 0, 0]);
+        assert!(pattern.lines[1].highlighted);
     }
 
     #[test]

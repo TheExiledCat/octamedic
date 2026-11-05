@@ -164,6 +164,11 @@ pub struct AppState {
     pub recording: bool,
     pub exit_requested: bool,
     pub notification: Option<String>,
+    // the BLOCK panel's TRK: and BLK: buffers, the track one a block one track wide. They outlive
+    // songs so things can be copied between them. TODO: check whether OctaMED's range copy buffer
+    // is one of these
+    pub track_buffer: Option<OctamedicPattern>,
+    pub block_buffer: Option<OctamedicPattern>,
     // shown instead of the notification, and holding everything up until it's answered
     pub prompt: Option<Prompt>,
     // the sample editor's clipboard, CBUFF
@@ -232,6 +237,8 @@ impl AppState {
             recording: false,
             exit_requested: false,
             notification: None,
+            track_buffer: None,
+            block_buffer: None,
             prompt: None,
             copy_buffer: Vec::new(),
             instrument_save_type: InstrumentSaveType::default(),
@@ -968,6 +975,92 @@ impl AppState {
         self.send_all_to_engine();
     }
 
+    pub fn cut_track(&mut self) {
+        self.copy_track();
+        let track = self.cursor.track;
+        if let Some(pattern) = self.active_pattern_mut() {
+            pattern.clear_track(track);
+        }
+    }
+
+    pub fn copy_track(&mut self) {
+        let track = self.cursor.track;
+        if let Some(pattern) = self.active_pattern() {
+            self.track_buffer = Some(pattern.copy_track(track));
+        }
+    }
+
+    pub fn paste_track(&mut self) {
+        let Some(buffer) = self.track_buffer.take() else {
+            self.notify("Track buffer is empty");
+            return;
+        };
+        let track = self.cursor.track;
+        if let Some(pattern) = self.active_pattern_mut() {
+            pattern.paste_track(track, &buffer);
+        }
+        self.track_buffer = Some(buffer);
+    }
+
+    pub fn swap_track(&mut self) {
+        let Some(buffer) = self.track_buffer.take() else {
+            self.notify("Track buffer is empty");
+            return;
+        };
+        let track = self.cursor.track;
+        self.track_buffer = self
+            .active_pattern()
+            .map(|pattern| pattern.copy_track(track));
+        if let Some(pattern) = self.active_pattern_mut() {
+            pattern.paste_track(track, &buffer);
+        }
+    }
+
+    pub fn cut_block(&mut self) {
+        self.copy_block();
+        if let Some(pattern) = self.active_pattern_mut() {
+            pattern.clear();
+        }
+    }
+
+    pub fn copy_block(&mut self) {
+        if let Some(pattern) = self.active_pattern() {
+            let mut copy = pattern.clone();
+            copy.name.clear();
+            self.block_buffer = Some(copy);
+        }
+    }
+
+    // the block takes on the buffer's size, so a copied block pasted into a new one is a twin
+    pub fn paste_block(&mut self) {
+        let Some(buffer) = self.block_buffer.as_ref() else {
+            self.notify("Block buffer is empty");
+            return;
+        };
+        let lines = buffer.lines.clone();
+        if let Some(pattern) = self.active_pattern_mut() {
+            pattern.lines = lines;
+        }
+        self.clamp_cursor_to_active_pattern();
+    }
+
+    pub fn swap_block(&mut self) {
+        let Some(mut buffer) = self.block_buffer.take() else {
+            self.notify("Block buffer is empty");
+            return;
+        };
+        if let Some(pattern) = self.active_pattern_mut() {
+            std::mem::swap(&mut pattern.lines, &mut buffer.lines);
+        }
+        self.block_buffer = Some(buffer);
+        self.clamp_cursor_to_active_pattern();
+    }
+
+    pub fn delete_buffer(&mut self) {
+        self.track_buffer = None;
+        self.block_buffer = None;
+    }
+
     fn run_timer(&mut self, playing: bool) {
         match (playing, self.timer_resumed) {
             (true, None) => self.timer_resumed = Some(Instant::now()),
@@ -1336,6 +1429,109 @@ mod tests {
         }
         assert_eq!(state.song().patterns.len(), MAX_PATTERNS);
         assert_eq!(state.notification.as_deref(), Some("Too many blocks"));
+    }
+
+    fn notes(state: &AppState, track: usize) -> Vec<u8> {
+        return state
+            .active_pattern()
+            .unwrap()
+            .lines
+            .iter()
+            .map(|line| line.tracks[track].note.value)
+            .collect();
+    }
+
+    fn number_track(state: &mut AppState, track: usize, lines: usize) {
+        let pattern = state.active_pattern_mut().unwrap();
+        pattern.set_line_count(lines);
+        for (index, line) in pattern.lines.iter_mut().enumerate() {
+            line.tracks[track].note.value = index as u8 + 1;
+        }
+    }
+
+    #[test]
+    fn cutting_and_pasting_a_track() {
+        let mut state = state();
+        number_track(&mut state, 0, 3);
+        state.cut_track();
+        assert_eq!(notes(&state, 0), [0, 0, 0]);
+        state.cursor.track = 2;
+        state.paste_track();
+        assert_eq!(notes(&state, 2), [1, 2, 3]);
+        // the buffer stays for pasting again
+        state.cursor.track = 3;
+        state.paste_track();
+        assert_eq!(notes(&state, 3), [1, 2, 3]);
+    }
+
+    #[test]
+    fn swapping_a_track_with_the_buffer() {
+        let mut state = state();
+        number_track(&mut state, 0, 3);
+        state.copy_track();
+        state.cursor.track = 1;
+        state.swap_track();
+        assert_eq!(notes(&state, 1), [1, 2, 3]);
+        // the buffer now holds the empty track 1
+        state.cursor.track = 0;
+        state.paste_track();
+        assert_eq!(notes(&state, 0), [0, 0, 0]);
+    }
+
+    #[test]
+    fn pasting_a_block_into_a_new_one_makes_a_twin() {
+        let mut state = state();
+        number_track(&mut state, 0, 3);
+        state.copy_block();
+        state.new_default_block();
+        state.cursor.line = 40;
+        state.paste_block();
+        assert_eq!(notes(&state, 0), [1, 2, 3]);
+        assert_eq!(state.cursor.line, 2);
+    }
+
+    #[test]
+    fn cutting_and_swapping_blocks() {
+        let mut state = state();
+        number_track(&mut state, 0, 3);
+        state.cut_block();
+        assert_eq!(notes(&state, 0), [0, 0, 0]);
+        number_track(&mut state, 1, 5);
+        state.swap_block();
+        assert_eq!(state.active_pattern().unwrap().line_count(), 3);
+        assert_eq!(notes(&state, 0), [1, 2, 3]);
+        state.swap_block();
+        assert_eq!(notes(&state, 1), [1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn pasting_with_an_empty_buffer_says_so() {
+        let mut state = state();
+        state.copy_track();
+        state.copy_block();
+        state.delete_buffer();
+        state.paste_track();
+        assert_eq!(state.notification.as_deref(), Some("Track buffer is empty"));
+        state.paste_block();
+        assert_eq!(state.notification.as_deref(), Some("Block buffer is empty"));
+    }
+
+    #[test]
+    fn track_and_block_buffers_are_separate() {
+        let mut state = state();
+        number_track(&mut state, 0, 3);
+        state.copy_block();
+        state.cursor.track = 1;
+        state.copy_track();
+        // a copied track doesn't end up as the whole block
+        state.swap_block();
+        let pattern = state.active_pattern().unwrap();
+        assert_eq!((pattern.line_count(), pattern.track_count()), (3, 4));
+        assert_eq!(notes(&state, 0), [1, 2, 3]);
+        // and the block copy didn't replace the track buffer
+        state.cursor.track = 2;
+        state.paste_track();
+        assert_eq!(notes(&state, 2), [0, 0, 0]);
     }
 
     #[test]

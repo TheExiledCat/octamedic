@@ -78,7 +78,6 @@ const LINES_PADDING: i32 = 0;
 const EXPAND_FACTOR_PADDING: i32 = 2;
 
 pub struct Block {
-    // track/block clipboard operations aren't implemented yet, so these stay disabled
     cut_track: Button,
     copy_track: Button,
     paste_track: Button,
@@ -129,15 +128,15 @@ impl Block {
                 .padding(padding)
         };
         return Self {
-            cut_track: unhooked(label(&[(13, "CUT")])),
-            copy_track: unhooked(label(&[(10, "COPY")])),
-            paste_track: unhooked(label(&[(6, "PASTE")])),
-            swap_track: unhooked(label(&[(9, "SWAP")])),
-            cut_block: unhooked(label(&[(13, "CUT")])),
-            copy_block: unhooked(label(&[(10, "COPY")])),
-            paste_block: unhooked(label(&[(6, "PASTE")])),
-            swap_block: unhooked(label(&[(9, "SWAP")])),
-            del_buff: unhooked(label(&[(7, "DEL"), (35, "BUFF")])),
+            cut_track: label(&[(13, "CUT")]),
+            copy_track: label(&[(10, "COPY")]),
+            paste_track: label(&[(6, "PASTE")]),
+            swap_track: label(&[(9, "SWAP")]),
+            cut_block: label(&[(13, "CUT")]),
+            copy_block: label(&[(10, "COPY")]),
+            paste_block: label(&[(6, "PASTE")]),
+            swap_block: label(&[(9, "SWAP")]),
+            del_buff: label(&[(7, "DEL"), (35, "BUFF")]),
 
             ins_track: narrow(&[(6, "INS.TRK")]),
             del_track: narrow(&[(5, "DEL.TRK")]),
@@ -363,6 +362,22 @@ fn step_button(arrow: &'static Picture) -> Button {
 
 impl Gadget<AppState, Event> for Block {
     fn update(&mut self, state: &mut AppState) {
+        let clipboard: [(&mut Button, fn(&mut AppState)); 9] = [
+            (&mut self.cut_track, AppState::cut_track),
+            (&mut self.copy_track, AppState::copy_track),
+            (&mut self.paste_track, AppState::paste_track),
+            (&mut self.swap_track, AppState::swap_track),
+            (&mut self.cut_block, AppState::cut_block),
+            (&mut self.copy_block, AppState::copy_block),
+            (&mut self.paste_block, AppState::paste_block),
+            (&mut self.swap_block, AppState::swap_block),
+            (&mut self.del_buff, AppState::delete_buffer),
+        ];
+        for (button, action) in clipboard {
+            if button.clicked().is_some() {
+                action(state);
+            }
+        }
         if self.ins_track.clicked().is_some() {
             state.insert_track();
         }
@@ -704,6 +719,26 @@ mod tests {
         click(&mut block, &mut state, NEW_BLOCK);
         click(&mut block, &mut state, DELETE_THIS);
         assert_eq!(state.song().patterns.len(), 1);
+    }
+
+    #[test]
+    fn track_copy_and_paste_buttons() {
+        let mut block = Block::new();
+        let mut state = new_state();
+        state.active_pattern_mut().unwrap().lines[0].tracks[0]
+            .note
+            .value = 5;
+        click(&mut block, &mut state, COPY);
+        state.cursor.track = 1;
+        click(&mut block, &mut state, PASTE);
+        assert_eq!(
+            state.active_pattern().unwrap().lines[0].tracks[1]
+                .note
+                .value,
+            5
+        );
+        click(&mut block, &mut state, DEL_BUFF);
+        assert!(state.track_buffer.is_none());
     }
 
     #[test]
