@@ -1,4 +1,4 @@
-# OctaMEDIC Pro V4 (WIP V0.01 IN DEVELOPMENT)
+# OctaMEDIC Pro V4 (WIP v0.0.1 IN DEVELOPMENT)
 
 **Note**: the contents of this README are placeholder until the first demo version releases, there are no releases published yet.
 
@@ -69,7 +69,7 @@ It is also possible to build from source using the rust cargo toolchain. This wa
     - custom made UI toolkit to recreate the AmigaOS look from intution
 ## Roadmap
 
-What's needed for the first release is tracked in [V0.01TARGETS.md](V0.01TARGETS.md).
+What's needed for the first release is tracked in [V0.0.1TARGETS.md](V0.0.1TARGETS.md).
 
 - [X] Loading real mmd file's metadata, note and instrument data
 - [ ] Loading protracker/soundtracker supported modules
@@ -79,7 +79,7 @@ What's needed for the first release is tracked in [V0.01TARGETS.md](V0.01TARGETS
 - [ ] Write back modules to:
     - [ ] MMD0
     - [ ] MMD1 (No Instr)
-    - [ ] MMD1 +Instruments
+    - [X] MMD1 +Instruments
 - [ ] Sample Commands
 - [ ] Midi commands
 - [ ] Synth commands
