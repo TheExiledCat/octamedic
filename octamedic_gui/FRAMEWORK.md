@@ -21,6 +21,9 @@ adds on top, in `src/framework/`, and how OctaMED's screens in `src/app/` are pu
 - `app/pens.rs`: OctaMED's pens past rustuition's four, `RED`, `ROSE`, `PINK` and `BLUSH`. The
   palette is the song's, turned into the screen's with `state::screen_palette`.
 - `app/mod.rs`: `SCREEN`, PAL hires.
+- `app/icon.rs`: the window's icon, `assets/icon.png`, built into the binary. It shows on Windows
+  (title bar and taskbar) and X11. macOS takes the Dock icon from an app bundle and Wayland from a
+  desktop file, and the release doesn't make either yet.
 
 Keep the sizes measured from OctaMED as named constants where they're used, like the status row's
 `WIDTHS`.

@@ -9,7 +9,7 @@ use ggez::{
 use octamedic_core::data::project::OctamedicProject;
 use rustuition::screen::Screen;
 
-use crate::app::{DEFAULT_VIDEO, app::App, files, screen};
+use crate::app::{DEFAULT_VIDEO, app::App, files, icon, screen};
 
 mod app;
 mod framework;
@@ -56,6 +56,7 @@ fn main() -> GameResult<()> {
         .build()?;
     open_window(&mut ctx, mode)?;
     let app = App::new(&mut ctx, project)?;
+    icon::set_window_icons(ctx.gfx.window())?;
     event::run(ctx, event_loop, app);
 }
 
