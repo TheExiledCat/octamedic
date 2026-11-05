@@ -686,8 +686,6 @@ fn delete(state: &mut AppState, whole_cell: bool) {
         } else if cursor.column == 0 {
             cell.note = OctamedicNote::new();
             cell.instrument_id = InstrumentId(0);
-        } else if cursor.column == 1 {
-            cell.instrument_id = InstrumentId(0);
         } else if let Some(cleared) = type_digit(*cell, cursor.column, '0') {
             *cell = cleared;
         }

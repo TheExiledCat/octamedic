@@ -137,11 +137,18 @@ impl OctamedicPattern {
         }
     }
 
-    /// Lengthens the block by inserting `factor - 1` empty lines after each line.
-    pub fn expand(&mut self, factor: usize) {
+    /// Lengthens the block by inserting `factor - 1` empty lines after each line. Returns false,
+    /// leaving the block alone, if that would take it past [`MAX_LINES`].
+    pub fn expand(&mut self, factor: usize) -> bool {
         let factor = factor.max(1);
+        let Some(length) = self.lines.len().checked_mul(factor) else {
+            return false;
+        };
+        if length > MAX_LINES {
+            return false;
+        }
         let track_count = self.track_count();
-        let mut lines = Vec::with_capacity(self.lines.len() * factor);
+        let mut lines = Vec::with_capacity(length);
         for line in self.lines.drain(..) {
             lines.push(line);
             lines.resize_with(lines.len() + factor - 1, || {
@@ -149,6 +156,7 @@ impl OctamedicPattern {
             });
         }
         self.lines = lines;
+        return true;
     }
 
     /// Keeps every `factor`th line, undoing [`Self::expand`].
@@ -171,8 +179,12 @@ impl OctamedicPattern {
         };
     }
 
-    /// Appends `other`'s lines, widening either block if their track counts differ.
-    pub fn join(&mut self, other: &OctamedicPattern) {
+    /// Appends `other`'s lines, widening either block if their track counts differ. Returns
+    /// false, leaving the block alone, if that would take it past [`MAX_LINES`].
+    pub fn join(&mut self, other: &OctamedicPattern) -> bool {
+        if self.lines.len() + other.lines.len() > MAX_LINES {
+            return false;
+        }
         let track_count = self.track_count().max(other.track_count());
         self.set_track_count(track_count);
         for line in &other.lines {
@@ -181,6 +193,7 @@ impl OctamedicPattern {
                 .resize(track_count, OctamedicPatternTrack::new());
             self.lines.push(line);
         }
+        return true;
     }
 
     fn from_octamed(lines: &[OctamedMMD0BlockLine]) -> Self {
@@ -427,6 +440,24 @@ mod tests {
             .map(|l| l.tracks[0].note.value)
             .collect();
         assert_eq!(notes, [1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn expand_and_join_stop_at_max_lines() {
+        let long = |lines| {
+            let mut pattern = numbered(1, 1);
+            pattern.set_line_count(lines);
+            return pattern;
+        };
+        let mut pattern = long(MAX_LINES / 2);
+        assert!(!pattern.expand(3));
+        assert!(!pattern.expand(usize::MAX));
+        assert_eq!(pattern.line_count(), MAX_LINES / 2);
+        let other = long(MAX_LINES / 2 + 1);
+        assert!(!pattern.join(&other));
+        assert_eq!(pattern.line_count(), MAX_LINES / 2);
+        assert!(pattern.expand(2));
+        assert_eq!(pattern.line_count(), MAX_LINES);
     }
 
     #[test]

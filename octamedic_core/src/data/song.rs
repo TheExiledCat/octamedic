@@ -107,19 +107,20 @@ impl OctamedicSong {
     }
 
     /// Removes block `index`, shifting every later block (and the sequence entries pointing to
-    /// them) down by one; entries that pointed at it clamp to what's left.
+    /// them) down by one. Entries that played it are dropped, leaving block 0 if nothing's left.
     pub fn remove_pattern(&mut self, index: usize) {
         if index >= self.patterns.len() {
             return;
         }
         self.patterns.remove(index);
-        let last = self.patterns.len().saturating_sub(1) as u8;
+        self.sequence.retain(|id| id.0 as usize != index);
         for id in &mut self.sequence {
             if id.0 as usize > index {
                 id.0 -= 1;
-            } else if id.0 as usize == index {
-                id.0 = id.0.min(last);
             }
+        }
+        if self.sequence.is_empty() {
+            self.sequence.push(PatternId(0));
         }
     }
 
@@ -230,25 +231,20 @@ mod tests {
     }
 
     #[test]
-    fn remove_pattern_shifts_later_blocks_and_clamps_sequence() {
+    fn remove_pattern_shifts_later_blocks_and_drops_its_entries() {
         let mut song = three_block_song();
         song.remove_pattern(1);
         assert_eq!(song.patterns.len(), 2);
-        // removing a block doesn't shrink the sequence, just remaps it: the old 2 (shifted to 1)
-        // and the entry that pointed at the removed block 1 (clamped to the new last index, 1)
-        assert_eq!(
-            song.sequence(),
-            [PatternId(0), PatternId(1), PatternId(1), PatternId(0)]
-        );
+        // the entry that played block 1 is gone, the old 2 now being 1
+        assert_eq!(song.sequence(), [PatternId(0), PatternId(1), PatternId(0)]);
     }
 
     #[test]
-    fn remove_pattern_clamps_entries_pointing_at_it() {
+    fn remove_pattern_keeps_the_sequence_playing_something() {
         let mut song = three_block_song();
-        // point every entry at the block about to be removed
         *song.sequence_mut() = vec![PatternId(2), PatternId(2)];
         song.remove_pattern(2);
         assert_eq!(song.patterns.len(), 2);
-        assert_eq!(song.sequence(), [PatternId(1), PatternId(1)]);
+        assert_eq!(song.sequence(), [PatternId(0)]);
     }
 }

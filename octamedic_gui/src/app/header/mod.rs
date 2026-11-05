@@ -21,7 +21,7 @@ use crate::{
         state::AppState,
         status_bar::StatusBar,
     },
-    framework::event::Event,
+    framework::{event::Event, widgets::Textbox},
 };
 
 // from the header's top left
@@ -127,4 +127,11 @@ impl Gadget<AppState, Event> for Header {
         );
         self.status.render(state, status, painter);
     }
+}
+
+/// A textbox's text on the update it loses focus, from Enter or a click elsewhere.
+pub fn finished_edit(textbox: &Textbox, was_focused: &mut bool) -> Option<String> {
+    let left = *was_focused && !textbox.is_focused();
+    *was_focused = textbox.is_focused();
+    return left.then(|| textbox.text().to_owned());
 }

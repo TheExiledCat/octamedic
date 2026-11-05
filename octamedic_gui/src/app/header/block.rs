@@ -1,4 +1,3 @@
-use octamedic_core::data::pattern::MAX_LINES;
 use rustuition::{
     font::{Font, Glyph},
     gadget::Gadget,
@@ -8,7 +7,7 @@ use rustuition::{
 };
 
 use crate::{
-    app::{fonts, pens, state::AppState},
+    app::{fonts, header::finished_edit, pens, state::AppState},
     framework::{
         event::Event,
         widgets::{Button, Textbox, ToggleGroup},
@@ -377,26 +376,25 @@ impl Gadget<AppState, Event> for Block {
             if let Some(pattern) = state.active_pattern_mut() {
                 pattern.set_track_count(count);
             }
-            clamp_cursor(state);
+            state.clamp_cursor_to_active_pattern();
         }
         track_count_group.sync(Some(active_tracks));
 
-        if !self.lines_box.is_focused() {
-            let lines = state.active_pattern().map_or(0, |p| p.line_count());
-            self.lines_box.set_text(lines.to_string());
-        }
-        if let Some(lines) = finished_number(&self.lines_box, &mut self.lines_box_was_focused) {
+        // committed before the box is refreshed, or the refresh would overwrite what was typed
+        let typed_lines = finished_edit(&self.lines_box, &mut self.lines_box_was_focused)
+            .and_then(|text| text.trim().parse::<usize>().ok());
+        if let Some(lines) = typed_lines {
             if let Some(pattern) = state.active_pattern_mut() {
-                pattern.set_line_count(lines.max(1));
+                pattern.set_line_count(lines);
             }
-            clamp_cursor(state);
+            state.clamp_cursor_to_active_pattern();
         }
         let step_lines = |state: &mut AppState, delta: isize| {
             let lines = state.active_pattern().map_or(1, |p| p.line_count()) as isize;
             if let Some(pattern) = state.active_pattern_mut() {
                 pattern.set_line_count((lines + delta).max(1) as usize);
             }
-            clamp_cursor(state);
+            state.clamp_cursor_to_active_pattern();
         };
         if self.lines_dec.clicked().is_some() {
             step_lines(state, -1);
@@ -410,21 +408,25 @@ impl Gadget<AppState, Event> for Block {
         if self.lines_inc_10.clicked().is_some() {
             step_lines(state, 10);
         }
+        if !self.lines_box.is_focused() {
+            let lines = state.active_pattern().map_or(0, |p| p.line_count());
+            self.lines_box.set_text(lines.to_string());
+        }
 
         let expand_factor = self.expand_factor.text().trim().parse().unwrap_or(2).max(1);
         if self.expand.clicked().is_some() {
-            let lines = state.active_pattern().map_or(0, |p| p.line_count());
-            if lines * expand_factor > MAX_LINES {
+            let expanded = state
+                .active_pattern_mut()
+                .is_some_and(|pattern| pattern.expand(expand_factor));
+            if !expanded {
                 state.notify("Too many lines");
-            } else if let Some(pattern) = state.active_pattern_mut() {
-                pattern.expand(expand_factor);
             }
         }
         if self.shrink.clicked().is_some() {
             if let Some(pattern) = state.active_pattern_mut() {
                 pattern.shrink(expand_factor);
             }
-            clamp_cursor(state);
+            state.clamp_cursor_to_active_pattern();
         }
 
         if self.ins_line.clicked().is_some() {
@@ -438,7 +440,7 @@ impl Gadget<AppState, Event> for Block {
             if let Some(pattern) = state.active_pattern_mut() {
                 pattern.delete_line(line);
             }
-            clamp_cursor(state);
+            state.clamp_cursor_to_active_pattern();
         }
 
         for (button, spacing) in self.highlight.iter_mut().zip(HIGHLIGHT_SPACING) {
@@ -568,13 +570,6 @@ fn draw_label(painter: &mut Painter, area: Rect, row: i32, words: Words) {
     );
 }
 
-fn clamp_cursor(state: &mut AppState) {
-    let (lines, tracks) = state.active_pattern().map_or((1, 1), |pattern| {
-        (pattern.line_count(), pattern.track_count())
-    });
-    state.cursor.clamp(lines, tracks);
-}
-
 fn set_highlight_spacing(state: &mut AppState, spacing: Option<usize>) {
     if let Some(pattern) = state.active_pattern_mut() {
         for (index, line) in pattern.lines.iter_mut().enumerate() {
@@ -583,16 +578,12 @@ fn set_highlight_spacing(state: &mut AppState, spacing: Option<usize>) {
     }
 }
 
-// committed on Enter or on losing focus, like the Files panel's DIR/FILE boxes
-fn finished_number(textbox: &Textbox, was_focused: &mut bool) -> Option<usize> {
-    let left = *was_focused && !textbox.is_focused();
-    *was_focused = textbox.is_focused();
-    return left.then(|| textbox.text().trim().parse().ok()).flatten();
-}
-
 #[cfg(test)]
 mod tests {
-    use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
+    use octamedic_core::{
+        data::{pattern::MAX_LINES, project::OctamedicProject},
+        engine::handle::EngineHandle,
+    };
     use rustuition::{event::MouseButton, rect::Point, target::Framebuffer};
 
     use super::*;
@@ -742,6 +733,19 @@ mod tests {
         assert_eq!(state.active_pattern().unwrap().line_count(), before + 10);
         click(&mut block, &mut state, LINES_DEC);
         assert_eq!(state.active_pattern().unwrap().line_count(), before + 9);
+    }
+
+    #[test]
+    fn typing_into_the_lines_box_sets_the_line_count() {
+        let mut block = Block::new();
+        let mut state = new_state();
+        block.lines_box.set_focused(true);
+        block.update(&mut state);
+        block.lines_box.set_text("100");
+        block.lines_box.set_focused(false);
+        block.update(&mut state);
+        assert_eq!(state.active_pattern().unwrap().line_count(), 100);
+        assert_eq!(block.lines_box.text(), "100");
     }
 
     #[test]

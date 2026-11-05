@@ -11,9 +11,7 @@ use octamedic_core::{
         instrument::{InstrumentId, MAX_INSTRUMENTS, OctamedicInstrument},
         note::OctamedicNote,
         palette::{OctamedColorPalette, PALETTE_SIZE},
-        pattern::{
-            DEFAULT_LINES, MAX_PATTERNS, OctamedicPattern, OctamedicPatternTrack, PatternId,
-        },
+        pattern::{MAX_PATTERNS, OctamedicPattern, OctamedicPatternTrack, PatternId},
         project::OctamedicProject,
         song::{OctamedicSong, SongId},
         tempo::OctamedicTempo,
@@ -636,10 +634,14 @@ impl AppState {
     pub fn select_block(&mut self, index: usize) {
         let last = self.song().patterns().len().saturating_sub(1);
         self.active_pattern = PatternId(index.min(last).min(u8::MAX as usize) as u8);
-        if let Some(pattern) = self.active_pattern() {
-            let (lines, tracks) = (pattern.line_count(), pattern.track_count());
-            self.cursor.clamp(lines, tracks);
-        }
+        self.clamp_cursor_to_active_pattern();
+    }
+
+    pub fn clamp_cursor_to_active_pattern(&mut self) {
+        let (lines, tracks) = self.active_pattern().map_or((1, 1), |pattern| {
+            (pattern.line_count(), pattern.track_count())
+        });
+        self.cursor.clamp(lines, tracks);
     }
 
     pub fn set_octave(&mut self, octave: u8) {
@@ -875,6 +877,7 @@ impl AppState {
     // appended to the sequence too, so it actually plays
     fn append_block(&mut self, pattern: OctamedicPattern) {
         if self.song().patterns.len() >= MAX_PATTERNS {
+            self.notify("Too many blocks");
             return;
         }
         let index = self.song().patterns.len();
@@ -888,6 +891,7 @@ impl AppState {
     // not added to the sequence: the song still plays exactly what it did before
     fn insert_block_here(&mut self, pattern: OctamedicPattern) {
         if self.song().patterns.len() >= MAX_PATTERNS {
+            self.notify("Too many blocks");
             return;
         }
         let index = self.active_pattern.0 as usize;
@@ -915,10 +919,8 @@ impl AppState {
         self.song_mut().remove_pattern(index);
         let last = self.song().patterns.len().saturating_sub(1) as u8;
         self.active_pattern.0 = self.active_pattern.0.min(last);
-        let (lines, tracks) = self.active_pattern().map_or((1, 1), |pattern| {
-            (pattern.line_count(), pattern.track_count())
-        });
-        self.cursor.clamp(lines, tracks);
+        self.clamp_cursor_to_active_pattern();
+        self.keep_sequence_index_inside(self.active_sequence_index);
         self.send_all_to_engine();
     }
 
@@ -930,6 +932,7 @@ impl AppState {
             return;
         }
         if self.song().patterns.len() >= MAX_PATTERNS {
+            self.notify("Too many blocks");
             return;
         }
         let index = self.active_pattern.0 as usize;
@@ -948,8 +951,12 @@ impl AppState {
             self.notify("No block after this one");
             return;
         };
-        if let Some(active) = self.active_pattern_mut() {
-            active.join(&next);
+        let joined = self
+            .active_pattern_mut()
+            .is_some_and(|active| active.join(&next));
+        if !joined {
+            self.notify("Too many lines");
+            return;
         }
         // what played the block below now plays the two of them, like what played this one
         for id in self.song_mut().sequence_mut() {
@@ -1039,6 +1046,8 @@ impl AppState {
 
 #[cfg(test)]
 mod tests {
+    use octamedic_core::data::pattern::{DEFAULT_LINES, MAX_LINES};
+
     use super::*;
 
     fn state() -> AppState {
@@ -1326,5 +1335,31 @@ mod tests {
             state.new_block();
         }
         assert_eq!(state.song().patterns.len(), MAX_PATTERNS);
+        assert_eq!(state.notification.as_deref(), Some("Too many blocks"));
+    }
+
+    #[test]
+    fn joining_past_max_lines_is_declined() {
+        let mut state = state();
+        state
+            .active_pattern_mut()
+            .unwrap()
+            .set_line_count(MAX_LINES);
+        state.new_block();
+        state.active_pattern = PatternId(0);
+        state.join_block();
+        assert_eq!(state.song().patterns.len(), 2);
+        assert_eq!(state.active_pattern().unwrap().line_count(), MAX_LINES);
+        assert_eq!(state.notification.as_deref(), Some("Too many lines"));
+    }
+
+    #[test]
+    fn deleting_a_block_drops_it_from_the_sequence() {
+        let mut state = state();
+        state.new_block();
+        state.new_block();
+        state.active_pattern = PatternId(1);
+        state.delete_this_block();
+        assert_eq!(state.song().sequence(), [0, 1].map(PatternId));
     }
 }
