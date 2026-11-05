@@ -65,6 +65,11 @@ Amiga's chip memory (sample data and synth waveforms, `OctamedicProject::chip_by
 about what the project takes saved as an MMD1 module (`module_bytes`). Both are in
 `octamedic_core/src/data/memory.rs`.
 
+The screen is scaled to fit the window (`ScaleMode::Fit`). winit can't hold a window to an aspect
+ratio while it's dragged, so `WindowShape` (`app/window_shape.rs`) puts a windowed window back in
+the screen's shape once resizing stops: the side that was dragged keeps its size and the other
+fits to it (dragging a corner, the one that changed more wins), staying on the monitor; maximised and fullscreen windows are left alone, with bars at the sides.
+
 Ctrl+F11 opens the screen filters (`app/screen_filters.rs`), a list of rustuition's filters in the
 order they run. While any is on, the screen and the pointer are painted into a `Framebuffer`
 instead of straight onto the GPU, filtered, and uploaded as the screen image.
