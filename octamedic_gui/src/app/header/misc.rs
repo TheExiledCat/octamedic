@@ -18,7 +18,7 @@ use crate::{
     },
     framework::{
         event::Event,
-        widgets::{Button, Slider, symbols::stacked_text},
+        widgets::{Button, Slider, ToggleGroup, symbols::stacked_text},
     },
 };
 
@@ -198,14 +198,14 @@ impl Gadget<AppState, Event> for Misc {
             .danger_buttons
             .split_last_mut()
             .expect("CONFIRM and its choices");
-        for (choice, (button, _)) in choices.iter_mut().enumerate() {
-            if button.clicked().is_some() {
-                self.danger_button_selected = Some(choice);
-            }
+        let mut choice_buttons =
+            ToggleGroup::new(choices.iter_mut().enumerate().map(|(choice, (button, _))| {
+                return (button, choice);
+            }));
+        if let Some((choice, _)) = choice_buttons.take_click() {
+            self.danger_button_selected = Some(choice);
         }
-        for (choice, (button, _)) in choices.iter_mut().enumerate() {
-            button.set_toggled(self.danger_button_selected == Some(choice));
-        }
+        choice_buttons.sync(self.danger_button_selected);
         if confirm.0.clicked().is_some() {
             self.danger(state);
         }

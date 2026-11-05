@@ -53,6 +53,7 @@ pub struct Recorder {
     pub machine: AmigaClock,
     pub output_volume: u8,
     pub max_duration: Duration,
+    pub channels: u16,
 }
 
 impl Default for Recorder {
@@ -62,6 +63,7 @@ impl Default for Recorder {
             machine: AmigaClock::PAL,
             output_volume: MAX_INSTRUMENT_VOLUME,
             max_duration: DEFAULT_MAX_DURATION,
+            channels: 1,
         };
     }
 }
@@ -114,33 +116,38 @@ impl Recorder {
         for command in setup {
             let _ = commands.send(command);
         }
-        let max_frames = (self.max_duration.as_secs_f64() * self.sample_rate as f64) as usize;
+        let channels = self.channels.max(1) as usize;
+        let max_samples =
+            (self.max_duration.as_secs_f64() * self.sample_rate as f64) as usize * channels;
         let mut samples = Vec::new();
-        let mut chunk = [0.0; CHUNK_FRAMES];
-        while samples.len() < max_frames {
-            engine.process(&mut chunk, 1);
+        let mut chunk = vec![0.0; CHUNK_FRAMES * channels];
+        while samples.len() < max_samples {
+            engine.process(&mut chunk, channels);
             samples.extend_from_slice(&chunk);
             if status.play_mode() == PlayMode::Paused {
                 break;
             }
         }
-        samples.truncate(max_frames);
+        samples.truncate(max_samples);
         return Recording {
             sample_rate: self.sample_rate,
+            channels: channels as u16,
             samples,
         };
     }
 }
 
-// mono, -1..1
+// interleaved per `channels`, -1..1
 pub struct Recording {
     pub sample_rate: u32,
+    pub channels: u16,
     pub samples: Vec<f32>,
 }
 
 impl Recording {
     pub fn duration(&self) -> Duration {
-        return Duration::from_secs_f64(self.samples.len() as f64 / self.sample_rate as f64);
+        let frames = self.samples.len() / self.channels.max(1) as usize;
+        return Duration::from_secs_f64(frames as f64 / self.sample_rate as f64);
     }
 
     pub fn to_pcm16_bytes(&self) -> Vec<u8> {
@@ -153,7 +160,7 @@ impl Recording {
 
     pub fn to_wav_bytes(&self) -> Vec<u8> {
         let data = self.to_pcm16_bytes();
-        let channels: u16 = 1;
+        let channels = self.channels.max(1);
         let block_align = channels * BITS_PER_SAMPLE / u8::BITS as u16;
         let mut wav = Vec::with_capacity(WAV_HEADER_SIZE + data.len());
         wav.extend_from_slice(b"RIFF");
@@ -235,6 +242,22 @@ mod tests {
     }
 
     #[test]
+    fn stereo_interleaves_both_channels() {
+        let mono = recorder().record_pattern(&song(), PatternId(0)).unwrap();
+        let stereo = Recorder {
+            channels: 2,
+            ..recorder()
+        }
+        .record_pattern(&song(), PatternId(0))
+        .unwrap();
+        assert_eq!(stereo.channels, 2);
+        assert_eq!(stereo.samples.len(), mono.samples.len() * 2);
+        assert_eq!(stereo.duration(), mono.duration());
+        let wav = stereo.to_wav_bytes();
+        assert_eq!(u16::from_le_bytes(wav[22..24].try_into().unwrap()), 2);
+    }
+
+    #[test]
     fn missing() {
         assert_eq!(
             recorder().record_song(&song(), 5).err(),
@@ -282,6 +305,7 @@ mod tests {
     fn wav_header() {
         let recording = Recording {
             sample_rate: 22050,
+            channels: 1,
             samples: vec![0.0, 1.0, -1.0],
         };
         let wav = recording.to_wav_bytes();

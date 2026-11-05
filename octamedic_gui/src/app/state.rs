@@ -92,6 +92,41 @@ impl InstrumentSaveType {
     }
 }
 
+/// The MOD variant the Files panel saves the song as, cycled through with its one button.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ModFormat {
+    #[default]
+    Mod1WithInstruments,
+    Mod1NoInstruments,
+    Mod0,
+}
+
+impl ModFormat {
+    pub const ALL: [Self; 3] = [
+        Self::Mod1WithInstruments,
+        Self::Mod1NoInstruments,
+        Self::Mod0,
+    ];
+
+    pub fn next(self) -> Self {
+        return Self::ALL[(self as usize + 1) % Self::ALL.len()];
+    }
+
+    pub fn previous(self) -> Self {
+        return Self::ALL[(self as usize + Self::ALL.len() - 1) % Self::ALL.len()];
+    }
+}
+
+/// Which of the Files panel's save-format buttons is picked; SAVE SONG acts on this one.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SaveFormat {
+    #[default]
+    Mod,
+    Wav,
+    Mp3,
+    StModule,
+}
+
 // the E1, E2 and E3 switches
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Meters {
@@ -134,6 +169,8 @@ pub struct AppState {
     // the sample editor's clipboard, CBUFF
     pub copy_buffer: Vec<i8>,
     pub instrument_save_type: InstrumentSaveType,
+    pub mod_format: ModFormat,
+    pub save_format: SaveFormat,
     pub palette: IntuitionColorPalette,
     // the D switch
     pub play_on_note: bool,
@@ -198,6 +235,8 @@ impl AppState {
             prompt: None,
             copy_buffer: Vec::new(),
             instrument_save_type: InstrumentSaveType::default(),
+            mod_format: ModFormat::default(),
+            save_format: SaveFormat::default(),
             palette,
             play_on_note: false,
             meters: Meters::default(),
