@@ -31,6 +31,9 @@ On WSL, the CLI and GUI folders each have two scripts that pass their arguments 
 `run-windows.sh` builds and runs the Windows build (native audio), and `run-x11.sh` runs it in WSL
 over X11, because under WSLg's Wayland the window closes straight away.
 
+On a Mac, `octamedic_gui/macos/bundle.sh` turns a release build into `OctaMEDIC.app`, the same
+way the release workflow does. How to run it is at the top of the script.
+
 In the REPL, `help` lists everything. The ones you'll use most are `inspect`, `blocks`,
 `sequence`, `instruments`, `play`, `record` (song or block to wav) and `exit`.
 

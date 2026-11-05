@@ -79,14 +79,24 @@ jobs:
       - name: Build
         run: cargo build --release --locked --target ${{ matrix.target }} -p mmd_cli -p octamedic_gui
 
-      - name: Package (Unix)
-        if: runner.os != 'Windows'
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
         run: |
           cd target/${{ matrix.target }}/release
           for pair in cli:mmd_cli gui:octamedic_gui; do
             kind="${pair%%:*}"; bin="${pair#*:}"
             zip "$GITHUB_WORKSPACE/octamedic-${kind}-${GITHUB_REF_NAME}-${{ matrix.target }}.zip" "$bin"
           done
+
+      # the GUI goes in an app bundle, so it has its icon and name and opens from Finder. ditto
+      # zips it the way Finder does
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          suffix="${GITHUB_REF_NAME}-${{ matrix.target }}"
+          zip -j "octamedic-cli-${suffix}.zip" "target/${{ matrix.target }}/release/mmd_cli"
+          octamedic_gui/macos/bundle.sh ${{ matrix.target }} "${GITHUB_REF_NAME#v}" bundle
+          ditto -c -k --keepParent bundle/OctaMEDIC.app "octamedic-gui-${suffix}.zip"
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
