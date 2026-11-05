@@ -11,7 +11,9 @@ use octamedic_core::{
         instrument::{InstrumentId, MAX_INSTRUMENTS, OctamedicInstrument},
         note::OctamedicNote,
         palette::{OctamedColorPalette, PALETTE_SIZE},
-        pattern::{OctamedicPattern, OctamedicPatternTrack, PatternId},
+        pattern::{
+            DEFAULT_LINES, MAX_PATTERNS, OctamedicPattern, OctamedicPatternTrack, PatternId,
+        },
         project::OctamedicProject,
         song::{OctamedicSong, SongId},
         tempo::OctamedicTempo,
@@ -813,6 +815,116 @@ impl AppState {
         });
     }
 
+    pub fn new_block(&mut self) {
+        let pattern = self.blank_pattern_like_active();
+        self.append_block(pattern);
+    }
+
+    pub fn new_default_block(&mut self) {
+        self.append_block(OctamedicPattern::new());
+    }
+
+    pub fn new_block_here(&mut self) {
+        let pattern = self.blank_pattern_like_active();
+        self.insert_block_here(pattern);
+    }
+
+    pub fn new_default_block_here(&mut self) {
+        self.insert_block_here(OctamedicPattern::new());
+    }
+
+    fn blank_pattern_like_active(&self) -> OctamedicPattern {
+        let mut pattern = OctamedicPattern::new();
+        if let Some(active) = self.active_pattern() {
+            pattern.set_track_count(active.track_count());
+            pattern.set_line_count(active.line_count());
+        }
+        return pattern;
+    }
+
+    // appended to the sequence too, so it actually plays
+    fn append_block(&mut self, pattern: OctamedicPattern) {
+        if self.song().patterns.len() >= MAX_PATTERNS {
+            return;
+        }
+        let index = self.song().patterns.len();
+        let id = self.song_mut().insert_pattern(index, pattern);
+        self.song_mut().sequence_mut().push(id);
+        self.active_pattern = id;
+        self.cursor = EditCursor::default();
+        self.send_all_to_engine();
+    }
+
+    // not added to the sequence: the song still plays exactly what it did before
+    fn insert_block_here(&mut self, pattern: OctamedicPattern) {
+        if self.song().patterns.len() >= MAX_PATTERNS {
+            return;
+        }
+        let index = self.active_pattern.0 as usize;
+        let id = self.song_mut().insert_pattern(index, pattern);
+        self.active_pattern = id;
+        self.cursor = EditCursor::default();
+        self.send_all_to_engine();
+    }
+
+    // no confirmation, matching the real OctaMED
+    pub fn delete_last_block(&mut self) {
+        let last = self.song().patterns.len().saturating_sub(1);
+        self.remove_block(last);
+    }
+
+    pub fn delete_this_block(&mut self) {
+        self.remove_block(self.active_pattern.0 as usize);
+    }
+
+    fn remove_block(&mut self, index: usize) {
+        if self.song().patterns.len() <= 1 {
+            self.notify("Can't delete the only block");
+            return;
+        }
+        self.song_mut().remove_pattern(index);
+        let last = self.song().patterns.len().saturating_sub(1) as u8;
+        self.active_pattern.0 = self.active_pattern.0.min(last);
+        let (lines, tracks) = self.active_pattern().map_or((1, 1), |pattern| {
+            (pattern.line_count(), pattern.track_count())
+        });
+        self.cursor.clamp(lines, tracks);
+        self.send_all_to_engine();
+    }
+
+    pub fn split_block(&mut self) {
+        let line = self.cursor.line;
+        let can_split = line > 0 && self.active_pattern().is_some_and(|p| p.line_count() > 1);
+        if !can_split {
+            self.notify("Nothing to split there");
+            return;
+        }
+        if self.song().patterns.len() >= MAX_PATTERNS {
+            return;
+        }
+        let index = self.active_pattern.0 as usize;
+        let tail = self
+            .active_pattern_mut()
+            .expect("just checked it's there")
+            .split_at(line);
+        self.song_mut().insert_pattern(index + 1, tail);
+        self.cursor.line = 0;
+        self.send_all_to_engine();
+    }
+
+    pub fn join_block(&mut self) {
+        let index = self.active_pattern.0 as usize;
+        let Some(next) = self.song().patterns.get(index + 1).cloned() else {
+            self.notify("No block after this one");
+            return;
+        };
+        if let Some(active) = self.active_pattern_mut() {
+            active.join(&next);
+        }
+        self.song_mut().remove_pattern(index + 1);
+        self.send_all_to_engine();
+    }
+
     fn run_timer(&mut self, playing: bool) {
         match (playing, self.timer_resumed) {
             (true, None) => self.timer_resumed = Some(Instant::now()),
@@ -1100,5 +1212,72 @@ mod tests {
         state.prev_pattern();
         state.prev_pattern();
         assert_eq!(state.active_pattern, PatternId(0));
+    }
+
+    #[test]
+    fn new_block_appends_and_selects_it() {
+        let mut state = state();
+        state.active_pattern_mut().unwrap().set_line_count(10);
+        state.new_block();
+        assert_eq!(state.active_pattern, PatternId(1));
+        assert_eq!(state.song().patterns.len(), 2);
+        // matches the previously active block's dimensions, not the defaults
+        assert_eq!(state.active_pattern().unwrap().line_count(), 10);
+        assert_eq!(state.song().sequence(), [PatternId(0), PatternId(1)]);
+    }
+
+    #[test]
+    fn new_default_block_uses_octameds_defaults() {
+        let mut state = state();
+        state.active_pattern_mut().unwrap().set_line_count(10);
+        state.new_default_block();
+        assert_eq!(state.active_pattern().unwrap().line_count(), DEFAULT_LINES);
+    }
+
+    #[test]
+    fn new_block_here_inserts_and_shifts_the_rest() {
+        let mut state = state();
+        state.new_block(); // block 1, so there's something after block 0
+        state.active_pattern = PatternId(0);
+        state.new_block_here();
+        assert_eq!(state.active_pattern, PatternId(0));
+        assert_eq!(state.song().patterns.len(), 3);
+        // the old block 0 and 1 moved to 1 and 2; the new one isn't added to the sequence
+        assert_eq!(state.song().sequence(), [PatternId(1), PatternId(2)]);
+    }
+
+    #[test]
+    fn delete_last_and_delete_this_keep_one_block() {
+        let mut state = state();
+        state.delete_last_block();
+        assert_eq!(state.song().patterns.len(), 1, "the only block stays");
+        state.new_block();
+        state.active_pattern = PatternId(0);
+        state.delete_this_block();
+        assert_eq!(state.song().patterns.len(), 1);
+        assert_eq!(state.active_pattern, PatternId(0));
+    }
+
+    #[test]
+    fn split_then_join_round_trips() {
+        let mut state = state();
+        state.cursor.line = 32;
+        state.split_block();
+        assert_eq!(state.song().patterns.len(), 2);
+        assert_eq!(state.active_pattern().unwrap().line_count(), 32);
+        // the split-off tail isn't added to the sequence either
+        assert_eq!(state.song().sequence(), [PatternId(0)]);
+        state.join_block();
+        assert_eq!(state.song().patterns.len(), 1);
+        assert_eq!(state.active_pattern().unwrap().line_count(), 64);
+    }
+
+    #[test]
+    fn blocks_are_capped_at_max_patterns() {
+        let mut state = state();
+        for _ in 0..MAX_PATTERNS + 5 {
+            state.new_block();
+        }
+        assert_eq!(state.song().patterns.len(), MAX_PATTERNS);
     }
 }
