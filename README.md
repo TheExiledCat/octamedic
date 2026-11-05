@@ -52,6 +52,8 @@ For questions about the documentation and or the project or bug / authenticity p
 
 To install download a release from the [releases](https://github.com/TheExiledCat/octamedic/releases) page
 
+On macOS the GUI comes as `OctaMEDIC.app`: `aarch64-apple-darwin` is for Apple Silicon Macs and `x86_64-apple-darwin` for Intel ones. It isn't notarized by Apple, so the first time you open it macOS says it can't check it for malware and won't open it. To open it anyway, go to System Settings > Privacy & Security and click Open Anyway, or run `xattr -dr com.apple.quarantine OctaMEDIC.app`. The CLI needs the same the first time.
+
 It is also possible to build from source using the rust cargo toolchain. This way you get the newest changes (but also the breaking ones!) immediately.
 
 ## In this repo
