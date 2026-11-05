@@ -1,10 +1,10 @@
 use octamedic_core::data::pattern::MAX_LINES;
 use rustuition::{
+    font::{Font, Glyph},
     gadget::Gadget,
-    gadgets::button::{DEFAULT_REPEAT_DELAY, DEFAULT_REPEAT_INTERVAL, Triangle},
-    painter::{Painter, Pen},
+    gadgets::button::{ContentArea, DEFAULT_REPEAT_DELAY, DEFAULT_REPEAT_INTERVAL},
+    painter::{Painter, Pen, inside_frame},
     rect::Rect,
-    shape::Direction,
 };
 
 use crate::{
@@ -15,63 +15,68 @@ use crate::{
     },
 };
 
-// from the panel's top left, one 11px row per TRK:/BLK:/EXPAND/NEW BLOCK line
-const TRK_LABEL: [i32; 2] = [2, 2];
-const CUT: Rect = Rect::new(28, 0, 28, 11);
-const COPY: Rect = Rect::new(57, 0, 36, 11);
-const PASTE: Rect = Rect::new(94, 0, 44, 11);
-const SWAP: Rect = Rect::new(139, 0, 38, 11);
-const INS_TRK: Rect = Rect::new(178, 0, 52, 11);
-const TRKS_LABEL: [i32; 2] = [236, 2];
-const TRK_COUNT_4: Rect = Rect::new(268, 0, 18, 11);
-const TRK_COUNT_8: Rect = Rect::new(287, 0, 18, 11);
-const TRK_COUNT_12: Rect = Rect::new(306, 0, 24, 11);
-const TRK_COUNT_16: Rect = Rect::new(331, 0, 24, 11);
+// from the panel's top left, measured from OctaMED. The rows are 11px with a 1px gap above the
+// third
+// the labels' tops, a row for each row of buttons
+const TOP_ROW: i32 = 3;
+const SECOND_ROW: i32 = 14;
+const TRK_LABEL: Words = &[(2, "TRK"), (26, ":")];
+const CUT: Rect = Rect::new(30, 0, 48, 11);
+const COPY: Rect = Rect::new(78, 0, 48, 11);
+const PASTE: Rect = Rect::new(126, 0, 48, 11);
+const SWAP: Rect = Rect::new(174, 0, 48, 11);
+const INS_TRK: Rect = Rect::new(224, 0, 54, 11);
+const TRKS_LABEL: Words = &[(280, "TRKS"), (312, ":")];
+const TRK_COUNT_4: Rect = Rect::new(316, 0, 33, 11);
+const TRK_COUNT_8: Rect = Rect::new(349, 0, 33, 11);
+const TRK_COUNT_12: Rect = Rect::new(382, 0, 33, 11);
+const TRK_COUNT_16: Rect = Rect::new(415, 0, 33, 11);
 
-const BLK_LABEL: [i32; 2] = [2, 13];
-const CUT_BLOCK: Rect = Rect::new(28, 11, 28, 11);
-const COPY_BLOCK: Rect = Rect::new(57, 11, 36, 11);
-const PASTE_BLOCK: Rect = Rect::new(94, 11, 44, 11);
-const SWAP_BLOCK: Rect = Rect::new(139, 11, 38, 11);
-const DEL_TRK: Rect = Rect::new(178, 11, 52, 11);
-const LINES_LABEL: [i32; 2] = [236, 13];
-const LINES_BOX: Rect = Rect::new(270, 11, 36, 11);
-const LINES_DEC: Rect = Rect::new(307, 11, 15, 11);
-const LINES_INC: Rect = Rect::new(323, 11, 15, 11);
-const LINES_DEC_10: Rect = Rect::new(339, 11, 19, 11);
-const LINES_INC_10: Rect = Rect::new(359, 11, 19, 11);
+const BLK_LABEL: Words = &[(3, "BLK"), (26, ":")];
+const CUT_BLOCK: Rect = Rect::new(30, 11, 48, 11);
+const COPY_BLOCK: Rect = Rect::new(78, 11, 48, 11);
+const PASTE_BLOCK: Rect = Rect::new(126, 11, 48, 11);
+const SWAP_BLOCK: Rect = Rect::new(174, 11, 48, 11);
+const DEL_TRK: Rect = Rect::new(224, 11, 54, 11);
+const LINES_LABEL: Words = &[(280, "LINES"), (315, ":")];
+const LINES_BOX: Rect = Rect::new(324, 11, 44, 11);
+const LINES_DEC: Rect = Rect::new(368, 11, 20, 11);
+const LINES_INC: Rect = Rect::new(388, 11, 20, 11);
+const LINES_DEC_10: Rect = Rect::new(408, 11, 20, 11);
+const LINES_INC_10: Rect = Rect::new(428, 11, 20, 11);
 
-const EXPAND: Rect = Rect::new(2, 22, 50, 11);
-const EXPAND_FACTOR: Rect = Rect::new(53, 22, 24, 11);
-const SHRINK: Rect = Rect::new(78, 22, 46, 11);
-const INS_LINE: Rect = Rect::new(130, 22, 40, 11);
-const DEL_LINE: Rect = Rect::new(171, 22, 40, 11);
-const DEL_BUFF: Rect = Rect::new(212, 22, 56, 11);
+const EXPAND: Rect = Rect::new(0, 23, 78, 11);
+const EXPAND_FACTOR: Rect = Rect::new(78, 23, 24, 11);
+const SHRINK: Rect = Rect::new(102, 23, 78, 11);
+const INS_LINE: Rect = Rect::new(180, 23, 50, 11);
+const DEL_LINE: Rect = Rect::new(230, 23, 50, 11);
+const DEL_BUFF: Rect = Rect::new(280, 23, 70, 11);
 const HIGHLIGHT: [Rect; 7] = [
-    Rect::new(269, 22, 16, 11),
-    Rect::new(286, 22, 16, 11),
-    Rect::new(303, 22, 16, 11),
-    Rect::new(320, 22, 16, 11),
-    Rect::new(337, 22, 16, 11),
-    Rect::new(354, 22, 22, 11),
-    Rect::new(377, 22, 16, 11),
+    Rect::new(350, 23, 14, 11),
+    Rect::new(364, 23, 14, 11),
+    Rect::new(378, 23, 14, 11),
+    Rect::new(392, 23, 14, 11),
+    Rect::new(406, 23, 14, 11),
+    Rect::new(420, 23, 14, 11),
+    Rect::new(434, 23, 14, 11),
 ];
 // the spacing each HIGHLIGHT button sets, C (last) clears it instead
 const HIGHLIGHT_SPACING: [usize; 6] = [1, 2, 3, 4, 8, 16];
 
-const NEW_BLOCK: Rect = Rect::new(2, 33, 72, 11);
-const NEW_BLOCK_DEF: Rect = Rect::new(75, 33, 28, 11);
-const NEW_HERE: Rect = Rect::new(104, 33, 64, 11);
-const NEW_HERE_DEF: Rect = Rect::new(169, 33, 28, 11);
-const DELETE_LAST: Rect = Rect::new(198, 33, 84, 11);
-const DELETE_THIS: Rect = Rect::new(283, 33, 84, 11);
-const SPLIT: Rect = Rect::new(368, 33, 34, 11);
-const JOIN: Rect = Rect::new(403, 33, 28, 11);
+const NEW_BLOCK: Rect = Rect::new(0, 34, 65, 11);
+const NEW_BLOCK_DEF: Rect = Rect::new(65, 34, 25, 11);
+const NEW_HERE: Rect = Rect::new(90, 34, 65, 11);
+const NEW_HERE_DEF: Rect = Rect::new(155, 34, 25, 11);
+const DELETE_LAST: Rect = Rect::new(180, 34, 90, 11);
+const DELETE_THIS: Rect = Rect::new(270, 34, 90, 11);
+const SPLIT: Rect = Rect::new(360, 34, 44, 11);
+const JOIN: Rect = Rect::new(404, 34, 44, 11);
 
 const TRACK_COUNTS: [usize; 4] = [4, 8, 12, 16];
 
-const LINES_ARROW: [i32; 2] = [6, 5];
-const LINES_ARROW_BAR_GAP: i32 = 2;
+// where the boxes' numbers start past their frames
+const LINES_PADDING: i32 = 0;
+const EXPAND_FACTOR_PADDING: i32 = 2;
 
 pub struct Block {
     // track/block clipboard operations aren't implemented yet, so these stay disabled
@@ -116,54 +121,56 @@ pub struct Block {
 impl Block {
     pub fn new() -> Self {
         let unhooked = |button: Button| button.enabled(false);
-        let narrow = |label: &'static str| Button::new(label).font(fonts::NARROW_LABEL);
-        let number_box = || {
+        let label = |words: Words| Button::new(placed(fonts::LABEL, words));
+        let narrow = |words: Words| Button::new(placed(fonts::NARROW_LABEL, words));
+        let number_box = |padding| {
             Textbox::new()
+                .font(fonts::INTERFACE)
                 .pens(Pen::BACKGROUND, Pen::SHINE, Pen::FILL, pens::RED)
-                .padding(0)
+                .padding(padding)
         };
         return Self {
-            cut_track: unhooked(narrow("CUT")),
-            copy_track: unhooked(narrow("COPY")),
-            paste_track: unhooked(narrow("PASTE")),
-            swap_track: unhooked(narrow("SWAP")),
-            cut_block: unhooked(narrow("CUT")),
-            copy_block: unhooked(narrow("COPY")),
-            paste_block: unhooked(narrow("PASTE")),
-            swap_block: unhooked(narrow("SWAP")),
-            del_buff: unhooked(narrow("DEL BUFF")),
+            cut_track: unhooked(label(&[(13, "CUT")])),
+            copy_track: unhooked(label(&[(10, "COPY")])),
+            paste_track: unhooked(label(&[(6, "PASTE")])),
+            swap_track: unhooked(label(&[(9, "SWAP")])),
+            cut_block: unhooked(label(&[(13, "CUT")])),
+            copy_block: unhooked(label(&[(10, "COPY")])),
+            paste_block: unhooked(label(&[(6, "PASTE")])),
+            swap_block: unhooked(label(&[(9, "SWAP")])),
+            del_buff: unhooked(label(&[(7, "DEL"), (35, "BUFF")])),
 
-            ins_track: narrow("INS.TRK"),
-            del_track: narrow("DEL.TRK"),
+            ins_track: narrow(&[(6, "INS.TRK")]),
+            del_track: narrow(&[(5, "DEL.TRK")]),
             // 5-8 channel mode (8/12/16 tracks) isn't supported yet, so there's nothing to pick
-            track_counts: TRACK_COUNTS.map(|count| unhooked(narrow(track_count_label(count)))),
+            track_counts: TRACK_COUNT_DIGITS.map(|digits| unhooked(Button::new(picture(digits)))),
 
-            lines_box: number_box(),
+            lines_box: number_box(LINES_PADDING),
             lines_box_was_focused: false,
-            lines_dec: step_button(Direction::Left, false),
-            lines_inc: step_button(Direction::Right, false),
-            lines_dec_10: step_button(Direction::Left, true),
-            lines_inc_10: step_button(Direction::Right, true),
+            lines_dec: step_button(&ARROW_LEFT),
+            lines_inc: step_button(&ARROW_RIGHT),
+            lines_dec_10: step_button(&DOUBLE_ARROW_LEFT),
+            lines_inc_10: step_button(&DOUBLE_ARROW_RIGHT),
 
-            expand: narrow("EXPAND"),
+            expand: label(&[(15, "EXPAND")]),
             expand_factor: {
-                let mut field = number_box();
+                let mut field = number_box(EXPAND_FACTOR_PADDING);
                 field.set_text("2");
                 field
             },
-            shrink: narrow("SHRINK"),
-            ins_line: narrow("INS.L."),
-            del_line: narrow("DEL.L."),
-            highlight: HIGHLIGHT_LABELS.map(narrow),
+            shrink: label(&[(20, "SHRINK")]),
+            ins_line: label(&[(8, "INS."), (35, "L.")]),
+            del_line: label(&[(7, "DEL."), (35, "L.")]),
+            highlight: HIGHLIGHT_LABELS.map(label),
 
-            new_block: narrow("NEW BLOCK"),
-            new_block_def: narrow("DEF"),
-            new_here: narrow("NEW HERE"),
-            new_here_def: narrow("DEF"),
-            delete_last: narrow("DELETE LAST"),
-            delete_this: narrow("DELETE THIS"),
-            split: narrow("SPLIT"),
-            join: narrow("JOIN"),
+            new_block: narrow(&[(4, "NEW"), (29, "BLOCK")]),
+            new_block_def: narrow(&[(4, "DEF")]),
+            new_here: narrow(&[(7, "NEW"), (32, "HERE")]),
+            new_here_def: narrow(&[(4, "DEF")]),
+            delete_last: label(&[(6, "DELETE"), (56, "LAST")]),
+            delete_this: label(&[(8, "DELETE"), (58, "THIS")]),
+            split: label(&[(6, "SPLIT")]),
+            join: label(&[(8, "JOIN")]),
         };
     }
 
@@ -203,25 +210,156 @@ impl Block {
     }
 }
 
-const HIGHLIGHT_LABELS: [&str; 7] = ["1", "2", "3", "4", "8", "16", "C"];
+const HIGHLIGHT_LABELS: [Words; 7] = [
+    &[(5, "1")],
+    &[(5, "2")],
+    &[(5, "3")],
+    &[(5, "4")],
+    &[(5, "8")],
+    &[(3, "1"), (7, "6")],
+    &[(4, "C")],
+];
 
-// bar: the fast (+/-10) variant, like the real OctaMED's double arrows
-fn step_button(direction: Direction, bar: bool) -> Button {
-    let [w, h] = LINES_ARROW;
-    let mut triangle = Triangle::new(direction, w, h);
-    if bar {
-        triangle = triangle.with_bar().bar_gap(LINES_ARROW_BAR_GAP);
-    }
-    return Button::new(triangle).repeat(DEFAULT_REPEAT_DELAY, DEFAULT_REPEAT_INTERVAL);
+// OctaMED drew this panel's labels by hand rather than centring them: each word with where its
+// first pixel is from the button's left
+type Words = &'static [(i32, &'static str)];
+
+// the labels' top from the button's
+const LABEL_Y: i32 = 3;
+
+fn placed(font: Font, words: Words) -> impl Fn(ContentArea, Pen, &mut Painter) {
+    return move |area, pen, painter| {
+        let [left, top] = button_origin(area);
+        draw_words(painter, font, [left, top + LABEL_Y], words, pen);
+    };
 }
 
-fn track_count_label(count: usize) -> &'static str {
-    return match count {
-        4 => "4",
-        8 => "8",
-        12 => "12",
-        _ => "16",
+fn draw_words(painter: &mut Painter, font: Font, [left, top]: [i32; 2], words: Words, pen: Pen) {
+    for &(x, word) in words {
+        let bearing = word
+            .chars()
+            .next()
+            .and_then(|c| font.glyph(c))
+            .map_or(0, blank_columns);
+        painter.text_in_font(left + x - bearing, top, word, pen, font);
+    }
+}
+
+// a glyph's empty columns on its left
+fn blank_columns(glyph: &Glyph) -> i32 {
+    let lit = glyph.lines.iter().filter(|&&line| line != 0);
+    return lit
+        .map(|line| line.leading_zeros() as i32)
+        .min()
+        .unwrap_or(0);
+}
+
+// a picture drawn a pixel per '#', from where its top left is in the button
+struct Picture {
+    at: [i32; 2],
+    rows: &'static [&'static str],
+}
+
+fn picture(picture: &'static Picture) -> impl Fn(ContentArea, Pen, &mut Painter) {
+    return move |area, pen, painter| {
+        let [left, top] = button_origin(area);
+        let [x, y] = picture.at;
+        for (row, line) in picture.rows.iter().enumerate() {
+            for (column, pixel) in line.bytes().enumerate() {
+                if pixel == b'#' {
+                    let pixel = Rect::new(left + x + column as i32, top + y + row as i32, 1, 1);
+                    painter.fill(pixel, pen);
+                }
+            }
+        }
     };
+}
+
+// the button's own top left, outside its frame
+fn button_origin(area: ContentArea) -> [i32; 2] {
+    let frame = inside_frame(Rect::new(0, 0, 0, 0), 1);
+    return [area.inside.x - frame.x, area.inside.y - frame.y];
+}
+
+const ARROW_LEFT: Picture = Picture {
+    at: [6, 2],
+    rows: &[
+        "......##", "....####", "..######", "########", "..######", "....####", "......##",
+    ],
+};
+const ARROW_RIGHT: Picture = Picture {
+    at: [6, 2],
+    rows: &[
+        "##......", "####....", "######..", "########", "######..", "####....", "##......",
+    ],
+};
+const DOUBLE_ARROW_LEFT: Picture = Picture {
+    at: [6, 2],
+    rows: &[
+        "...#...#", "..##..##", ".###.###", "########", ".###.###", "..##..##", "...#...#",
+    ],
+};
+const DOUBLE_ARROW_RIGHT: Picture = Picture {
+    at: [6, 2],
+    rows: &[
+        "#...#...", "##..##..", "###.###.", "########", "###.###.", "##..##..", "#...#...",
+    ],
+};
+
+// TRKS: has its own big digits
+const TRACK_COUNT_DIGITS: [&Picture; 4] = [
+    &Picture {
+        at: [9, 2],
+        rows: &[
+            "....###...###..",
+            "...###....###..",
+            "..###.....###..",
+            ".###......###..",
+            "###############",
+            "..........###..",
+            "..........###..",
+        ],
+    },
+    &Picture {
+        at: [11, 2],
+        rows: &[
+            ".###########.",
+            "###.......###",
+            "###.......###",
+            ".###########.",
+            "###.......###",
+            "###.......###",
+            ".###########.",
+        ],
+    },
+    &Picture {
+        at: [7, 2],
+        rows: &[
+            "..###....#########.",
+            ".####...###.....###",
+            "#####...........###",
+            "..###.........###..",
+            "..###.......###....",
+            "..###.....###......",
+            "#######..##########",
+        ],
+    },
+    &Picture {
+        at: [7, 2],
+        rows: &[
+            "..###....#########.",
+            ".####...###.....###",
+            "#####...###........",
+            "..###...##########.",
+            "..###...###.....###",
+            "..###...###.....###",
+            "#######..#########.",
+        ],
+    },
+];
+
+fn step_button(arrow: &'static Picture) -> Button {
+    return Button::new(picture(arrow)).repeat(DEFAULT_REPEAT_DELAY, DEFAULT_REPEAT_INTERVAL);
 }
 
 impl Gadget<AppState, Event> for Block {
@@ -353,19 +491,23 @@ impl Gadget<AppState, Event> for Block {
     }
 
     fn render(&mut self, state: &AppState, area: Rect, painter: &mut Painter) {
-        draw_label(painter, area, TRK_LABEL, "TRK:");
+        draw_label(painter, area, TOP_ROW, TRK_LABEL);
         self.cut_track.render(state, CUT.within(area), painter);
         self.copy_track.render(state, COPY.within(area), painter);
         self.paste_track.render(state, PASTE.within(area), painter);
         self.swap_track.render(state, SWAP.within(area), painter);
         self.ins_track.render(state, INS_TRK.within(area), painter);
-        draw_label(painter, area, TRKS_LABEL, "TRKS:");
+        // OctaMED's T here is missing its first column
+        let clip = Rect::new(area.x + TRKS_LABEL[0].0 + 1, area.y, area.w, area.h);
+        painter.clipped(clip, |painter| {
+            draw_label(painter, area, TOP_ROW, TRKS_LABEL);
+        });
         let track_count_rects = [TRK_COUNT_4, TRK_COUNT_8, TRK_COUNT_12, TRK_COUNT_16];
         for (button, rect) in self.track_counts.iter_mut().zip(track_count_rects) {
             button.render(state, rect.within(area), painter);
         }
 
-        draw_label(painter, area, BLK_LABEL, "BLK:");
+        draw_label(painter, area, SECOND_ROW, BLK_LABEL);
         self.cut_block
             .render(state, CUT_BLOCK.within(area), painter);
         self.copy_block
@@ -375,9 +517,8 @@ impl Gadget<AppState, Event> for Block {
         self.swap_block
             .render(state, SWAP_BLOCK.within(area), painter);
         self.del_track.render(state, DEL_TRK.within(area), painter);
-        draw_label(painter, area, LINES_LABEL, "LINES:");
-        self.lines_box
-            .render(state, LINES_BOX.within(area), painter);
+        draw_label(painter, area, SECOND_ROW, LINES_LABEL);
+        render_number_box(&mut self.lines_box, state, LINES_BOX.within(area), painter);
         self.lines_dec
             .render(state, LINES_DEC.within(area), painter);
         self.lines_inc
@@ -388,8 +529,12 @@ impl Gadget<AppState, Event> for Block {
             .render(state, LINES_INC_10.within(area), painter);
 
         self.expand.render(state, EXPAND.within(area), painter);
-        self.expand_factor
-            .render(state, EXPAND_FACTOR.within(area), painter);
+        render_number_box(
+            &mut self.expand_factor,
+            state,
+            EXPAND_FACTOR.within(area),
+            painter,
+        );
         self.shrink.render(state, SHRINK.within(area), painter);
         self.ins_line.render(state, INS_LINE.within(area), painter);
         self.del_line.render(state, DEL_LINE.within(area), painter);
@@ -414,13 +559,18 @@ impl Gadget<AppState, Event> for Block {
     }
 }
 
-fn draw_label(painter: &mut Painter, area: Rect, [x, y]: [i32; 2], text: &str) {
-    painter.text_in_font(
-        area.x + x,
-        area.y + y,
-        text,
+fn render_number_box(textbox: &mut Textbox, state: &AppState, area: Rect, painter: &mut Painter) {
+    textbox.render(state, area, painter);
+    painter.frame_inverted(area, 1);
+}
+
+fn draw_label(painter: &mut Painter, area: Rect, row: i32, words: Words) {
+    draw_words(
+        painter,
+        fonts::LABEL,
+        [area.x, area.y + row],
+        words,
         Pen::BACKGROUND,
-        fonts::NARROW_LABEL,
     );
 }
 
@@ -494,12 +644,7 @@ mod tests {
             ("JOIN", JOIN),
         ]
         .into_iter()
-        .chain(
-            HIGHLIGHT
-                .into_iter()
-                .zip(HIGHLIGHT_LABELS)
-                .map(|(rect, label)| (label, rect)),
-        )
+        .chain(HIGHLIGHT.into_iter().map(|rect| ("HIGHLIGHT", rect)))
         .collect();
     }
 

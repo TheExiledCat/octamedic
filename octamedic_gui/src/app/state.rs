@@ -921,6 +921,12 @@ impl AppState {
         if let Some(active) = self.active_pattern_mut() {
             active.join(&next);
         }
+        // what played the block below now plays the two of them, like what played this one
+        for id in self.song_mut().sequence_mut() {
+            if id.0 as usize == index + 1 {
+                id.0 = index as u8;
+            }
+        }
         self.song_mut().remove_pattern(index + 1);
         self.send_all_to_engine();
     }
@@ -1270,6 +1276,17 @@ mod tests {
         state.join_block();
         assert_eq!(state.song().patterns.len(), 1);
         assert_eq!(state.active_pattern().unwrap().line_count(), 64);
+    }
+
+    #[test]
+    fn joining_keeps_the_sequence_on_the_joined_block() {
+        let mut state = state();
+        state.new_block();
+        state.new_block();
+        assert_eq!(state.song().sequence(), [0, 1, 2].map(PatternId));
+        state.active_pattern = PatternId(0);
+        state.join_block();
+        assert_eq!(state.song().sequence(), [0, 0, 1].map(PatternId));
     }
 
     #[test]
