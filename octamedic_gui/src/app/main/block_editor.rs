@@ -29,7 +29,7 @@ use crate::{
     },
     framework::{
         event::Event,
-        keymap::{Action, Key, KeyActions, Keymap},
+        keymap::{AMIGA, Action, Key, KeyActions, Keymap},
         widgets::audio_view::{Oscilloscope, VuMeter},
     },
 };
@@ -117,6 +117,13 @@ pub enum EditorAction {
     // the BLOCK panel's DEL.TRK and INS.TRK
     DeleteTrack,
     InsertTrack,
+    // the BLOCK panel's TRK: and BLK: buttons
+    CutTrack,
+    CopyTrack,
+    PasteTrack,
+    CutBlock,
+    CopyBlock,
+    PasteBlock,
 }
 
 impl Action for EditorAction {
@@ -175,6 +182,24 @@ impl BlockEditor {
                 Key::new(KeyCode::Back, KeyMods::SHIFT | KeyMods::ALT),
                 InsertTrack,
                 "Ins track",
+            )
+            .bind(Key::amiga(KeyCode::X), CutTrack, "Cut track")
+            .bind(Key::amiga(KeyCode::C), CopyTrack, "Copy track")
+            .bind(Key::amiga(KeyCode::V), PasteTrack, "Paste track")
+            .bind(
+                Key::new(KeyCode::X, AMIGA | KeyMods::SHIFT),
+                CutBlock,
+                "Cut block",
+            )
+            .bind(
+                Key::new(KeyCode::C, AMIGA | KeyMods::SHIFT),
+                CopyBlock,
+                "Copy block",
+            )
+            .bind(
+                Key::new(KeyCode::V, AMIGA | KeyMods::SHIFT),
+                PasteBlock,
+                "Paste block",
             );
         return Self {
             keys,
@@ -435,6 +460,12 @@ impl KeyActions for BlockEditor {
             // like the buttons, these don't need edit mode
             DeleteTrack => state.delete_track(),
             InsertTrack => state.insert_track(),
+            CutTrack => state.cut_track(),
+            CopyTrack => state.copy_track(),
+            PasteTrack => state.paste_track(),
+            CutBlock => state.cut_block(),
+            CopyBlock => state.copy_block(),
+            PasteBlock => state.paste_block(),
         }
     }
 
@@ -468,6 +499,12 @@ impl KeyActions for BlockEditor {
             InsertSpace => "Insert a space in the track",
             DeleteTrack => "Delete the track, like DEL.TRK",
             InsertTrack => "Insert a track, like INS.TRK",
+            CutTrack => "Cut the track into the track buffer",
+            CopyTrack => "Copy the track into the track buffer",
+            PasteTrack => "Overwrite the track with the track buffer",
+            CutBlock => "Cut the block into the block buffer",
+            CopyBlock => "Copy the block into the block buffer",
+            PasteBlock => "Replace the block with the block buffer",
         };
     }
 }
