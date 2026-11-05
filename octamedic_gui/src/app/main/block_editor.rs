@@ -108,6 +108,15 @@ pub enum EditorAction {
     Highlight,
     // the bottom row of note keys; the top row plays the octave above
     Octave(u8),
+    // the note and instrument, or the command digit under the cursor
+    DeleteNote,
+    DeleteCell,
+    // in the cursor's track, the rest of it moving up into the gap or down out of the way
+    DeleteSpace,
+    InsertSpace,
+    // the BLOCK panel's DEL.TRK and INS.TRK
+    DeleteTrack,
+    InsertTrack,
 }
 
 impl Action for EditorAction {
@@ -156,7 +165,17 @@ impl BlockEditor {
             .bind(Key::plain(KeyCode::F2), Octave(2), "Octave 2")
             .bind(Key::plain(KeyCode::F3), Octave(3), "Octave 3")
             .bind(Key::plain(KeyCode::F4), Octave(4), "Octave 4")
-            .bind(Key::plain(KeyCode::F5), Octave(5), "Octave 5");
+            .bind(Key::plain(KeyCode::F5), Octave(5), "Octave 5")
+            .bind(Key::plain(KeyCode::Delete), DeleteNote, "Del note")
+            .bind(Key::shift(KeyCode::Delete), DeleteCell, "Del note+cmd")
+            .bind(Key::plain(KeyCode::Back), DeleteSpace, "Del space")
+            .bind(Key::shift(KeyCode::Back), InsertSpace, "Ins space")
+            .bind(Key::alt(KeyCode::Back), DeleteTrack, "Del track")
+            .bind(
+                Key::new(KeyCode::Back, KeyMods::SHIFT | KeyMods::ALT),
+                InsertTrack,
+                "Ins track",
+            );
         return Self {
             keys,
             first_track: 0,
@@ -395,6 +414,27 @@ impl KeyActions for BlockEditor {
             PreviousBlock => state.select_block(block.saturating_sub(1)),
             NextBlock => state.select_block(block + 1),
             Octave(octave) => state.set_octave(octave),
+            DeleteNote => delete(state, false),
+            DeleteCell => delete(state, true),
+            DeleteSpace | InsertSpace => {
+                let EditCursor {
+                    line,
+                    track,
+                    edit_mode,
+                    ..
+                } = *cursor;
+                if !edit_mode {
+                    return;
+                }
+                if action == DeleteSpace {
+                    state.pull_up(line, track);
+                } else {
+                    state.push_down(line, track);
+                }
+            }
+            // like the buttons, these don't need edit mode
+            DeleteTrack => state.delete_track(),
+            InsertTrack => state.insert_track(),
         }
     }
 
@@ -422,6 +462,12 @@ impl KeyActions for BlockEditor {
             Hold => "Enter a hold: no note, just the instrument",
             Highlight => "Highlight the line, or take its highlight off",
             Octave(_) => "Play notes from this octave up",
+            DeleteNote => "Delete the note, or the digit under the cursor",
+            DeleteCell => "Delete the note and its command",
+            DeleteSpace => "Delete the note and close the gap in its track",
+            InsertSpace => "Insert a space in the track",
+            DeleteTrack => "Delete the track, like DEL.TRK",
+            InsertTrack => "Insert a track, like INS.TRK",
         };
     }
 }
@@ -624,6 +670,27 @@ fn enter_key(state: &mut AppState, key: char) -> bool {
     }
     move_down(state);
     return true;
+}
+
+// Del clears the note and instrument, on the instrument column just the instrument and on a
+// command column just that digit; with shift the whole cell. Then down by the line add, like
+// entering something
+fn delete(state: &mut AppState, whole_cell: bool) {
+    let cursor = state.cursor;
+    if !cursor.edit_mode {
+        return;
+    }
+    state.edit_track(cursor.line, cursor.track, |cell| {
+        if whole_cell {
+            *cell = OctamedicPatternTrack::new();
+        } else if cursor.column == 0 {
+            cell.note = OctamedicNote::new();
+            cell.instrument_id = InstrumentId(0);
+        } else if let Some(cleared) = type_digit(*cell, cursor.column, '0') {
+            *cell = cleared;
+        }
+    });
+    move_down(state);
 }
 
 fn enter_hold(state: &mut AppState) {
@@ -1221,5 +1288,106 @@ mod tests {
         let x = Layout::new(editor.area, 4).track_x(0);
         assert!(!editor.handle_event(&mut state, &mouse_down(x, MouseButton::Right)));
         assert!(!state.is_track_muted(0));
+    }
+
+    fn cell_at(state: &AppState, line: usize, track: usize) -> OctamedicPatternTrack {
+        return *state.active_pattern().unwrap().track(line, track).unwrap();
+    }
+
+    fn filled(note: u8) -> OctamedicPatternTrack {
+        return OctamedicPatternTrack {
+            note: OctamedicNote { value: note },
+            instrument_id: InstrumentId(2),
+            command_id: CommandId(0x0C),
+            command_value: 0x34,
+        };
+    }
+
+    // lines 0 to 3 of track 0 hold notes 1 to 4, all with an instrument and a command
+    fn filled_state() -> AppState {
+        let mut state = state();
+        for line in 0..4 {
+            state.edit_track(line, 0, |cell| *cell = filled(line as u8 + 1));
+        }
+        state.cursor.edit_mode = true;
+        return state;
+    }
+
+    #[test]
+    fn del_clears_the_note_or_a_digit() {
+        let (mut editor, mut state) = (BlockEditor::new(), filled_state());
+        press(&mut editor, &mut state, KeyCode::Delete, KeyMods::NONE);
+        let cleared = OctamedicPatternTrack {
+            note: OctamedicNote::new(),
+            instrument_id: InstrumentId(0),
+            ..filled(1)
+        };
+        assert_eq!(cell_at(&state, 0, 0), cleared);
+        assert_eq!(state.cursor.line, 1, "down like entering a note");
+        // on the instrument column only the instrument goes
+        state.cursor.column = 1;
+        press(&mut editor, &mut state, KeyCode::Delete, KeyMods::NONE);
+        assert_eq!(cell_at(&state, 1, 0).instrument_id, InstrumentId(0));
+        assert_eq!(cell_at(&state, 1, 0).note.value, 2);
+        // on the value's low digit only that digit goes
+        state.cursor.column = 5;
+        press(&mut editor, &mut state, KeyCode::Delete, KeyMods::NONE);
+        assert_eq!(cell_at(&state, 2, 0).command_value, 0x30);
+        assert_eq!(cell_at(&state, 2, 0).note.value, 3);
+        // shift takes the whole cell, whichever column
+        press(&mut editor, &mut state, KeyCode::Delete, KeyMods::SHIFT);
+        assert_eq!(cell_at(&state, 3, 0), OctamedicPatternTrack::new());
+    }
+
+    #[test]
+    fn backspace_closes_and_opens_gaps_in_the_track() {
+        let (mut editor, mut state) = (BlockEditor::new(), filled_state());
+        state.edit_track(2, 1, |cell| *cell = filled(9));
+        state.cursor.line = 1;
+        press(&mut editor, &mut state, KeyCode::Back, KeyMods::NONE);
+        let notes = |state: &AppState| {
+            return (0..4)
+                .map(|line| cell_at(state, line, 0).note.value)
+                .collect::<Vec<_>>();
+        };
+        assert_eq!(notes(&state), [1, 3, 4, 0]);
+        assert_eq!(cell_at(&state, 2, 1), filled(9), "other tracks stay put");
+        assert_eq!(state.cursor.line, 1);
+        press(&mut editor, &mut state, KeyCode::Back, KeyMods::SHIFT);
+        assert_eq!(notes(&state), [1, 0, 3, 4]);
+        assert_eq!(state.active_pattern().unwrap().line_count(), 64);
+    }
+
+    #[test]
+    fn deleting_needs_edit_mode() {
+        let (mut editor, mut state) = (BlockEditor::new(), filled_state());
+        state.cursor.edit_mode = false;
+        for (key, mods) in [
+            (KeyCode::Delete, KeyMods::NONE),
+            (KeyCode::Delete, KeyMods::SHIFT),
+            (KeyCode::Back, KeyMods::NONE),
+            (KeyCode::Back, KeyMods::SHIFT),
+        ] {
+            press(&mut editor, &mut state, key, mods);
+        }
+        assert_eq!(cell_at(&state, 0, 0), filled(1));
+        assert_eq!(state.cursor.line, 0);
+    }
+
+    #[test]
+    fn alt_backspace_deletes_and_inserts_tracks() {
+        let (mut editor, mut state) = (BlockEditor::new(), filled_state());
+        state.cursor.edit_mode = false;
+        press(
+            &mut editor,
+            &mut state,
+            KeyCode::Back,
+            KeyMods::SHIFT | KeyMods::ALT,
+        );
+        assert_eq!(cell_at(&state, 0, 0), OctamedicPatternTrack::new());
+        assert_eq!(cell_at(&state, 0, 1), filled(1));
+        press(&mut editor, &mut state, KeyCode::Back, KeyMods::ALT);
+        assert_eq!(cell_at(&state, 0, 0), filled(1));
+        assert_eq!(state.active_pattern().unwrap().track_count(), 4);
     }
 }

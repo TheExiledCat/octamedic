@@ -14,7 +14,9 @@ use rustuition::{
 use crate::{
     app::{
         files::load_module,
-        fonts, pens,
+        fonts,
+        header::finished_edit,
+        pens,
         prompt::Prompt,
         state::{AppState, InstrumentSaveType, ModFormat, SaveFormat},
     },
@@ -441,12 +443,6 @@ fn load_song(state: &mut AppState, path: &std::path::Path) {
         Ok(project) => state.load_project(project),
         Err(error) => state.notify(error.to_string()),
     }
-}
-
-fn finished_edit(textbox: &Textbox, was_focused: &mut bool) -> Option<String> {
-    let left = *was_focused && !textbox.is_focused();
-    *was_focused = textbox.is_focused();
-    return left.then(|| textbox.text().to_owned());
 }
 
 fn label_button(label: &'static str) -> Button {

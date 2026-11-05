@@ -93,6 +93,37 @@ impl OctamedicSong {
         return Arc::make_mut(&mut self.patterns[index]);
     }
 
+    /// Inserts `pattern` as block `index`, shifting every later block (and the sequence entries
+    /// pointing to them) up by one, and returns its new id.
+    pub fn insert_pattern(&mut self, index: usize, pattern: OctamedicPattern) -> PatternId {
+        let index = index.min(self.patterns.len());
+        self.patterns.insert(index, Arc::new(pattern));
+        for id in &mut self.sequence {
+            if id.0 as usize >= index {
+                id.0 += 1;
+            }
+        }
+        return PatternId(index as u8);
+    }
+
+    /// Removes block `index`, shifting every later block (and the sequence entries pointing to
+    /// them) down by one. Entries that played it are dropped, leaving block 0 if nothing's left.
+    pub fn remove_pattern(&mut self, index: usize) {
+        if index >= self.patterns.len() {
+            return;
+        }
+        self.patterns.remove(index);
+        self.sequence.retain(|id| id.0 as usize != index);
+        for id in &mut self.sequence {
+            if id.0 as usize > index {
+                id.0 -= 1;
+            }
+        }
+        if self.sequence.is_empty() {
+            self.sequence.push(PatternId(0));
+        }
+    }
+
     pub fn sequence(&self) -> &[PatternId] {
         return &self.sequence;
     }
@@ -164,5 +195,56 @@ mod tests {
                 .value,
             13
         );
+    }
+
+    // blocks 0, 1, 2, sequence 0, 1, 2, 0
+    fn three_block_song() -> OctamedicSong {
+        let mut song = OctamedicSong::new("test");
+        song.patterns.push(Arc::new(OctamedicPattern::new()));
+        song.patterns.push(Arc::new(OctamedicPattern::new()));
+        *song.sequence_mut() = vec![PatternId(0), PatternId(1), PatternId(2), PatternId(0)];
+        return song;
+    }
+
+    #[test]
+    fn insert_pattern_shifts_later_blocks_and_sequence() {
+        let mut song = three_block_song();
+        let id = song.insert_pattern(1, OctamedicPattern::new());
+        assert_eq!(id, PatternId(1));
+        assert_eq!(song.patterns.len(), 4);
+        // the old 1 and 2 moved to 2 and 3; the old 0 (used twice) stayed put
+        assert_eq!(
+            song.sequence(),
+            [PatternId(0), PatternId(2), PatternId(3), PatternId(0)]
+        );
+    }
+
+    #[test]
+    fn insert_pattern_at_the_end_appends() {
+        let mut song = three_block_song();
+        let id = song.insert_pattern(song.patterns.len(), OctamedicPattern::new());
+        assert_eq!(id, PatternId(3));
+        assert_eq!(
+            song.sequence(),
+            [PatternId(0), PatternId(1), PatternId(2), PatternId(0)]
+        );
+    }
+
+    #[test]
+    fn remove_pattern_shifts_later_blocks_and_drops_its_entries() {
+        let mut song = three_block_song();
+        song.remove_pattern(1);
+        assert_eq!(song.patterns.len(), 2);
+        // the entry that played block 1 is gone, the old 2 now being 1
+        assert_eq!(song.sequence(), [PatternId(0), PatternId(1), PatternId(0)]);
+    }
+
+    #[test]
+    fn remove_pattern_keeps_the_sequence_playing_something() {
+        let mut song = three_block_song();
+        *song.sequence_mut() = vec![PatternId(2), PatternId(2)];
+        song.remove_pattern(2);
+        assert_eq!(song.patterns.len(), 2);
+        assert_eq!(song.sequence(), [PatternId(0)]);
     }
 }

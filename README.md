@@ -27,10 +27,10 @@ A faithful clone of OctaMED Professional v4
 - Cross platform for Windows 10+, Linux and Mac
 - Full audio interface support using direct or ASIO style drivers (based on platform)
     - Includes midi in and out for audio interfaces, with both transport and clock sync capabilities
-    - Track seperation support for sending up to 8 octamed channels out
+    - Track separation support for sending up to 8 octamed channels out
     - Record master from Internal audio or from interface IO or both while rendering
 - Can simulate both PAL and NTSC clock speeds and views
-- original 12 bit amiga color pallete
+- original 12 bit amiga color palette
 
 ## Contributing
 
@@ -42,7 +42,7 @@ A faithful clone of OctaMED Professional v4
 
 ## Documentation
 
-For a manual, aqcuire the original OctaMED manual
+For a manual, acquire the original OctaMED manual
 
 There will be a tiny addendum that will specify all the changes made from the original.
 
@@ -68,7 +68,7 @@ It is also possible to build from source using the rust cargo toolchain. This wa
 - octamedic_util
     - small helpers shared by the other crates
 - rustuition
-    - custom made UI toolkit to recreate the AmigaOS look from intution
+    - custom made UI toolkit to recreate the AmigaOS look from Intuition
 ## Roadmap
 
 What's needed for the first release is tracked in [V0.0.1TARGETS.md](V0.0.1TARGETS.md).
@@ -77,7 +77,7 @@ What's needed for the first release is tracked in [V0.0.1TARGETS.md](V0.0.1TARGE
 - [ ] Loading protracker/soundtracker supported modules
 - [X] Loading extra metadata from mmd files
 - [X] Initial engine iteration which can playback real mmd files with just note data (no commands yet)
-- [ ] Initial editor iteration that can edit notes and patterns of existing mmd files but cant edit instrument data
+- [X] Initial editor iteration that can edit notes and patterns of existing mmd files but cant edit instrument data
 - [ ] Write back modules to:
     - [ ] MMD0
     - [ ] MMD1 (No Instr)
