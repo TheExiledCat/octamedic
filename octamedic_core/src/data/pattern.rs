@@ -91,6 +91,31 @@ impl OctamedicPattern {
         }
     }
 
+    /// Takes `track`'s cell at `line` out: the cells below it in that track move up one and an
+    /// empty one comes in at the bottom, so the block keeps its length.
+    pub fn pull_track_up(&mut self, line: usize, track: usize) {
+        if line >= self.lines.len() || track >= self.track_count() {
+            return;
+        }
+        for index in line..self.lines.len() - 1 {
+            self.lines[index].tracks[track] = self.lines[index + 1].tracks[track];
+        }
+        let last = self.lines.len() - 1;
+        self.lines[last].tracks[track] = OctamedicPatternTrack::new();
+    }
+
+    /// Puts an empty cell in `track` at `line`: the cells below it in that track move down one and
+    /// the bottom one drops off, so the block keeps its length.
+    pub fn push_track_down(&mut self, line: usize, track: usize) {
+        if line >= self.lines.len() || track >= self.track_count() {
+            return;
+        }
+        for index in (line + 1..self.lines.len()).rev() {
+            self.lines[index].tracks[track] = self.lines[index - 1].tracks[track];
+        }
+        self.lines[line].tracks[track] = OctamedicPatternTrack::new();
+    }
+
     /// Inserts an empty track at `index` in every line; the rightmost track is dropped, so the
     /// track count doesn't change.
     pub fn insert_track(&mut self, index: usize) {
@@ -260,6 +285,38 @@ mod tests {
             line.tracks[0].note.value = index as u8 + 1;
         }
         return pattern;
+    }
+
+    fn notes(pattern: &OctamedicPattern, track: usize) -> Vec<u8> {
+        return pattern
+            .lines
+            .iter()
+            .map(|line| line.tracks[track].note.value)
+            .collect();
+    }
+
+    #[test]
+    fn pulling_a_track_up_keeps_the_length() {
+        let mut pattern = numbered(4, 2);
+        pattern.lines[2].tracks[1].note.value = 9;
+        pattern.pull_track_up(1, 0);
+        assert_eq!(notes(&pattern, 0), [1, 3, 4, 0]);
+        // the other track stays put
+        assert_eq!(notes(&pattern, 1), [0, 0, 9, 0]);
+        pattern.pull_track_up(3, 0);
+        assert_eq!(notes(&pattern, 0), [1, 3, 4, 0]);
+    }
+
+    #[test]
+    fn pushing_a_track_down_drops_the_last() {
+        let mut pattern = numbered(4, 2);
+        pattern.push_track_down(1, 0);
+        assert_eq!(notes(&pattern, 0), [1, 0, 2, 3]);
+        assert_eq!(notes(&pattern, 1), [0, 0, 0, 0]);
+        // past the block's edges nothing happens
+        pattern.push_track_down(4, 0);
+        pattern.push_track_down(0, 2);
+        assert_eq!(notes(&pattern, 0), [1, 0, 2, 3]);
     }
 
     #[test]

@@ -151,6 +151,13 @@ down, 9 and 3 a page of 8), Alt+Shift+Left/Right jump 16, Amiga+I opens INSTR wi
 selected and Amiga+Shift+I clears it first. Amiga+F switches the filter. In the command and value
 columns Alt and a number key types 10 more, so Alt+0 to Alt+5 are A to F.
 
+In edit mode Del clears the note and its instrument, on the instrument column just the
+instrument, and on a command or value column just the digit under the cursor, and Shift+Del the whole cell; both move down like entering a note.
+Backspace takes the cell out of its track, the rest of the track moving up into the gap, and
+Shift+Backspace opens an empty one, pushing the rest down; the block keeps its length
+(`OctamedicPattern::pull_track_up` and `push_track_down`). Alt+Backspace and Shift+Alt+Backspace are
+the BLOCK panel's DEL.TRK and INS.TRK, and like the buttons don't need edit mode.
+
 Enter or A in the note column puts in a hold: no note, just the selected instrument, shown as `-|-`
 like any cell with an instrument and no note. It keeps a note held past its instrument's hold length
 (see [docs/PLAYER.md](../docs/PLAYER.md)).

@@ -365,16 +365,10 @@ fn step_button(arrow: &'static Picture) -> Button {
 impl Gadget<AppState, Event> for Block {
     fn update(&mut self, state: &mut AppState) {
         if self.ins_track.clicked().is_some() {
-            let track = state.cursor.track;
-            if let Some(pattern) = state.active_pattern_mut() {
-                pattern.insert_track(track);
-            }
+            state.insert_track();
         }
         if self.del_track.clicked().is_some() {
-            let track = state.cursor.track;
-            if let Some(pattern) = state.active_pattern_mut() {
-                pattern.delete_track(track);
-            }
+            state.delete_track();
         }
         let active_tracks = state.active_pattern().map_or(0, |p| p.track_count());
         let mut track_count_group =

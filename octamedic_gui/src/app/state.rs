@@ -761,6 +761,36 @@ impl AppState {
         return Some(note);
     }
 
+    /// Takes the cell at `line` out of `track`, the rest of the track closing the gap from below.
+    pub fn pull_up(&mut self, line: usize, track: usize) {
+        if let Some(pattern) = self.active_pattern_mut() {
+            pattern.pull_track_up(line, track);
+        }
+    }
+
+    /// Opens an empty cell at `line` in `track`, pushing the rest of the track down and off the end.
+    pub fn push_down(&mut self, line: usize, track: usize) {
+        if let Some(pattern) = self.active_pattern_mut() {
+            pattern.push_track_down(line, track);
+        }
+    }
+
+    /// INS.TRK: an empty track at the cursor's, the rightmost one dropping off.
+    pub fn insert_track(&mut self) {
+        let track = self.cursor.track;
+        if let Some(pattern) = self.active_pattern_mut() {
+            pattern.insert_track(track);
+        }
+    }
+
+    /// DEL.TRK: the cursor's track goes, the ones right of it moving left.
+    pub fn delete_track(&mut self) {
+        let track = self.cursor.track;
+        if let Some(pattern) = self.active_pattern_mut() {
+            pattern.delete_track(track);
+        }
+    }
+
     pub fn enter_note(&mut self, track: usize, line: usize, note: OctamedicNote) {
         let instrument = self.active_instrument;
         self.edit_track(line, track, |cell| {
