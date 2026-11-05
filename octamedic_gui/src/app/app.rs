@@ -8,6 +8,7 @@ use ggez::{
         keyboard::{KeyCode, KeyInput, KeyMods},
         mouse,
     },
+    winit::dpi::PhysicalSize,
 };
 use octamedic_core::{
     amiga::clock::VideoStandard, data::project::OctamedicProject, engine::handle::EngineHandle,
@@ -22,7 +23,10 @@ use rustuition::{
 };
 
 use crate::{
-    app::{DEFAULT_VIDEO, main_view::MainView, prompt, screen, state::AppState},
+    app::{
+        DEFAULT_VIDEO, main_view::MainView, prompt, screen, state::AppState,
+        window_shape::WindowShape,
+    },
     framework::{
         dialog_stack::DialogStack,
         event::{self, Event},
@@ -48,6 +52,7 @@ pub struct App {
     cursor_pixels: CursorPixels,
     scale_mode: ScaleMode,
     viewport: Viewport,
+    window_shape: WindowShape,
     // in screen pixels
     pointer: Point,
     next_frame: Instant,
@@ -73,8 +78,10 @@ impl App {
             video: DEFAULT_VIDEO,
             cursor: Image::from_bytes(ctx, CURSOR)?,
             cursor_pixels: CursorPixels::decode(CURSOR)?,
-            scale_mode: ScaleMode::default(),
+            // fills the window at any size, not just whole steps
+            scale_mode: ScaleMode::Fit,
             viewport: Viewport::default(),
+            window_shape: WindowShape::new(drawable_size(ctx)),
             pointer: Point::new(0, 0),
             next_frame: Instant::now(),
             key_repeated: false,
@@ -111,8 +118,29 @@ impl App {
     }
 
     fn fit_viewport(&mut self, ctx: &Context) {
-        let (width, height) = ctx.gfx.drawable_size();
-        self.viewport = screen(self.video).viewport([width, height], self.scale_mode);
+        self.viewport = screen(self.video).viewport(drawable_size(ctx), self.scale_mode);
+    }
+
+    // a windowed window goes back to the screen's shape once it's been resized
+    fn keep_window_shape(&mut self, ctx: &Context) {
+        let window = ctx.gfx.window();
+        let free = !window.is_maximized() && window.fullscreen().is_none();
+        let limit = window.current_monitor().map(|monitor| {
+            let (outer, inner, area) = (window.outer_size(), window.inner_size(), monitor.size());
+            // less the title bar and borders
+            let room = |area: u32, outer: u32, inner: u32| {
+                return area.saturating_sub(outer.saturating_sub(inner)) as f32;
+            };
+            [
+                room(area.width, outer.width, inner.width),
+                room(area.height, outer.height, inner.height),
+            ]
+        });
+        let shape = screen(self.video).window_size(1.0);
+        let settled = self.window_shape.settle(Instant::now(), shape, limit, free);
+        if let Some([width, height]) = settled {
+            window.set_inner_size(PhysicalSize::new(width as u32, height as u32));
+        }
     }
 
     fn follow_video(&mut self, ctx: &Context) {
@@ -122,6 +150,9 @@ impl App {
         self.video = self.state.video();
         self.screen = screen_image(ctx, self.video);
         self.fit_viewport(ctx);
+        // NTSC's screen is a different shape
+        self.window_shape
+            .resized(Instant::now(), drawable_size(ctx));
     }
 
     fn track_alt(&mut self, key: KeyCode, held: bool) {
@@ -207,6 +238,7 @@ impl EventHandler for App {
         self.main.update(&mut self.state);
         self.dialogs.update(&mut self.state);
         self.follow_video(ctx);
+        self.keep_window_shape(ctx);
         if self.state.exit_requested {
             ctx.request_quit();
         }
@@ -232,6 +264,8 @@ impl EventHandler for App {
 
     fn resize_event(&mut self, ctx: &mut Context, _width: f32, _height: f32) -> GameResult {
         self.fit_viewport(ctx);
+        self.window_shape
+            .resized(Instant::now(), drawable_size(ctx));
         return Ok(());
     }
 
@@ -392,6 +426,11 @@ fn screen_image(ctx: &Context, video: VideoStandard) -> Image {
         screen.height as u32,
         1,
     );
+}
+
+fn drawable_size(ctx: &Context) -> [f32; 2] {
+    let (width, height) = ctx.gfx.drawable_size();
+    return [width, height];
 }
 
 #[cfg(test)]

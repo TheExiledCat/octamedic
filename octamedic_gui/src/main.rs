@@ -97,13 +97,13 @@ fn frame_size(window: &Window) -> [f32; 2] {
     ];
 }
 
-// whole pixels per screen pixel, so they all come out the same size
+// the screen's scaled to fit the window, so any size that fits will do
 fn start_scale(screen: Screen, most: f32, space: Option<[f32; 2]>) -> f32 {
     let [width, height] = screen.window_size(1.0);
     let fit = space.map_or(most, |[space_width, space_height]| {
         (space_width / width).min(space_height / height)
     });
-    return most.min(fit).floor().max(1.0);
+    return most.min(fit).max(1.0);
 }
 
 fn centered(monitor: &MonitorHandle, size: [f32; 2]) -> PhysicalPosition<i32> {
@@ -126,15 +126,18 @@ mod tests {
         // a 5K display at 2x, with the space it leaves for 2x points (4)
         assert_eq!(start_scale(SCREEN, 4.0, Some([4608.0, 2536.0])), 4.0);
         // a 13" MacBook at 2x is too short for 4
-        assert_eq!(start_scale(SCREEN, 4.0, Some([2646.0, 1664.0])), 3.0);
+        assert_eq!(start_scale(SCREEN, 4.0, Some([2646.0, 1664.0])), 3.25);
         // 1080p at 1x, too short for 2
-        assert_eq!(start_scale(SCREEN, 2.0, Some([1712.0, 941.0])), 1.0);
+        assert_eq!(
+            start_scale(SCREEN, 2.0, Some([1712.0, 941.0])),
+            941.0 / 512.0
+        );
     }
 
     #[test]
-    fn start_scale_is_whole() {
+    fn start_scale_needs_not_be_whole() {
         // 125% Windows scaling
-        assert_eq!(start_scale(SCREEN, 2.5, Some([3000.0, 3000.0])), 2.0);
+        assert_eq!(start_scale(SCREEN, 2.5, Some([3000.0, 3000.0])), 2.5);
     }
 
     #[test]
