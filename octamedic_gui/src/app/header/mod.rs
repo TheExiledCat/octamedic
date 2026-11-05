@@ -1,3 +1,4 @@
+pub mod block;
 pub mod files;
 pub mod instrument;
 pub mod misc;
@@ -12,12 +13,15 @@ use rustuition::{
 
 use crate::{
     app::{
-        header::{files::Files, instrument::Instrument, misc::Misc, play::Play, volume::Volume},
+        header::{
+            block::Block, files::Files, instrument::Instrument, misc::Misc, play::Play,
+            volume::Volume,
+        },
         mode::{HeaderMode, buttons::ModeButtons},
         state::AppState,
         status_bar::StatusBar,
     },
-    framework::event::Event,
+    framework::{event::Event, widgets::Textbox},
 };
 
 // from the header's top left
@@ -33,6 +37,7 @@ pub struct HeaderPanels {
     pub misc: Misc,
     pub play: Play,
     pub volume: Volume,
+    pub block: Block,
 }
 
 impl HeaderPanels {
@@ -43,6 +48,7 @@ impl HeaderPanels {
             misc: Misc::new(),
             play: Play::new(),
             volume: Volume::new(),
+            block: Block::new(),
         };
     }
 
@@ -53,9 +59,8 @@ impl HeaderPanels {
             HeaderMode::Misc => Some(&mut self.misc),
             HeaderMode::Play => Some(&mut self.play),
             HeaderMode::Volume => Some(&mut self.volume),
-            HeaderMode::Block | HeaderMode::Edit | HeaderMode::Transpose | HeaderMode::Range => {
-                None
-            }
+            HeaderMode::Block => Some(&mut self.block),
+            HeaderMode::Edit | HeaderMode::Transpose | HeaderMode::Range => None,
         };
     }
 }
@@ -122,4 +127,11 @@ impl Gadget<AppState, Event> for Header {
         );
         self.status.render(state, status, painter);
     }
+}
+
+/// A textbox's text on the update it loses focus, from Enter or a click elsewhere.
+pub fn finished_edit(textbox: &Textbox, was_focused: &mut bool) -> Option<String> {
+    let left = *was_focused && !textbox.is_focused();
+    *was_focused = textbox.is_focused();
+    return left.then(|| textbox.text().to_owned());
 }
