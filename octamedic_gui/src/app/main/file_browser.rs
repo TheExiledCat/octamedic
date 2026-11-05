@@ -305,8 +305,13 @@ mod tests {
 
     #[test]
     fn disk_usage_text() {
-        let browser = Browser::new();
-        let usage = disk_usage(&browser).unwrap();
+        // a folder that exists, since the projects folder Browser::new starts in may not yet
+        let temp = temp_folder_with("disk-usage", 0);
+        let mut browser = Browser::new();
+        browser.open(&temp).unwrap();
+        let usage = disk_usage(&browser);
+        let _ = fs::remove_dir_all(&temp);
+        let usage = usage.unwrap();
         assert!(usage.starts_with("Disk "), "{usage}");
         assert!(
             usage.contains(" % full (") && usage.ends_with("iB free)"),
