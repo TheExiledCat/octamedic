@@ -10,7 +10,8 @@ use crate::{
     framework::event::{Event, MouseButton},
 };
 
-const COPYRIGHT: &str = "OctaMEDIC Professional © 2026 Amano Rosuko.";
+const COPYRIGHT: &str =
+    "OctaMEDIC Professional © 2026 Amano Rosuko et al. github.com/TheExiledCat/octamedic";
 
 const HEIGHT: i32 = 11;
 
