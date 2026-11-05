@@ -32,7 +32,6 @@ fn main() -> GameResult<()> {
     let project = load_project();
     let [width, height] = screen(DEFAULT_VIDEO).window_size(WINDOW_SCALE);
     let (mut ctx, event_loop) = ContextBuilder::new("OctaMEDIC", "Amano Rosuko")
-        .backend(ggez::conf::Backend::Vulkan)
         .window_mode(WindowMode {
             maximized: false,
             fullscreen_type: ggez::conf::FullscreenType::Windowed,
