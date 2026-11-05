@@ -10,9 +10,6 @@ use crate::{
     framework::event::{Event, MouseButton},
 };
 
-const COPYRIGHT: &str =
-    "OctaMEDIC Professional © 2026 Amano Rosuko et al. github.com/TheExiledCat/octamedic";
-
 const HEIGHT: i32 = 11;
 
 const TEXT_OFFSET: [i32; 2] = [5, 1];
@@ -66,7 +63,10 @@ impl Gadget<AppState, Event> for CopyrightBar {
         painter.text_in_font(
             bar.x + x,
             bar.y + y,
-            COPYRIGHT,
+            &format!(
+                "OctaMEDIC Pro v{} 2026 Amano Rosuko et al. TheExiledCat/octamedic",
+                env!("CARGO_PKG_VERSION")
+            ),
             Pen::BACKGROUND,
             fonts::INTERFACE,
         );
