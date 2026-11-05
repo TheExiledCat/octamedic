@@ -1,5 +1,6 @@
 use std::{array, path::PathBuf};
 
+use mmd::mmd::{conversion::ToModule, writer::OctamedMMDWriter};
 use octamedic_core::{data::instrument::InstrumentKind, engine::record::Recorder, export};
 
 use rustuition::{
@@ -73,10 +74,8 @@ impl Files {
         };
         let unhooked = |button: Button| button.enabled(false);
         return Self {
-            // disabled until OctamedicProject::to_module() is implemented
-            mod_format: unhooked(
-                Button::new(mod_format_label(ModFormat::default())).font(fonts::NARROW_LABEL),
-            ),
+            mod_format: Button::new(mod_format_label(ModFormat::default()))
+                .font(fonts::NARROW_LABEL),
             save_wav: label_button("WAV"),
             save_mp3: unhooked(label_button("MP3")),
             st_module: unhooked(Button::new("ST-MODULE").font(fonts::LABEL)),
@@ -327,10 +326,40 @@ fn save_song_in_picked_format(state: &mut AppState, file_name_hint: &str) {
     }
     match state.save_format {
         SaveFormat::Wav => state.open_dialog(save_wav_dialog(file_name_hint.to_owned())),
+        SaveFormat::Mod if state.mod_format == ModFormat::Mod1WithInstruments => {
+            save_mod1_with_instruments(state, file_name_hint);
+        }
+        // MOD1(NO INST) and MOD0 (OLD) still need a post-processing step on the full MMD1
+        // to_module() produces: stripping samples, or downgrading the block table to MMD0
         SaveFormat::Mod => state.notify("MOD saving isn't ready yet"),
         SaveFormat::Mp3 => state.notify("MP3 saving isn't ready yet"),
         SaveFormat::StModule => state.notify("ST-MODULE saving isn't ready yet"),
     }
+}
+
+fn save_mod1_with_instruments(state: &mut AppState, file_name_hint: &str) {
+    let module = state.project_mut().to_module();
+    let bytes = match OctamedMMDWriter::new().write_module(&module) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            state.notify(error.to_string());
+            return;
+        }
+    };
+    let file_name = file_name_with_extension(file_name_hint, "mmd1");
+    let path = state.browser.path().join(&file_name);
+    if path.is_dir() {
+        state.notify(format!("There's a folder called {file_name}"));
+        return;
+    }
+    if !path.exists() {
+        write_song(state, path, &bytes);
+        return;
+    }
+    let question = format!("{file_name} exists, replace it?");
+    state.open_prompt(Prompt::yes_no(question, move |state| {
+        write_song(state, path, &bytes)
+    }));
 }
 
 fn save_wav_dialog(file_name_hint: String) -> Dialog {
@@ -348,7 +377,7 @@ fn save_wav_dialog(file_name_hint: String) -> Dialog {
             .record_song(state.song(), 0)
             .map_err(|error| error.to_string())?;
         let bytes = recording.to_wav_bytes();
-        let file_name = song_file_name(&file_name_hint);
+        let file_name = file_name_with_extension(&file_name_hint, "wav");
         let path = state.browser.path().join(&file_name);
         if path.is_dir() {
             return Err(format!("There's a folder called {file_name}"));
@@ -366,10 +395,11 @@ fn save_wav_dialog(file_name_hint: String) -> Dialog {
 }
 
 // save_song_in_picked_format already turns an empty FILE box away with "No file name"
-fn song_file_name(name: &str) -> String {
+fn file_name_with_extension(name: &str, extension: &str) -> String {
     let name = name.trim().replace(['/', '\\'], "_");
-    if !name.to_lowercase().ends_with(".wav") {
-        return format!("{name}.wav");
+    let suffix = format!(".{extension}");
+    if !name.to_lowercase().ends_with(&suffix.to_lowercase()) {
+        return format!("{name}{suffix}");
     }
     return name;
 }
@@ -517,8 +547,6 @@ mod tests {
         state: &mut AppState,
         button: rustuition::event::MouseButton,
     ) {
-        // ghosted in the UI until to_module() is implemented, but its click logic still works
-        files.mod_format.set_enabled(true);
         let mut screen = rustuition::target::Framebuffer::new(460, 50);
         let area = screen.bounds();
         files.render(state, area, &mut Painter::new(&mut screen, &state.palette));
@@ -582,6 +610,37 @@ mod tests {
         let saved = folder.join("myrender.wav").exists();
         let _ = std::fs::remove_dir_all(&folder);
         assert!(saved);
+    }
+
+    #[test]
+    fn mod1_with_instruments_writes_a_file() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        state.save_format = SaveFormat::Mod;
+        assert_eq!(state.mod_format, ModFormat::Mod1WithInstruments);
+        let folder = std::env::temp_dir().join(format!("octamedic-mod-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        state.browser.open(&folder).unwrap();
+        save_song_in_picked_format(&mut state, "mysong");
+        let saved = folder.join("mysong.mmd1").exists();
+        let _ = std::fs::remove_dir_all(&folder);
+        assert!(saved);
+        assert_eq!(state.notification.as_deref(), Some("Saved mysong.mmd1"));
+    }
+
+    #[test]
+    fn other_mod_formats_still_say_not_ready() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        state.save_format = SaveFormat::Mod;
+        for format in [ModFormat::Mod1NoInstruments, ModFormat::Mod0] {
+            state.mod_format = format;
+            save_song_in_picked_format(&mut state, "mysong");
+            assert_eq!(
+                state.notification.as_deref(),
+                Some("MOD saving isn't ready yet"),
+                "{format:?}"
+            );
+        }
     }
 
     #[test]
@@ -798,7 +857,8 @@ mod tests {
     fn unhooked_buttons_are_ghosted() {
         let files = Files::new();
         assert!(!files.info.is_enabled() && !files.save_mp3.is_enabled());
-        assert!(!files.mod_format.is_enabled() && !files.st_module.is_enabled());
+        assert!(!files.st_module.is_enabled());
+        assert!(files.mod_format.is_enabled());
         assert!(files.song[0].is_enabled() && files.song[1].is_enabled());
         assert!(files.del_file.is_enabled());
     }

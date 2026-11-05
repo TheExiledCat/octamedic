@@ -1,5 +1,6 @@
 use std::{
     fmt::Display,
+    ops::Range,
     sync::{Arc, mpsc},
     time::Duration,
 };
@@ -74,17 +75,34 @@ impl Recorder {
         song: &OctamedicSong,
         sequence_start: usize,
     ) -> Result<Recording, RecordError> {
-        if song.sequence().get(sequence_start).is_none() {
-            return Err(RecordError::NoSuchSequenceIndex(sequence_start));
+        return self.record_range(song, sequence_start..song.sequence().len());
+    }
+
+    /// Renders only `sequence_range` of the song's play sequence, stopping once it's played
+    /// through. The end clamps to the song's length; it doesn't have to land on a real position.
+    pub fn record_range(
+        &self,
+        song: &OctamedicSong,
+        sequence_range: Range<usize>,
+    ) -> Result<Recording, RecordError> {
+        if song.sequence().get(sequence_range.start).is_none() {
+            return Err(RecordError::NoSuchSequenceIndex(sequence_range.start));
         }
-        return Ok(self.record(
-            song,
-            EngineCommand::PlaySong {
-                sequence_start,
-                row: 0,
-                looping: false,
-            },
-        ));
+        let end = sequence_range
+            .end
+            .clamp(sequence_range.start, song.sequence().len());
+        let mut commands = EngineCommand::load_song(song);
+        if let Some(EngineCommand::SetSequence { sequence }) = commands.last_mut() {
+            sequence.truncate(end);
+            sequence.drain(..sequence_range.start);
+        }
+        commands.push(EngineCommand::SetOutputVolume(self.output_volume));
+        commands.push(EngineCommand::PlaySong {
+            sequence_start: 0,
+            row: 0,
+            looping: false,
+        });
+        return Ok(self.record(commands));
     }
 
     pub fn record_pattern(
@@ -95,24 +113,21 @@ impl Recorder {
         if song.get_pattern(&pattern).is_none() {
             return Err(RecordError::NoSuchPattern(pattern));
         }
-        return Ok(self.record(
-            song,
-            EngineCommand::PlayPattern {
-                pattern,
-                row: 0,
-                looping: false,
-            },
-        ));
+        let mut commands = EngineCommand::load_song(song);
+        commands.push(EngineCommand::SetOutputVolume(self.output_volume));
+        commands.push(EngineCommand::PlayPattern {
+            pattern,
+            row: 0,
+            looping: false,
+        });
+        return Ok(self.record(commands));
     }
 
-    fn record(&self, song: &OctamedicSong, play: EngineCommand) -> Recording {
+    fn record(&self, setup: Vec<EngineCommand>) -> Recording {
         let (commands, receiver) = mpsc::channel();
         let status = Arc::new(EngineStatus::default());
         let mut engine =
             OctamedicEngine::new(receiver, status.clone(), self.sample_rate, self.machine);
-        let setup = EngineCommand::load_song(song)
-            .into_iter()
-            .chain([EngineCommand::SetOutputVolume(self.output_volume), play]);
         for command in setup {
             let _ = commands.send(command);
         }
@@ -239,6 +254,48 @@ mod tests {
     fn record_song() {
         let recording = recorder().record_song(&song(), 0).unwrap();
         assert!(recording.samples.len() >= 400);
+    }
+
+    // 3 positions, each the same block as `song()`'s
+    fn multi_sequence_song() -> OctamedicSong {
+        let mut song = song();
+        song.sequence_mut().extend([PatternId(0), PatternId(0)]);
+        return song;
+    }
+
+    #[test]
+    fn record_range_stops_before_the_rest_of_the_song() {
+        let song = multi_sequence_song();
+        let full = recorder().record_song(&song, 0).unwrap();
+        let ranged = recorder().record_range(&song, 0..2).unwrap();
+        assert!(ranged.samples.len() >= 800);
+        assert!(ranged.samples.len() < 800 + CHUNK_FRAMES);
+        assert!(ranged.samples.len() < full.samples.len());
+    }
+
+    #[test]
+    fn record_range_can_start_partway_through() {
+        let ranged = recorder()
+            .record_range(&multi_sequence_song(), 1..3)
+            .unwrap();
+        assert!(ranged.samples.len() >= 800);
+        assert!(ranged.samples.len() < 800 + CHUNK_FRAMES);
+    }
+
+    #[test]
+    fn record_range_end_clamps_to_the_song_length() {
+        let song = multi_sequence_song();
+        let full = recorder().record_song(&song, 0).unwrap();
+        let ranged = recorder().record_range(&song, 0..100).unwrap();
+        assert_eq!(ranged.samples.len(), full.samples.len());
+    }
+
+    #[test]
+    fn record_range_needs_a_real_start() {
+        assert_eq!(
+            recorder().record_range(&multi_sequence_song(), 5..6).err(),
+            Some(RecordError::NoSuchSequenceIndex(5))
+        );
     }
 
     #[test]
