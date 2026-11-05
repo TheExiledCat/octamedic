@@ -1,8 +1,10 @@
 use octamedic_core::data::pattern::MAX_LINES;
 use rustuition::{
     gadget::Gadget,
+    gadgets::button::{DEFAULT_REPEAT_DELAY, DEFAULT_REPEAT_INTERVAL, Triangle},
     painter::{Painter, Pen},
     rect::Rect,
+    shape::Direction,
 };
 
 use crate::{
@@ -67,6 +69,9 @@ const SPLIT: Rect = Rect::new(368, 33, 34, 11);
 const JOIN: Rect = Rect::new(403, 33, 28, 11);
 
 const TRACK_COUNTS: [usize; 4] = [4, 8, 12, 16];
+
+const LINES_ARROW: [i32; 2] = [6, 5];
+const LINES_ARROW_BAR_GAP: i32 = 2;
 
 pub struct Block {
     // track/block clipboard operations aren't implemented yet, so these stay disabled
@@ -135,10 +140,10 @@ impl Block {
 
             lines_box: number_box(),
             lines_box_was_focused: false,
-            lines_dec: narrow("<"),
-            lines_inc: narrow(">"),
-            lines_dec_10: narrow("<<"),
-            lines_inc_10: narrow(">>"),
+            lines_dec: step_button(Direction::Left, false),
+            lines_inc: step_button(Direction::Right, false),
+            lines_dec_10: step_button(Direction::Left, true),
+            lines_inc_10: step_button(Direction::Right, true),
 
             expand: narrow("EXPAND"),
             expand_factor: {
@@ -199,6 +204,16 @@ impl Block {
 }
 
 const HIGHLIGHT_LABELS: [&str; 7] = ["1", "2", "3", "4", "8", "16", "C"];
+
+// bar: the fast (+/-10) variant, like the real OctaMED's double arrows
+fn step_button(direction: Direction, bar: bool) -> Button {
+    let [w, h] = LINES_ARROW;
+    let mut triangle = Triangle::new(direction, w, h);
+    if bar {
+        triangle = triangle.with_bar().bar_gap(LINES_ARROW_BAR_GAP);
+    }
+    return Button::new(triangle).repeat(DEFAULT_REPEAT_DELAY, DEFAULT_REPEAT_INTERVAL);
+}
 
 fn track_count_label(count: usize) -> &'static str {
     return match count {
