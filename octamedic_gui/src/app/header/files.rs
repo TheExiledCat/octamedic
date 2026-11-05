@@ -6,7 +6,7 @@ use octamedic_core::{data::instrument::InstrumentKind, engine::record::Recorder,
 use rustuition::{
     font::Font,
     gadget::Gadget,
-    gadgets::dialog::Checkbox,
+    gadgets::dialog::{Checkbox, NumberField},
     painter::{Painter, Pen},
     rect::Rect,
 };
@@ -325,7 +325,10 @@ fn save_song_in_picked_format(state: &mut AppState, file_name_hint: &str) {
         return;
     }
     match state.save_format {
-        SaveFormat::Wav => state.open_dialog(save_wav_dialog(file_name_hint.to_owned())),
+        SaveFormat::Wav => {
+            let sequence_length = state.song().sequence().len();
+            state.open_dialog(save_wav_dialog(file_name_hint.to_owned(), sequence_length));
+        }
         SaveFormat::Mod if state.mod_format == ModFormat::Mod1WithInstruments => {
             save_mod1_with_instruments(state, file_name_hint);
         }
@@ -362,19 +365,24 @@ fn save_mod1_with_instruments(state: &mut AppState, file_name_hint: &str) {
     }));
 }
 
-fn save_wav_dialog(file_name_hint: String) -> Dialog {
+fn save_wav_dialog(file_name_hint: String, sequence_length: usize) -> Dialog {
     let mut dialog = Dialog::new("Render song to WAV")
         .submit_button("Save")
         .cancel_button("Cancel");
     let stereo = dialog.add_field(Checkbox::new("Stereo").checked(true));
+    // the sequence is shown to the user as 1-based, like the status bar's position counter
+    let last = sequence_length.max(1) as f32;
+    let from = dialog.add_field(NumberField::new("From", 1.0, last, 1.0));
+    let to = dialog.add_field(NumberField::new("To", 1.0, last, 1.0).value(last));
     return dialog.on_submit_checked(move |state, result| {
         let channels: u16 = if *result.get(stereo) { 2 } else { 1 };
+        let range = wav_sequence_range(*result.get(from), *result.get(to));
         let recorder = Recorder {
             channels,
             ..Recorder::default()
         };
         let recording = recorder
-            .record_song(state.song(), 0)
+            .record_range(state.song(), range)
             .map_err(|error| error.to_string())?;
         let bytes = recording.to_wav_bytes();
         let file_name = file_name_with_extension(&file_name_hint, "wav");
@@ -392,6 +400,13 @@ fn save_wav_dialog(file_name_hint: String) -> Dialog {
         }));
         return Ok(());
     });
+}
+
+// `from`/`to` are the dialog's 1-based, inclusive positions
+fn wav_sequence_range(from: f32, to: f32) -> std::ops::Range<usize> {
+    let start = (from.round() as usize).saturating_sub(1);
+    let end = to.round() as usize;
+    return start..end;
 }
 
 // save_song_in_picked_format already turns an empty FILE box away with "No file name"
@@ -610,6 +625,41 @@ mod tests {
         let saved = folder.join("myrender.wav").exists();
         let _ = std::fs::remove_dir_all(&folder);
         assert!(saved);
+    }
+
+    #[test]
+    fn wav_sequence_range_is_1_based_inclusive() {
+        // position 1 to 3, shown to the user, covers 0-based indices 0, 1 and 2
+        assert_eq!(wav_sequence_range(1.0, 3.0), 0..3);
+        // just the first position
+        assert_eq!(wav_sequence_range(1.0, 1.0), 0..1);
+        // starting partway through
+        assert_eq!(wav_sequence_range(2.0, 4.0), 1..4);
+    }
+
+    #[test]
+    fn wav_dialog_defaults_to_the_whole_song() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        state.save_format = SaveFormat::Wav;
+        let folder =
+            std::env::temp_dir().join(format!("octamedic-wav-range-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        state.browser.open(&folder).unwrap();
+        // the dialog's Stereo checkbox defaults to checked
+        let expected = Recorder {
+            channels: 2,
+            ..Recorder::default()
+        }
+        .record_song(state.song(), 0)
+        .unwrap()
+        .to_wav_bytes();
+        save_song_in_picked_format(&mut state, "myrender");
+        let mut dialogs = state.take_pending_dialogs();
+        dialogs[0].handle_event(&mut state, &key(ggez::input::keyboard::KeyCode::Return));
+        let saved = std::fs::read(folder.join("myrender.wav")).unwrap();
+        let _ = std::fs::remove_dir_all(&folder);
+        assert_eq!(saved, expected);
     }
 
     #[test]
