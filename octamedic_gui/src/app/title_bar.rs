@@ -14,7 +14,8 @@ const TITLE: &str = "OctaMEDIC Professional";
 
 const VERSION: &str = "(v4.00)";
 
-const AUTHOR: &str = "By Amano Rosuko";
+const AUTHOR: &str = "By Crytic et al";
+                  // "By Amano Rosuko"
 
 // positions measured from OctaMED's title bar
 const TIMER_LABEL: [i32; 2] = [3, 3];
