@@ -4,6 +4,9 @@ use crate::{app::state::AppState, framework::event::Event};
 
 pub mod audio_view;
 pub mod symbols;
+pub mod toggle_group;
+
+pub use toggle_group::ToggleGroup;
 
 // rustuition's gadgets with the app's state filled in, so handlers know what they get
 pub type Button = button::Button<AppState, Event>;

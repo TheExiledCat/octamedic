@@ -1,10 +1,12 @@
 use std::{array, path::PathBuf};
 
-use octamedic_core::{data::instrument::InstrumentKind, export};
+use mmd::mmd::{conversion::ToModule, writer::OctamedMMDWriter};
+use octamedic_core::{data::instrument::InstrumentKind, engine::record::Recorder, export};
 
 use rustuition::{
     font::Font,
     gadget::Gadget,
+    gadgets::dialog::{Checkbox, NumberField},
     painter::{Painter, Pen},
     rect::Rect,
 };
@@ -14,11 +16,11 @@ use crate::{
         files::load_module,
         fonts, pens,
         prompt::Prompt,
-        state::{AppState, InstrumentSaveType},
+        state::{AppState, InstrumentSaveType, ModFormat, SaveFormat},
     },
     framework::{
-        event::Event,
-        widgets::{Button, Dialog, Textbox, symbols::stacked_text},
+        event::{Event, MouseButton},
+        widgets::{Button, Dialog, Textbox, ToggleGroup, symbols::stacked_text},
     },
 };
 
@@ -26,13 +28,6 @@ use crate::{
 const SAVE_FORMAT: Rect = Rect::new(0, 0, 90, 45);
 const SAVE_FORMAT_LABEL: [i32; 2] = [6, 2];
 const FORMATS: Rect = Rect::new(2, 8, 86, 36);
-// the MOD1 ones are squeezed in on the real thing
-const FORMAT_LABELS: [(&str, Font); 4] = [
-    ("MOD1(+INSTR)", fonts::NARROW_LABEL),
-    ("MOD1(NO INST)", fonts::NARROW_LABEL),
-    ("MOD0 (OLD)", fonts::LABEL),
-    ("ST-MODULE", fonts::LABEL),
-];
 const INFO: Rect = Rect::new(90, 0, 34, 11);
 const ICON: Rect = Rect::new(90, 11, 34, 11);
 const SONG: Rect = Rect::new(124, 0, 94, 22);
@@ -52,7 +47,10 @@ const FILE: Rect = Rect::new(124, 34, 324, 11);
 const DEL_FILE_LINES: [(&str, [i32; 2]); 2] = [("DEL", [5, 4]), ("FILE", [4, 11])];
 
 pub struct Files {
-    formats: [Button; 4],
+    mod_format: Button,
+    save_wav: Button,
+    save_mp3: Button,
+    st_module: Button,
     info: Button,
     icon: Button,
     // load, save
@@ -76,13 +74,14 @@ impl Files {
         };
         let unhooked = |button: Button| button.enabled(false);
         return Self {
-            formats: FORMAT_LABELS.map(|(label, font)| unhooked(Button::new(label).font(font))),
+            mod_format: Button::new(mod_format_label(ModFormat::default()))
+                .font(fonts::NARROW_LABEL),
+            save_wav: label_button("WAV"),
+            save_mp3: unhooked(label_button("MP3")),
+            st_module: unhooked(Button::new("ST-MODULE").font(fonts::LABEL)),
             info: unhooked(label_button("INFO")),
             icon: unhooked(label_button("ICON")),
-            song: [
-                label_button("LOAD SONG"),
-                unhooked(label_button("SAVE SONG")),
-            ],
+            song: [label_button("LOAD SONG"), label_button("SAVE SONG")],
             instr: [label_button("LOAD INSTR"), label_button("SAVE INSTR")],
             del_file: Button::new(stacked_text(&DEL_FILE_LINES)),
             msg: array::from_fn(|_| unhooked(label_button("MSG"))),
@@ -95,14 +94,20 @@ impl Files {
     }
 
     fn buttons(&mut self) -> impl Iterator<Item = &mut Button> {
-        return self
-            .formats
-            .iter_mut()
-            .chain([&mut self.info, &mut self.icon, &mut self.del_file])
-            .chain(&mut self.song)
-            .chain(&mut self.instr)
-            .chain(&mut self.msg)
-            .chain(&mut self.map);
+        return [
+            &mut self.mod_format,
+            &mut self.save_wav,
+            &mut self.save_mp3,
+            &mut self.st_module,
+            &mut self.info,
+            &mut self.icon,
+            &mut self.del_file,
+        ]
+        .into_iter()
+        .chain(&mut self.song)
+        .chain(&mut self.instr)
+        .chain(&mut self.msg)
+        .chain(&mut self.map);
     }
 }
 
@@ -119,9 +124,12 @@ impl Gadget<AppState, Event> for Files {
                 .browser
                 .select_file((!file.is_empty()).then_some(file));
         }
-        let [load_song, _] = &mut self.song;
+        let [load_song, save_song] = &mut self.song;
         if load_song.clicked().is_some() {
             load_selected_song(state);
+        }
+        if save_song.clicked().is_some() {
+            save_song_in_picked_format(state, self.file.text());
         }
         let [load_instrument, save_instrument] = &mut self.instr;
         if load_instrument.clicked().is_some() {
@@ -133,6 +141,25 @@ impl Gadget<AppState, Event> for Files {
         if self.del_file.clicked().is_some() {
             delete_selected_file(state);
         }
+        let was_mod_picked = state.save_format == SaveFormat::Mod;
+        let mut formats = ToggleGroup::new([
+            (&mut self.mod_format, SaveFormat::Mod),
+            (&mut self.save_wav, SaveFormat::Wav),
+            (&mut self.save_mp3, SaveFormat::Mp3),
+            (&mut self.st_module, SaveFormat::StModule),
+        ]);
+        if let Some((format, click)) = formats.take_click() {
+            // picking MOD for the first time just selects it; clicking it again cycles variants
+            if format == SaveFormat::Mod && was_mod_picked {
+                state.mod_format = match click.button {
+                    MouseButton::Right => state.mod_format.previous(),
+                    _ => state.mod_format.next(),
+                };
+            }
+            state.save_format = format;
+        }
+        formats.sync(Some(state.save_format));
+        self.mod_format.set_text(mod_format_label(state.mod_format));
         if !self.dir.is_focused() {
             self.dir.set_text(state.browser.path().to_string_lossy());
         }
@@ -159,8 +186,14 @@ impl Gadget<AppState, Event> for Files {
             "SAVE FORMAT:",
             fonts::NARROW_LABEL,
         );
-        let formats = FORMATS.within(area).split_rows(self.formats.len() as i32);
-        for (button, rect) in self.formats.iter_mut().zip(formats) {
+        let format_buttons = [
+            &mut self.mod_format,
+            &mut self.save_wav,
+            &mut self.save_mp3,
+            &mut self.st_module,
+        ];
+        let rows = FORMATS.within(area).split_rows(format_buttons.len() as i32);
+        for (button, rect) in format_buttons.into_iter().zip(rows) {
             button.render(state, rect, painter);
         }
         self.info.render(state, INFO.within(area), painter);
@@ -251,6 +284,14 @@ fn save_active_instrument(state: &mut AppState) {
     }));
 }
 
+fn mod_format_label(format: ModFormat) -> &'static str {
+    return match format {
+        ModFormat::Mod1WithInstruments => "MOD1(+INSTR)",
+        ModFormat::Mod1NoInstruments => "MOD1(NO INST)",
+        ModFormat::Mod0 => "MOD0 (OLD)",
+    };
+}
+
 // a name can't reach into another folder. raw and IFF go without an extension like on the Amiga
 fn instrument_file_name(name: &str, save_type: InstrumentSaveType) -> String {
     let name = name.replace(['/', '\\'], "_");
@@ -262,6 +303,123 @@ fn instrument_file_name(name: &str, save_type: InstrumentSaveType) -> String {
 }
 
 fn write_instrument(state: &mut AppState, path: PathBuf, bytes: &[u8]) {
+    if std::fs::write(&path, bytes).is_err() {
+        state.notify("Can't save it");
+        return;
+    }
+    let folder = state.browser.path().to_path_buf();
+    let _ = state.browser.open(folder);
+    let file_name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned());
+    state.notify(format!(
+        "Saved {}",
+        file_name.as_deref().unwrap_or_default()
+    ));
+    state.browser.select_file(file_name);
+}
+
+fn save_song_in_picked_format(state: &mut AppState, file_name_hint: &str) {
+    if file_name_hint.trim().is_empty() {
+        state.notify("No file name");
+        return;
+    }
+    match state.save_format {
+        SaveFormat::Wav => {
+            let sequence_length = state.song().sequence().len();
+            state.open_dialog(save_wav_dialog(file_name_hint.to_owned(), sequence_length));
+        }
+        SaveFormat::Mod if state.mod_format == ModFormat::Mod1WithInstruments => {
+            save_mod1_with_instruments(state, file_name_hint);
+        }
+        // MOD1(NO INST) and MOD0 (OLD) still need a post-processing step on the full MMD1
+        // to_module() produces: stripping samples, or downgrading the block table to MMD0
+        SaveFormat::Mod => state.notify("MOD saving isn't ready yet"),
+        SaveFormat::Mp3 => state.notify("MP3 saving isn't ready yet"),
+        SaveFormat::StModule => state.notify("ST-MODULE saving isn't ready yet"),
+    }
+}
+
+fn save_mod1_with_instruments(state: &mut AppState, file_name_hint: &str) {
+    let module = state.project_mut().to_module();
+    let bytes = match OctamedMMDWriter::new().write_module(&module) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            state.notify(error.to_string());
+            return;
+        }
+    };
+    let file_name = file_name_with_extension(file_name_hint, "mmd1");
+    let path = state.browser.path().join(&file_name);
+    if path.is_dir() {
+        state.notify(format!("There's a folder called {file_name}"));
+        return;
+    }
+    if !path.exists() {
+        write_song(state, path, &bytes);
+        return;
+    }
+    let question = format!("{file_name} exists, replace it?");
+    state.open_prompt(Prompt::yes_no(question, move |state| {
+        write_song(state, path, &bytes)
+    }));
+}
+
+fn save_wav_dialog(file_name_hint: String, sequence_length: usize) -> Dialog {
+    let mut dialog = Dialog::new("Render song to WAV")
+        .submit_button("Save")
+        .cancel_button("Cancel");
+    let stereo = dialog.add_field(Checkbox::new("Stereo").checked(true));
+    // the sequence is shown to the user as 1-based, like the status bar's position counter
+    let last = sequence_length.max(1) as f32;
+    let from = dialog.add_field(NumberField::new("From", 1.0, last, 1.0));
+    let to = dialog.add_field(NumberField::new("To", 1.0, last, 1.0).value(last));
+    return dialog.on_submit_checked(move |state, result| {
+        let channels: u16 = if *result.get(stereo) { 2 } else { 1 };
+        let range = wav_sequence_range(*result.get(from), *result.get(to));
+        let recorder = Recorder {
+            channels,
+            ..Recorder::default()
+        };
+        let recording = recorder
+            .record_range(state.song(), range)
+            .map_err(|error| error.to_string())?;
+        let bytes = recording.to_wav_bytes();
+        let file_name = file_name_with_extension(&file_name_hint, "wav");
+        let path = state.browser.path().join(&file_name);
+        if path.is_dir() {
+            return Err(format!("There's a folder called {file_name}"));
+        }
+        if !path.exists() {
+            write_song(state, path, &bytes);
+            return Ok(());
+        }
+        let question = format!("{file_name} exists, replace it?");
+        state.open_prompt(Prompt::yes_no(question, move |state| {
+            write_song(state, path, &bytes)
+        }));
+        return Ok(());
+    });
+}
+
+// `from`/`to` are the dialog's 1-based, inclusive positions
+fn wav_sequence_range(from: f32, to: f32) -> std::ops::Range<usize> {
+    let start = (from.round() as usize).saturating_sub(1);
+    let end = to.round() as usize;
+    return start..end;
+}
+
+// save_song_in_picked_format already turns an empty FILE box away with "No file name"
+fn file_name_with_extension(name: &str, extension: &str) -> String {
+    let name = name.trim().replace(['/', '\\'], "_");
+    let suffix = format!(".{extension}");
+    if !name.to_lowercase().ends_with(&suffix.to_lowercase()) {
+        return format!("{name}{suffix}");
+    }
+    return name;
+}
+
+fn write_song(state: &mut AppState, path: PathBuf, bytes: &[u8]) {
     if std::fs::write(&path, bytes).is_err() {
         state.notify("Can't save it");
         return;
@@ -397,6 +555,142 @@ mod tests {
             state.notification.as_deref(),
             Some("Select a song to load first")
         );
+    }
+
+    fn click_mod_format(
+        files: &mut Files,
+        state: &mut AppState,
+        button: rustuition::event::MouseButton,
+    ) {
+        let mut screen = rustuition::target::Framebuffer::new(460, 50);
+        let area = screen.bounds();
+        files.render(state, area, &mut Painter::new(&mut screen, &state.palette));
+        let pos = Point::new(FORMATS.x + 5, FORMATS.y + 3);
+        assert!(files.handle_event(state, &Event::MouseDown { pos, button }));
+        files.handle_event(state, &Event::MouseUp { pos, button });
+        files.update(state);
+    }
+
+    #[test]
+    fn mod_format_cycles_on_click() {
+        use ModFormat::{Mod0, Mod1NoInstruments, Mod1WithInstruments};
+        use rustuition::event::MouseButton::{Left, Right};
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        let mut files = Files::new();
+        assert_eq!(state.mod_format, Mod1WithInstruments);
+        click_mod_format(&mut files, &mut state, Left);
+        assert_eq!(state.mod_format, Mod1NoInstruments);
+        click_mod_format(&mut files, &mut state, Left);
+        assert_eq!(state.mod_format, Mod0);
+        click_mod_format(&mut files, &mut state, Left);
+        assert_eq!(state.mod_format, Mod1WithInstruments);
+        click_mod_format(&mut files, &mut state, Right);
+        assert_eq!(state.mod_format, Mod0);
+    }
+
+    #[test]
+    fn picking_mod_the_first_time_only_selects_it() {
+        use rustuition::event::MouseButton::Left;
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        let mut files = Files::new();
+        let started_at = state.mod_format;
+        state.save_format = SaveFormat::Wav;
+        click_mod_format(&mut files, &mut state, Left);
+        assert_eq!(state.save_format, SaveFormat::Mod);
+        assert_eq!(state.mod_format, started_at);
+        click_mod_format(&mut files, &mut state, Left);
+        assert_eq!(state.mod_format, started_at.next());
+    }
+
+    #[test]
+    fn save_song_needs_a_file_name() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        state.save_format = SaveFormat::Wav;
+        save_song_in_picked_format(&mut state, "   ");
+        assert_eq!(state.notification.as_deref(), Some("No file name"));
+        assert!(state.take_pending_dialogs().is_empty());
+    }
+
+    #[test]
+    fn wav_save_uses_the_file_box_name() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        state.save_format = SaveFormat::Wav;
+        let folder = std::env::temp_dir().join(format!("octamedic-wav-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        state.browser.open(&folder).unwrap();
+        save_song_in_picked_format(&mut state, "myrender");
+        let mut dialogs = state.take_pending_dialogs();
+        dialogs[0].handle_event(&mut state, &key(ggez::input::keyboard::KeyCode::Return));
+        let saved = folder.join("myrender.wav").exists();
+        let _ = std::fs::remove_dir_all(&folder);
+        assert!(saved);
+    }
+
+    #[test]
+    fn wav_sequence_range_is_1_based_inclusive() {
+        // position 1 to 3, shown to the user, covers 0-based indices 0, 1 and 2
+        assert_eq!(wav_sequence_range(1.0, 3.0), 0..3);
+        // just the first position
+        assert_eq!(wav_sequence_range(1.0, 1.0), 0..1);
+        // starting partway through
+        assert_eq!(wav_sequence_range(2.0, 4.0), 1..4);
+    }
+
+    #[test]
+    fn wav_dialog_defaults_to_the_whole_song() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        state.save_format = SaveFormat::Wav;
+        let folder =
+            std::env::temp_dir().join(format!("octamedic-wav-range-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        state.browser.open(&folder).unwrap();
+        // the dialog's Stereo checkbox defaults to checked
+        let expected = Recorder {
+            channels: 2,
+            ..Recorder::default()
+        }
+        .record_song(state.song(), 0)
+        .unwrap()
+        .to_wav_bytes();
+        save_song_in_picked_format(&mut state, "myrender");
+        let mut dialogs = state.take_pending_dialogs();
+        dialogs[0].handle_event(&mut state, &key(ggez::input::keyboard::KeyCode::Return));
+        let saved = std::fs::read(folder.join("myrender.wav")).unwrap();
+        let _ = std::fs::remove_dir_all(&folder);
+        assert_eq!(saved, expected);
+    }
+
+    #[test]
+    fn mod1_with_instruments_writes_a_file() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        state.save_format = SaveFormat::Mod;
+        assert_eq!(state.mod_format, ModFormat::Mod1WithInstruments);
+        let folder = std::env::temp_dir().join(format!("octamedic-mod-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        state.browser.open(&folder).unwrap();
+        save_song_in_picked_format(&mut state, "mysong");
+        let saved = folder.join("mysong.mmd1").exists();
+        let _ = std::fs::remove_dir_all(&folder);
+        assert!(saved);
+        assert_eq!(state.notification.as_deref(), Some("Saved mysong.mmd1"));
+    }
+
+    #[test]
+    fn other_mod_formats_still_say_not_ready() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        state.save_format = SaveFormat::Mod;
+        for format in [ModFormat::Mod1NoInstruments, ModFormat::Mod0] {
+            state.mod_format = format;
+            save_song_in_picked_format(&mut state, "mysong");
+            assert_eq!(
+                state.notification.as_deref(),
+                Some("MOD saving isn't ready yet"),
+                "{format:?}"
+            );
+        }
     }
 
     #[test]
@@ -612,8 +906,11 @@ mod tests {
     #[test]
     fn unhooked_buttons_are_ghosted() {
         let files = Files::new();
-        assert!(!files.info.is_enabled() && !files.song[1].is_enabled());
-        assert!(files.song[0].is_enabled() && files.del_file.is_enabled());
+        assert!(!files.info.is_enabled() && !files.save_mp3.is_enabled());
+        assert!(!files.st_module.is_enabled());
+        assert!(files.mod_format.is_enabled());
+        assert!(files.song[0].is_enabled() && files.song[1].is_enabled());
+        assert!(files.del_file.is_enabled());
     }
 
     #[test]

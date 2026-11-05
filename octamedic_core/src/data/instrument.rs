@@ -66,6 +66,19 @@ impl SampleOctaves {
             _ => Self::One,
         };
     }
+
+    pub fn to_octamed(self) -> OctamedMMD0InstrumentType {
+        return match self {
+            Self::One => OctamedMMD0InstrumentType::Sample,
+            Self::Two => OctamedMMD0InstrumentType::SampleOct2,
+            Self::Three => OctamedMMD0InstrumentType::SampleOct3,
+            Self::Four => OctamedMMD0InstrumentType::SampleOct4,
+            Self::Five => OctamedMMD0InstrumentType::SampleOct5,
+            Self::Six => OctamedMMD0InstrumentType::SampleOct6,
+            Self::Seven => OctamedMMD0InstrumentType::SampleOct7,
+            Self::ExtraLow => OctamedMMD0InstrumentType::ExtSample,
+        };
+    }
 }
 
 #[derive(Debug, PartialEq)]

@@ -25,10 +25,13 @@ pub fn initialize() -> io::Result<()> {
     return Ok(());
 }
 
+// XDG user dirs aren't always configured on unix, so audio_dir() can come back empty
+fn music_dir() -> Option<PathBuf> {
+    return dirs::audio_dir().or_else(|| dirs::home_dir().map(|home| home.join("Music")));
+}
+
 pub fn get_projects_directory_root() -> Option<PathBuf> {
-    return dirs::audio_dir()
-        .or_else(|| dirs::home_dir().map(|home| home.join("Music")))
-        .map(|dir| dir.join(FOLDER_ROOT_NAME));
+    return music_dir().map(|dir| dir.join(FOLDER_ROOT_NAME));
 }
 
 /// Where the file browser can jump to, like the Amiga's assigns and devices list.
@@ -45,7 +48,7 @@ pub fn get_shortcuts() -> Vec<Shortcut> {
         ("Desktop", dirs::desktop_dir()),
         ("Documents", dirs::document_dir()),
         ("Downloads", dirs::download_dir()),
-        ("Music", dirs::audio_dir()),
+        ("Music", music_dir()),
         ("Pictures", dirs::picture_dir()),
     ];
     let places = places.into_iter().filter_map(|(name, path)| {
