@@ -164,9 +164,9 @@ pub struct AppState {
     pub recording: bool,
     pub exit_requested: bool,
     pub notification: Option<String>,
-    // the BLOCK panel's TRK: and BLK: buffers, the track one a block one track wide. They outlive
-    // songs so things can be copied between them. TODO: check whether OctaMED's range copy buffer
-    // is one of these
+    // TRK: and BLK:'s buffers. A copied track is kept as a block one track wide. Both survive
+    // loading another song, so you can copy between songs.
+    // TODO: check whether OctaMED's range copy buffer is one of these
     pub track_buffer: Option<OctamedicPattern>,
     pub block_buffer: Option<OctamedicPattern>,
     // shown instead of the notification, and holding everything up until it's answered
@@ -1003,14 +1003,18 @@ impl AppState {
     }
 
     pub fn swap_track(&mut self) {
-        let Some(buffer) = self.track_buffer.take() else {
+        if self.track_buffer.is_none() {
             self.notify("Track buffer is empty");
             return;
-        };
+        }
         let track = self.cursor.track;
-        self.track_buffer = self
+        let Some(current) = self
             .active_pattern()
-            .map(|pattern| pattern.copy_track(track));
+            .map(|pattern| pattern.copy_track(track))
+        else {
+            return;
+        };
+        let buffer = self.track_buffer.replace(current).expect("checked above");
         if let Some(pattern) = self.active_pattern_mut() {
             pattern.paste_track(track, &buffer);
         }
@@ -1031,7 +1035,7 @@ impl AppState {
         }
     }
 
-    // the block takes on the buffer's size, so a copied block pasted into a new one is a twin
+    // the block takes the copied one's size too, so pasting into a new block makes an exact copy
     pub fn paste_block(&mut self) {
         let Some(buffer) = self.block_buffer.as_ref() else {
             self.notify("Block buffer is empty");
