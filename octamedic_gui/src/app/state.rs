@@ -996,6 +996,19 @@ impl AppState {
         self.send_all_to_engine();
     }
 
+    /// SLIDE: VOL, volume commands going evenly between the ones around the cursor in its track.
+    pub fn slide_volume(&mut self) {
+        let EditCursor { line, track, .. } = self.cursor;
+        let hex = self.song().flags.volumes_hex;
+        let id = self.active_pattern;
+        let Some(pattern) = self.song_mut().get_pattern_mut(id) else {
+            return;
+        };
+        if pattern.slide_volume(line, track, hex) {
+            self.changed_patterns.insert(id);
+        }
+    }
+
     pub fn cut_track(&mut self) {
         self.copy_track();
         let track = self.cursor.track;

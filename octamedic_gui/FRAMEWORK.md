@@ -161,6 +161,12 @@ Shift+Backspace opens an empty one, pushing the rest down; the block keeps its l
 (`OctamedicPattern::pull_track_up` and `push_track_down`). Alt+Backspace and Shift+Alt+Backspace are
 the BLOCK panel's DEL.TRK and INS.TRK, and like the buttons don't need edit mode.
 
+Amiga+O is OctaMED's SLIDE: VOL. With the cursor between two volume commands in a track (or on one of
+them), it fills the lines between with volume commands going evenly from the first's volume to the
+second's, rounded, read as hex or decimal like VOL says (`OctamedicPattern::slide_volume`). The
+VOL button belongs to the RANGE page's SLIDE: 1 | 2 | VOL panel, which isn't built yet, so for now
+it's just the key; the button only needs to call `AppState::slide_volume`.
+
 Enter or A in the note column puts in a hold: no note, just the selected instrument, shown as `-|-`
 like any cell with an instrument and no note. It keeps a note held past its instrument's hold length
 (see [docs/PLAYER.md](../docs/PLAYER.md)).
