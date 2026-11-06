@@ -52,7 +52,9 @@ Implement `KeyActions` (`keymap`, `perform`, `describe`) on the gadget and call
 `MainView` (`app/main_view.rs`) is the whole screen and handles global keys like Ctrl+Q, and last of
 all Space (stop) and Shift+Space (continue the song), so a text field gets them first. The
 keyboard's note keys work the same way: any screen plays them on the cursor's track, unless a text
-field or the block editor took them first. The other play keys are OctaMED's: Amiga+P and
+field or the block editor took them first. Every panel sees every mouse click, and within a panel
+every text box does (`|` rather than `||`), so a box finds out when a click on another one takes
+its focus; anything else stops at the first that takes it. The other play keys are OctaMED's: Amiga+P and
 Shift+Alt+Space play the song, Amiga+Space the block, Alt+Space continues the block. The Amiga key
 is right Alt, where it was on the real keyboard next to right Ctrl; the Windows key (Cmd on a Mac)
 counts too. `App` tells the two Alts apart itself (`keymap::amiga_mods`), since the modifiers don't,
@@ -87,11 +89,14 @@ updates and events while it's showing. Main screens are in `app/main/` and `Main
 does the same for `MainMode`. To add one: write the gadget, add a field for it, return it from
 `panel` or `screen`.
 
-FILES, PLAY, VOL and MISC's palette work. INSTR (`header/instrument.rs`) shows the active instrument
+FILES, PLAY, VOL and MISC's palette work. PLAY's HEX and DEC say how volume commands are read, and
+with Shift held they also rewrite the song's volume commands so they play the same
+(`AppState::convert_volumes_hex`). INSTR (`header/instrument.rs`) shows the active instrument
 and edits its name, transpose, finetune, volume, hold and decay (`AppState::edit_active_instrument`,
 hold and decay take two digits, 0 to 99); its arrows go to the first, previous and next instrument
 and the last one with a sound (instrument 1 if none has one), and FLUSH empties it: no sample, no name, and
-every value 0, volume included. The rest of it is ghosted. The rest of MISC and the SLIST screen
+every value 0, volume included. Changing the active instrument lets go of any of its boxes being
+typed in, so what's typed next can't land in the new instrument. The rest of it is ghosted. The rest of MISC and the SLIST screen
 (`main/song_list.rs`) are laid out like OctaMED with their buttons ghosted, ready to be hooked up.
 `main/list_scroller.rs` is the slider with arrows that the FILES and SLIST lists share.
 
