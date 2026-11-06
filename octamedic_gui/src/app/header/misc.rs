@@ -179,7 +179,7 @@ impl Misc {
 
 impl Default for Misc {
     fn default() -> Self {
-        Self::new()
+        return Self::new();
     }
 }
 
