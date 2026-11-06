@@ -6,8 +6,10 @@ adds on top, in `src/framework/`, and how OctaMED's screens in `src/app/` are pu
 
 ## What the app adds
 
-- `framework/event.rs`: the app's `Event`, rustuition's mouse events plus `Key` and `Text` from
-  ggez. It implements `PointerEvent`, so rustuition's gadgets take it as is.
+- `framework/event.rs`: the app's `Event`, rustuition's mouse events plus `Wheel`, `Key` and
+  `Text` from ggez. It implements `PointerEvent`, so rustuition's gadgets take it as is.
+- `framework/wheel.rs`: wheel delta to the whole lines in `Event::Wheel`, capped at one line per
+  event since ggez doesn't separate wheel and trackpad deltas.
 - `framework/widgets/mod.rs`: `Button` and `Slider` aliases with `AppState` and `Event` filled in.
   Use these rather than rustuition's, so handlers know they get an `AppState`. App gadgets
   implement `Gadget<AppState, Event>`.
@@ -90,7 +92,9 @@ and edits its name, transpose, finetune and volume (`AppState::edit_active_instr
 go to the first, previous, next and last instrument and FLUSH empties it: no sample, no name, and
 every value 0, volume included. The rest of it is ghosted. The rest of MISC and the SLIST screen
 (`main/song_list.rs`) are laid out like OctaMED with their buttons ghosted, ready to be hooked up.
-`main/list_scroller.rs` is the slider with arrows that the FILES and SLIST lists share.
+`main/list_scroller.rs` is the slider with arrows that the FILES and SLIST lists share. The wheel
+scrolls it too, with the pointer over the list or the slider, so whoever draws the list sets its
+`list_area` as well as `lines_that_fit`.
 
 The sample editor (`main/sample_editor.rs`) is laid out like OctaMED's SMPED. BUFFSIZE is the whole
 sample's length and the number at the waveform's top right the length in view. `WaveView`

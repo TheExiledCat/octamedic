@@ -120,6 +120,7 @@ impl Gadget<AppState, Event> for FileBrowser {
             *list_area = list;
             let inside = painter.frame(list, 1);
             scroller.lines_that_fit = (inside.h / CHAR_HEIGHT) as usize;
+            scroller.list_area = list;
             let shown = &entries[scroller.first_visible_entry.min(entries.len())..];
             render_entries(painter, list, inside, shown);
             let scroller_area = Rect::new(list.right(), list.y, SCROLLER_WIDTH, height);
@@ -383,5 +384,23 @@ mod tests {
         click(&mut browser, &mut state, SHORTCUTS, 0);
         let _ = fs::remove_dir_all(&temp);
         assert_eq!(state.browser.path(), first_shortcut);
+    }
+
+    #[test]
+    fn wheel_scrolls_the_list_under_the_pointer() {
+        let mut state = state();
+        let temp = temp_folder_with("wheel", 40);
+        state.browser.open(&temp).unwrap();
+        let mut browser = FileBrowser::new();
+        render(&mut browser, &mut state);
+        let wheel = Event::Wheel {
+            pos: Point::new(FILE_LIST[0] + 20, SCREEN_AREA.y + LISTS_TOP + 20),
+            lines: 2,
+        };
+        assert!(browser.handle_event(&mut state, &wheel));
+        render(&mut browser, &mut state);
+        let _ = fs::remove_dir_all(&temp);
+        assert_eq!(browser.scrollers[FILES].first_visible_entry, 2);
+        assert_eq!(browser.scrollers[SHORTCUTS].first_visible_entry, 0);
     }
 }

@@ -19,6 +19,11 @@ pub enum Event {
         pos: Point,
         button: MouseButton,
     },
+    /// The mouse wheel or a trackpad, in whole lines, positive towards the end of a list.
+    Wheel {
+        pos: Point,
+        lines: i32,
+    },
     Key {
         key: KeyCode,
         mods: KeyMods,
@@ -46,7 +51,7 @@ impl PointerEvent for Event {
             Event::MouseMove { pos } => Some(MouseEvent::Move { pos }),
             Event::MouseDown { pos, button } => Some(MouseEvent::Down { pos, button }),
             Event::MouseUp { pos, button } => Some(MouseEvent::Up { pos, button }),
-            Event::Key { .. } | Event::Text { .. } => None,
+            Event::Wheel { .. } | Event::Key { .. } | Event::Text { .. } => None,
         };
     }
 }

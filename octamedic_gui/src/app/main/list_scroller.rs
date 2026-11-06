@@ -11,12 +11,17 @@ const ARROW: [i32; 2] = [12, 6];
 const MIN_HANDLE: i32 = 4;
 
 /// A list's scroller: a slider with up and down arrows under it, keeping track of the first entry
-/// shown.
+/// shown. The wheel scrolls it too, over the list or the scroller.
 pub struct ListScroller {
     slider: SteppedSlider,
     pub first_visible_entry: usize,
     // set by whoever draws the list
     pub lines_that_fit: usize,
+    pub list_area: Rect,
+    // from the last render
+    area: Rect,
+    // from the last update
+    last_first_entry: usize,
 }
 
 impl ListScroller {
@@ -25,6 +30,9 @@ impl ListScroller {
             slider: SteppedSlider::new(SliderDirection::Vertical, 0, 0, ARROW, ARROW_HEIGHT),
             first_visible_entry: 0,
             lines_that_fit: 0,
+            list_area: Rect::default(),
+            area: Rect::default(),
+            last_first_entry: 0,
         };
     }
 
@@ -32,6 +40,7 @@ impl ListScroller {
         let last = total
             .saturating_sub(self.lines_that_fit)
             .min(u16::MAX as usize);
+        self.last_first_entry = last;
         self.first_visible_entry = self.first_visible_entry.min(last);
         self.slider.set_range(0, last as u16);
         if let Some(first) = self.slider.update(state, self.first_visible_entry as u16) {
@@ -48,10 +57,25 @@ impl ListScroller {
         };
         self.slider.set_handle(Some(handle));
         self.slider.render(state, area, painter);
+        self.area = area;
     }
 
     pub fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
+        if let Event::Wheel { pos, lines } = *event {
+            let over = self.list_area.contains(pos) || self.area.contains(pos);
+            if over {
+                self.scroll(lines);
+            }
+            return over;
+        }
         return self.slider.handle_event(state, event);
+    }
+
+    fn scroll(&mut self, lines: i32) {
+        let first = self
+            .first_visible_entry
+            .saturating_add_signed(lines as isize);
+        self.first_visible_entry = first.min(self.last_first_entry);
     }
 }
 
@@ -132,5 +156,63 @@ mod tests {
         scroller.handle_event(&mut state, &press(up));
         scroller.update(&mut state, 20);
         assert_eq!(scroller.first_visible_entry, 2);
+    }
+
+    const LIST: Rect = Rect::new(0, 0, 100, 106);
+    const SCROLLER: Rect = Rect::new(100, 0, SCROLLER_WIDTH, 106);
+
+    // 20 entries, 13 fit, so the first can go from 0 to 7
+    fn drawn_scroller(state: &mut AppState) -> ListScroller {
+        let mut scroller = scroller_fitting(13);
+        scroller.list_area = LIST;
+        scroller.update(state, 20);
+        let mut screen = Framebuffer::new(SCROLLER.right(), SCROLLER.h);
+        let mut painter = Painter::new(&mut screen, &state.palette);
+        scroller.render(state, SCROLLER, 20, &mut painter);
+        return scroller;
+    }
+
+    fn wheel(x: i32, lines: i32) -> Event {
+        return Event::Wheel {
+            pos: Point::new(x, 50),
+            lines,
+        };
+    }
+
+    #[test]
+    fn wheel_over_the_list_scrolls() {
+        let mut state = state();
+        let mut scroller = drawn_scroller(&mut state);
+        assert!(scroller.handle_event(&mut state, &wheel(50, 3)));
+        assert!(scroller.handle_event(&mut state, &wheel(50, -1)));
+        scroller.update(&mut state, 20);
+        assert_eq!(scroller.first_visible_entry, 2);
+        assert_eq!(scroller.slider.slider_mut().value(), 2);
+    }
+
+    #[test]
+    fn wheel_over_the_scroller_scrolls() {
+        let mut state = state();
+        let mut scroller = drawn_scroller(&mut state);
+        assert!(scroller.handle_event(&mut state, &wheel(SCROLLER.x + 5, 1)));
+        assert_eq!(scroller.first_visible_entry, 1);
+    }
+
+    #[test]
+    fn wheel_stops_at_the_ends() {
+        let mut state = state();
+        let mut scroller = drawn_scroller(&mut state);
+        scroller.handle_event(&mut state, &wheel(50, -1));
+        assert_eq!(scroller.first_visible_entry, 0);
+        scroller.handle_event(&mut state, &wheel(50, 100));
+        assert_eq!(scroller.first_visible_entry, 7);
+    }
+
+    #[test]
+    fn wheel_elsewhere_is_left_for_others() {
+        let mut state = state();
+        let mut scroller = drawn_scroller(&mut state);
+        assert!(!scroller.handle_event(&mut state, &wheel(SCROLLER.right() + 5, 1)));
+        assert_eq!(scroller.first_visible_entry, 0);
     }
 }
