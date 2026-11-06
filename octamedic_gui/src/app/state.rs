@@ -705,7 +705,19 @@ impl AppState {
     pub fn set_volumes_hex(&mut self, hex: bool) {
         if self.song().flags.volumes_hex != hex {
             self.song_mut().flags.volumes_hex = hex;
+            self.engine.set_volumes_hex(hex);
         }
+    }
+
+    /// Like `set_volumes_hex`, rewriting every volume command in the song so it still plays the
+    /// same. What Shift-click on HEX or DEC does.
+    pub fn convert_volumes_hex(&mut self, hex: bool) {
+        if self.song().flags.volumes_hex == hex {
+            return;
+        }
+        let changed = self.song_mut().convert_volume_commands(hex);
+        self.changed_patterns.extend(changed);
+        self.set_volumes_hex(hex);
     }
 
     pub fn set_filter(&mut self, on: bool) {
@@ -982,6 +994,19 @@ impl AppState {
         }
         self.song_mut().remove_pattern(index + 1);
         self.send_all_to_engine();
+    }
+
+    /// SLIDE: VOL, volume commands going evenly between the ones around the cursor in its track.
+    pub fn slide_volume(&mut self) {
+        let EditCursor { line, track, .. } = self.cursor;
+        let hex = self.song().flags.volumes_hex;
+        let id = self.active_pattern;
+        let Some(pattern) = self.song_mut().get_pattern_mut(id) else {
+            return;
+        };
+        if pattern.slide_volume(line, track, hex) {
+            self.changed_patterns.insert(id);
+        }
     }
 
     pub fn cut_track(&mut self) {

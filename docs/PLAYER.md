@@ -105,7 +105,9 @@ engine.
 `PaulaRenderer` is the Paula one: DMA on starts the latched range, the latch is picked up when a
 range ends, DMA off silences the channel. The output runs at the sound card's rate, not Paula's,
 so each output frame is the average of the bytes played during it, weighted by how long each was
-held. You keep the held-byte sound without extra aliasing from the resampling.
+held. You keep the held-byte sound without extra aliasing from the resampling. In stereo the
+channels go left, right, right, left like Paula's (the tracks past 4 repeat that), and the preview
+channel goes in the middle (`PaulaRenderer::centre_channel`).
 
 The "LED" filter (`amiga/filter.rs`) goes over the whole mix. On the real thing it's a 2-pole
 Sallen-Key low-pass that the power LED bit switches; from the board's component values it comes out
@@ -142,13 +144,28 @@ instrument number is silent. That's what MED does.
 These details come from libxmp's MED player (`src/med_extras.c`), checked against the manual's
 examples.
 
+## Effects
+
+`apply_effects` runs on a line's first tick, after its note, and matches the command number to a
+function for that effect. Only 0C so far.
+
+0C sets the track's volume, read as hex or as two decimal digits depending on the song's VOL HEX/DEC
+setting, and capped at 64. It's the same volume decay fades, and like MED it lasts until the track's
+next note with an instrument number, a hold symbol, or stop. A 0C on a note's or a `-|-`'s line wins
+over the reset those do, and the footer's meters show the note at the volume it sets. Once a hold
+has run out the note is over, so a volume command after that does nothing until a note or `-|-`
+starts the track again.
+
+Clicking HEX or DEC only changes how volume commands are read, so a song's volume commands play
+differently. With Shift held, every volume command in the song is rewritten as well so it plays the
+same as before (decimal 40 becomes hex 28), like OctaMED. `volume_from_argument` and
+`volume_argument` in `data/volume.rs` go between the two.
+
 ## Not done yet
 
-- Effects (the command column). `tick` has a spot for them.
+- Effects other than 0C. Each gets a function, called from `apply_effects`.
 - 5 to 8 channel songs, where OctaMED mixes two tracks into each Paula channel in software. That
   will be its own renderer.
-- Stereo. Paula puts channels 0 and 3 left and 1 and 2 right; the renderer puts everything in the
-  middle.
 - The A500's fixed RC low-pass (about 4.4kHz, always on, unlike the LED filter).
 - Paula can't fetch faster than a period of about 124 allows, the renderer doesn't limit that.
 - MIDI and synth instruments.

@@ -3,10 +3,11 @@ use std::sync::Arc;
 use mmd::mmd::module::SONG_TRACKS;
 
 use crate::data::{
+    command::SET_VOLUME,
     instrument::{InstrumentId, MAX_INSTRUMENTS, OctamedicInstrument},
     pattern::{OctamedicPattern, PatternId},
     tempo::OctamedicTempo,
-    volume::{MAX_VOLUME, OctamedicVolume},
+    volume::{MAX_VOLUME, OctamedicVolume, volume_argument, volume_from_argument},
 };
 
 #[derive(Clone, Copy)]
@@ -74,6 +75,33 @@ impl OctamedicSong {
 
     pub fn patterns(&self) -> &[Arc<OctamedicPattern>] {
         return &self.patterns;
+    }
+
+    /// Rewrites every volume command for VOL's HEX (`hex`) or DEC, so each plays at the same
+    /// volume it did in the other. Returns the blocks that changed. Doesn't change the song's flag.
+    pub fn convert_volume_commands(&mut self, hex: bool) -> Vec<PatternId> {
+        let mut changed = Vec::new();
+        for (index, pattern) in self.patterns.iter_mut().enumerate() {
+            let has_volume_commands = pattern
+                .lines
+                .iter()
+                .flat_map(|line| &line.tracks)
+                .any(|cell| cell.command_id.0 == SET_VOLUME);
+            if !has_volume_commands {
+                continue;
+            }
+            let cells = Arc::make_mut(pattern)
+                .lines
+                .iter_mut()
+                .flat_map(|line| &mut line.tracks)
+                .filter(|cell| cell.command_id.0 == SET_VOLUME);
+            for cell in cells {
+                let volume = volume_from_argument(cell.command_value, !hex);
+                cell.command_value = volume_argument(volume, hex);
+            }
+            changed.push(PatternId(index as u8));
+        }
+        return changed;
     }
 
     // copy on write if the engine still holds it
@@ -167,7 +195,7 @@ impl OctamedicSong {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data::note::OctamedicNote;
+    use crate::data::{command::CommandId, note::OctamedicNote};
 
     #[test]
     fn clearing_keeps_the_instruments() {
@@ -246,5 +274,24 @@ mod tests {
         song.remove_pattern(2);
         assert_eq!(song.patterns.len(), 2);
         assert_eq!(song.sequence(), [PatternId(0)]);
+    }
+
+    #[test]
+    fn converting_volume_commands() {
+        let mut song = OctamedicSong::new("test");
+        song.patterns.push(Arc::new(OctamedicPattern::new()));
+        let cell = &mut song.ensure_pattern(PatternId(0)).lines[0].tracks[0];
+        cell.command_id = CommandId(SET_VOLUME);
+        cell.command_value = 0x40;
+        let tempo = &mut song.ensure_pattern(PatternId(0)).lines[1].tracks[0];
+        tempo.command_id = CommandId(0x0F);
+        tempo.command_value = 0x40;
+        // decimal 40 is hex 28, and only volume commands change. block 1 has none
+        assert_eq!(song.convert_volume_commands(true), [PatternId(0)]);
+        let lines = &song.patterns[0].lines;
+        assert_eq!(lines[0].tracks[0].command_value, 0x28);
+        assert_eq!(lines[1].tracks[0].command_value, 0x40);
+        song.convert_volume_commands(false);
+        assert_eq!(song.patterns[0].lines[0].tracks[0].command_value, 0x40);
     }
 }

@@ -1,5 +1,6 @@
 use std::array;
 
+use ggez::input::keyboard::KeyMods;
 use octamedic_core::data::{
     pattern::PatternId,
     tempo::{MAX_BPM, MAX_LINES_PER_BEAT, MAX_TICKS_PER_LINE, OctamedicTempo},
@@ -489,11 +490,21 @@ impl Playback {
     }
 
     fn update_volume_base(&mut self, state: &mut AppState) {
-        if left_clicked(&mut self.hex) {
-            state.set_volumes_hex(true);
-        }
-        if left_clicked(&mut self.dec) {
-            state.set_volumes_hex(false);
+        // Some(true) for HEX, Some(false) for DEC
+        let clicked_hex = if left_clicked(&mut self.hex) {
+            Some(true)
+        } else if left_clicked(&mut self.dec) {
+            Some(false)
+        } else {
+            None
+        };
+        // with Shift, the song's volume commands are rewritten to match
+        match clicked_hex {
+            Some(hex) if state.mouse_mods.contains(KeyMods::SHIFT) => {
+                state.convert_volumes_hex(hex)
+            }
+            Some(hex) => state.set_volumes_hex(hex),
+            None => {}
         }
         let hex = state.song().flags.volumes_hex;
         self.hex.set_toggled(hex);
@@ -593,7 +604,13 @@ impl Gadget<AppState, Event> for Playback {
 
 #[cfg(test)]
 mod tests {
-    use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
+    use octamedic_core::{
+        data::{
+            command::{CommandId, SET_VOLUME},
+            project::OctamedicProject,
+        },
+        engine::handle::EngineHandle,
+    };
     use rustuition::{rect::Point, target::Framebuffer};
 
     use super::*;
@@ -619,6 +636,43 @@ mod tests {
         assert!(state.song().flags.volumes_hex);
         assert!(!state.is_saved());
         assert!(playback.hex.is_toggled() && !playback.dec.is_toggled());
+    }
+
+    #[test]
+    fn shift_click_converts_set_volumes() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        let mut playback = Playback::new();
+        let cell = &mut state.active_pattern_mut().unwrap().lines[0].tracks[0];
+        cell.command_id = CommandId(SET_VOLUME);
+        cell.command_value = 0x40;
+        let set_volume = |state: &AppState| state.active_pattern().unwrap().lines[0].tracks[0];
+        let click = |playback: &mut Playback, state: &mut AppState, area: Rect, shift: bool| {
+            // the buttons find out where they are when they're drawn
+            let mut screen = Framebuffer::new(460, 50);
+            let bounds = screen.bounds();
+            playback.render(
+                state,
+                bounds,
+                &mut Painter::new(&mut screen, &state.palette),
+            );
+            state.mouse_mods = if shift { KeyMods::SHIFT } else { KeyMods::NONE };
+            let pos = Point::new(area.x + 2, area.y + 2);
+            let button = MouseButton::Left;
+            playback.handle_event(state, &Event::MouseDown { pos, button });
+            playback.handle_event(state, &Event::MouseUp { pos, button });
+            playback.update(state);
+        };
+        // a plain click leaves it, so 40 now plays as hex 40
+        click(&mut playback, &mut state, HEX, false);
+        assert!(state.song().flags.volumes_hex);
+        assert_eq!(set_volume(&state).command_value, 0x40);
+        click(&mut playback, &mut state, DEC, false);
+        // decimal 40 is hex 28
+        click(&mut playback, &mut state, HEX, true);
+        assert!(state.song().flags.volumes_hex);
+        assert_eq!(set_volume(&state).command_value, 0x28);
+        click(&mut playback, &mut state, DEC, true);
+        assert_eq!(set_volume(&state).command_value, 0x40);
     }
 
     #[test]

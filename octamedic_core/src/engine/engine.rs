@@ -15,10 +15,12 @@ use crate::{
         paula::{PaulaRenderer, PaulaWrite, Renderer, SILENCE},
     },
     data::{
+        command::SET_VOLUME,
         instrument::{InstrumentId, MAX_INSTRUMENT_VOLUME, OctamedicInstrument, OctamedicSample},
         note::OctamedicNote,
         pattern::{MAX_TRACKS, OctamedicPattern, OctamedicPatternTrack, PatternId},
         tempo::OctamedicTempo,
+        volume::volume_from_argument,
     },
 };
 
@@ -63,6 +65,7 @@ pub struct OctamedicEngine {
     track_volumes: [u8; MAX_TRACKS],
     master_volume: u8,
     global_transpose: i8,
+    volumes_hex: bool,
     // listener's volume, not saved with the song
     output_volume: u8,
     muted_tracks: [bool; SONG_TRACKS],
@@ -119,6 +122,7 @@ impl OctamedicEngine {
             track_volumes: [MAX_INSTRUMENT_VOLUME; MAX_TRACKS],
             master_volume: MAX_INSTRUMENT_VOLUME,
             global_transpose: 0,
+            volumes_hex: false,
             output_volume: MAX_INSTRUMENT_VOLUME,
             muted_tracks: [false; SONG_TRACKS],
             mode: PlayMode::Paused,
@@ -198,6 +202,7 @@ impl OctamedicEngine {
                 self.renderer.set_clock(machine);
             }
             EngineCommand::SetFilter(on) => self.renderer.set_filter(on),
+            EngineCommand::SetVolumesHex(hex) => self.volumes_hex = hex,
             EngineCommand::SetTrackVolume { track, volume } => {
                 if let Some(track_volume) = self.track_volumes.get_mut(track) {
                     *track_volume = volume.min(MAX_INSTRUMENT_VOLUME);
@@ -215,7 +220,11 @@ impl OctamedicEngine {
                 track,
                 note,
                 instrument,
-            } => self.note_on(track, note, Some(instrument)),
+            } => {
+                if self.note_on(track, note, Some(instrument)) {
+                    self.report_note(track, note);
+                }
+            }
             EngineCommand::ReleaseNote { track } => self.release(track),
             EngineCommand::Preview(Some((sample, note))) => {
                 let played = sample_note(note.value, 0, 0, sample.octaves);
@@ -377,14 +386,14 @@ impl OctamedicEngine {
             return;
         };
         if left == 0 {
-            let volume = &mut self.note_volumes[track];
-            let step = if hold.decay == 0 { *volume } else { hold.decay };
-            *volume = volume.saturating_sub(step);
-            if *volume == 0 {
+            let volume = self.note_volumes[track];
+            let step = if hold.decay == 0 { volume } else { hold.decay };
+            let volume = volume.saturating_sub(step);
+            if volume == 0 {
                 hold.ticks_left = None;
+                hold.ended = true;
             }
-            let volume = self.mixed_volume(track, self.note_volumes[track]);
-            self.write(track, PaulaWrite::Volume(volume));
+            self.set_note_volume(track, volume);
         } else if !hold.paused {
             hold.ticks_left = Some(left - 1);
         }
@@ -462,13 +471,41 @@ impl OctamedicEngine {
                 continue;
             };
             let instrument = (line.instrument_id.0 != 0).then_some(line.instrument_id);
+            let mut triggered = false;
             if line.note.value != 0 {
-                self.note_on(track, line.note, instrument);
+                triggered = self.note_on(track, line.note, instrument);
             } else if let Some(id) = instrument {
                 self.hold_symbol(track, id);
             }
+            self.apply_effects(track, line);
+            // after the effects, so the meter shows a volume command on the note's line
+            if triggered {
+                self.report_note(track, line.note);
+            }
             self.holds[track].paused = self.next_line_has_hold_symbol(track);
         }
+    }
+
+    // after the line's note, so they act on it
+    fn apply_effects(&mut self, track: usize, cell: OctamedicPatternTrack) {
+        if cell.command_id.0 == SET_VOLUME {
+            self.set_volume(track, cell.command_value);
+        }
+    }
+
+    // lasts until the track's next note with an instrument number or -|-, or stop. once a hold
+    // has run out the note's over, so it does nothing
+    fn set_volume(&mut self, track: usize, argument: u8) {
+        if !self.holds[track].ended {
+            self.set_note_volume(track, volume_from_argument(argument, self.volumes_hex));
+        }
+    }
+
+    // before track and master volume
+    fn set_note_volume(&mut self, track: usize, volume: u8) {
+        self.note_volumes[track] = volume;
+        let volume = self.mixed_volume(track, volume);
+        self.write(track, PaulaWrite::Volume(volume));
     }
 
     // OctaMED 3.00 on resets the volume here
@@ -477,9 +514,9 @@ impl OctamedicEngine {
         let Some(default_volume) = self.instrument(id).map(|instrument| instrument.volume) else {
             return;
         };
-        self.note_volumes[track] = default_volume;
-        let volume = self.mixed_volume(track, default_volume);
-        self.write(track, PaulaWrite::Volume(volume));
+        // brings a decayed note back
+        self.holds[track].ended = false;
+        self.set_note_volume(track, default_volume);
     }
 
     // -|- on the next line pauses the hold on this one. Like OctaMED, not across blocks
@@ -509,24 +546,25 @@ impl OctamedicEngine {
         return volume as u8;
     }
 
+    // whether a note started
     fn note_on(
         &mut self,
         track: usize,
         note: OctamedicNote,
         instrument_number: Option<InstrumentId>,
-    ) {
+    ) -> bool {
         if track >= MAX_TRACKS || note.value == 0 || note.value > MAX_NOTE {
-            return;
+            return false;
         }
         let instrument_id = instrument_number.or(self.track_instruments[track]);
         self.track_instruments[track] = instrument_id;
         let Some(instrument) = instrument_id.and_then(|id| self.instrument(id)) else {
             self.release(track);
-            return;
+            return false;
         };
         let Some(sample) = instrument.sample().cloned() else {
             self.release(track);
-            return;
+            return false;
         };
         let transpose = instrument.transpose.wrapping_add(self.global_transpose);
         let played = sample_note(note.value, transpose, instrument.finetune, sample.octaves);
@@ -538,13 +576,20 @@ impl OctamedicEngine {
             self.note_volumes[track] = default_volume;
         }
         let volume = self.mixed_volume(track, self.note_volumes[track]);
-        if !self.is_muted(track) {
-            let instrument = instrument_id.map_or(0, |id| id.0);
-            self.status
-                .note_triggered(track, note.value, instrument, volume);
-        }
         self.trigger(track, sample, played, volume);
         self.voices[track] = instrument_id;
+        return true;
+    }
+
+    // for the footer's meters
+    fn report_note(&self, track: usize, note: OctamedicNote) {
+        if self.is_muted(track) {
+            return;
+        }
+        let instrument = self.voices[track].map_or(0, |id| id.0);
+        let volume = self.mixed_volume(track, self.note_volumes[track]);
+        self.status
+            .note_triggered(track, note.value, instrument, volume);
     }
 
     // same order the 68k player does it: dma off, sample, period, volume, dma on, then the
@@ -670,6 +715,8 @@ struct Hold {
     decay: u8,
     // the next line has a -|-
     paused: bool,
+    // run out and decayed to nothing, which is the end of the note
+    ended: bool,
 }
 
 impl Hold {
@@ -678,6 +725,7 @@ impl Hold {
             ticks_left: (hold > 0).then_some(hold as u32),
             decay,
             paused: false,
+            ended: false,
         };
     }
 }
@@ -691,7 +739,10 @@ mod tests {
 
     use super::*;
     use crate::{
-        data::instrument::{InstrumentKind, SampleOctaves},
+        data::{
+            command::CommandId,
+            instrument::{InstrumentKind, SampleOctaves},
+        },
         engine::period::note_period,
     };
 
@@ -1438,10 +1489,13 @@ mod tests {
         Note,
         NoteWithoutInstrument,
         HoldSymbol,
+        // 0C with this argument, on top of whatever else is on the line
+        SetVolume(u8),
     }
 
     // channel 0's volume after each tick, 0 while DMA's off
     fn volume_per_tick(
+        volumes_hex: bool,
         hold: u8,
         decay: u8,
         ticks_per_line: u8,
@@ -1449,6 +1503,9 @@ mod tests {
         ticks: usize,
     ) -> Vec<u8> {
         let (mut engine, commands, recorder) = recording_engine();
+        commands
+            .send(EngineCommand::SetVolumesHex(volumes_hex))
+            .unwrap();
         let mut instrument = instrument();
         instrument.hold = hold;
         instrument.decay = decay;
@@ -1468,6 +1525,10 @@ mod tests {
                 }
                 Cell::NoteWithoutInstrument => track.note.value = 13,
                 Cell::HoldSymbol => track.instrument_id = LOADED_INSTRUMENT,
+                Cell::SetVolume(argument) => {
+                    track.command_id = CommandId(SET_VOLUME);
+                    track.command_value = argument;
+                }
             }
         }
         commands
@@ -1510,7 +1571,7 @@ mod tests {
     #[test]
     fn hold_cuts_note() {
         // the manual's example
-        let heard = volume_per_tick(2, 0, 6, &[(0, Cell::Note), (1, Cell::Note)], 9);
+        let heard = volume_per_tick(false, 2, 0, 6, &[(0, Cell::Note), (1, Cell::Note)], 9);
         assert_eq!(
             heard,
             [
@@ -1529,13 +1590,13 @@ mod tests {
 
     #[test]
     fn no_hold_plays_on() {
-        let heard = volume_per_tick(0, 3, 6, &[(0, Cell::Note)], 12);
+        let heard = volume_per_tick(false, 0, 3, 6, &[(0, Cell::Note)], 12);
         assert!(heard.iter().all(|&volume| volume == FULL_VOLUME));
     }
 
     #[test]
     fn decay_fades_each_tick() {
-        let heard = volume_per_tick(2, 16, 6, &[(0, Cell::Note)], 8);
+        let heard = volume_per_tick(false, 2, 16, 6, &[(0, Cell::Note)], 8);
         assert_eq!(heard, [FULL_VOLUME, FULL_VOLUME, 48, 32, 16, 0, 0, 0]);
     }
 
@@ -1547,7 +1608,7 @@ mod tests {
             (1, Cell::HoldSymbol),
             (2, Cell::HoldSymbol),
         ];
-        let heard = volume_per_tick(4, 0, 6, &cells, 20);
+        let heard = volume_per_tick(false, 4, 0, 6, &cells, 20);
         assert!(heard[..16].iter().all(|&volume| volume == FULL_VOLUME));
         assert!(heard[16..].iter().all(|&volume| volume == 0));
     }
@@ -1556,6 +1617,7 @@ mod tests {
     fn note_without_instrument_keeps_hold() {
         // still cut 8 ticks after line 0's note
         let heard = volume_per_tick(
+            false,
             8,
             0,
             6,
@@ -1565,6 +1627,7 @@ mod tests {
         assert_eq!(&heard[6..], [FULL_VOLUME, FULL_VOLUME, 0, 0]);
         // silent once decayed, like MED
         let heard = volume_per_tick(
+            false,
             1,
             0,
             6,
@@ -1578,8 +1641,118 @@ mod tests {
     fn hold_symbol_resets_volume() {
         // -|- after the decay brings the volume back for good
         let cells = [(0, Cell::Note), (2, Cell::HoldSymbol)];
-        let heard = volume_per_tick(1, 32, 6, &cells, 18);
+        let heard = volume_per_tick(false, 1, 32, 6, &cells, 18);
         assert_eq!(&heard[..4], [FULL_VOLUME, 32, 0, 0]);
         assert!(heard[12..].iter().all(|&volume| volume == FULL_VOLUME));
+    }
+
+    #[test]
+    fn set_volume_decimal() {
+        let cells = [(0, Cell::Note), (0, Cell::SetVolume(0x20))];
+        assert_eq!(volume_per_tick(false, 0, 0, 2, &cells, 2), [20, 20]);
+        // and never above 64
+        let cells = [(0, Cell::Note), (0, Cell::SetVolume(0x99))];
+        assert_eq!(volume_per_tick(false, 0, 0, 2, &cells, 1), [FULL_VOLUME]);
+    }
+
+    #[test]
+    fn set_volume_hex() {
+        let cells = [(0, Cell::Note), (0, Cell::SetVolume(0x20))];
+        assert_eq!(volume_per_tick(true, 0, 0, 2, &cells, 1), [32]);
+    }
+
+    #[test]
+    fn set_volume_on_playing_note() {
+        let cells = [(0, Cell::Note), (1, Cell::SetVolume(0x10))];
+        assert_eq!(
+            volume_per_tick(false, 0, 0, 2, &cells, 4),
+            [FULL_VOLUME, FULL_VOLUME, 10, 10]
+        );
+    }
+
+    #[test]
+    fn set_volume_until_numbered_note() {
+        let cells = [
+            (0, Cell::Note),
+            (0, Cell::SetVolume(0x10)),
+            (1, Cell::NoteWithoutInstrument),
+            (2, Cell::Note),
+        ];
+        assert_eq!(
+            volume_per_tick(false, 0, 0, 1, &cells, 3),
+            [10, 10, FULL_VOLUME]
+        );
+    }
+
+    #[test]
+    fn decay_from_set_volume() {
+        let cells = [(0, Cell::Note), (0, Cell::SetVolume(0x40))];
+        assert_eq!(volume_per_tick(false, 1, 16, 6, &cells, 4), [40, 24, 8, 0]);
+    }
+
+    #[test]
+    fn hold_symbol_resets_set_volume() {
+        let cells = [
+            (0, Cell::Note),
+            (0, Cell::SetVolume(0x20)),
+            (1, Cell::HoldSymbol),
+            (2, Cell::HoldSymbol),
+            (2, Cell::SetVolume(0x10)),
+        ];
+        assert_eq!(
+            volume_per_tick(false, 0, 0, 1, &cells, 3),
+            [20, FULL_VOLUME, 10]
+        );
+    }
+
+    #[test]
+    fn set_volume_after_the_hold_ended_does_nothing() {
+        let cells = [(0, Cell::Note), (3, Cell::SetVolume(0x30))];
+        assert_eq!(
+            volume_per_tick(false, 1, 0, 1, &cells, 5),
+            [FULL_VOLUME, 0, 0, 0, 0]
+        );
+        // a -|- brings the note back, and volume commands work on it again
+        let cells = [
+            (0, Cell::Note),
+            (3, Cell::HoldSymbol),
+            (3, Cell::SetVolume(0x30)),
+        ];
+        assert_eq!(
+            volume_per_tick(false, 1, 0, 1, &cells, 4),
+            [FULL_VOLUME, 0, 0, 30]
+        );
+    }
+
+    #[test]
+    fn meter_shows_set_volume_on_the_notes_line() {
+        let (mut engine, commands, _) = recording_engine();
+        commands
+            .send(EngineCommand::SetInstrument {
+                id: LOADED_INSTRUMENT,
+                instrument: Some(instrument()),
+            })
+            .unwrap();
+        let mut block = pattern(1, &[]);
+        let track = &mut block.lines[0].tracks[0];
+        track.note.value = 13;
+        track.instrument_id = LOADED_INSTRUMENT;
+        track.command_id = CommandId(SET_VOLUME);
+        track.command_value = 0x10;
+        commands
+            .send(EngineCommand::SetPattern {
+                id: PatternId(0),
+                pattern: Arc::new(block),
+            })
+            .unwrap();
+        commands
+            .send(EngineCommand::PlayPattern {
+                pattern: PatternId(0),
+                row: 0,
+                looping: false,
+            })
+            .unwrap();
+        run(&mut engine, 1);
+        assert_eq!(engine.status.note_trigger(0).volume, 10);
     }
 }
