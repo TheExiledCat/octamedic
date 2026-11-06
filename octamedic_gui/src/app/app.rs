@@ -231,8 +231,11 @@ impl App {
 
 impl EventHandler for App {
     fn update(&mut self, ctx: &mut Context) -> GameResult {
-        ctx.gfx
-            .set_window_title(&format!("OctaMEDIC ({:.02} FPS) ", ctx.time.fps()));
+        ctx.gfx.set_window_title(&format!(
+            "OctaMEDIC ({} {:.0} Hz) ",
+            self.video,
+            ctx.time.fps()
+        ));
         self.state.update();
         self.state.screen_filters.advance_frame();
         self.main.update(&mut self.state);

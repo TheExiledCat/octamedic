@@ -32,6 +32,9 @@ const TRACK_VOLUME: Rect = Rect::new(42, 32, 28, 10);
 const MASTER_VOLUME: Rect = Rect::new(159, 32, 28, 10);
 const STEP_WIDTH: i32 = 20;
 const DIVIDER: Rect = Rect::new(269, 0, 2, 43);
+// at the top right of the divider, 90% of the 179px there
+const INPUT: Rect = Rect::new(280, 0, 161, 11);
+const OUTPUT: Rect = Rect::new(280, 13, 161, 11);
 
 // the arrow down to the master volume box, a span of pixels per line
 const ARROW_ROWS: [(i32, i32); 8] = [
@@ -53,6 +56,9 @@ pub struct Volume {
     master_volume: Textbox,
     track_steps: [Button; STEPS.len()],
     master_steps: [Button; STEPS.len()],
+    // audio routing settings, not there yet
+    input: Button,
+    output: Button,
     // from the last render, for clicks
     track_boxes: [Rect; SONG_TRACKS],
 }
@@ -65,6 +71,8 @@ impl Volume {
             master_volume: volume_box(),
             track_steps: step_buttons(),
             master_steps: step_buttons(),
+            input: routing_button("INPUT"),
+            output: routing_button("OUTPUT"),
             track_boxes: [Rect::default(); SONG_TRACKS],
         };
     }
@@ -199,7 +207,13 @@ impl Gadget<AppState, Event> for Volume {
             }
         }
         painter.fill(DIVIDER.within(area), Pen::BACKGROUND);
+        self.input.render(state, INPUT.within(area), painter);
+        self.output.render(state, OUTPUT.within(area), painter);
     }
+}
+
+fn routing_button(label: &'static str) -> Button {
+    return Button::new(label).font(fonts::LABEL).enabled(false);
 }
 
 fn volume_box() -> Textbox {
@@ -291,6 +305,16 @@ mod tests {
         volume.handle_event(state, &down);
         volume.handle_event(state, &up);
         volume.update(state);
+    }
+
+    #[test]
+    fn routing_buttons_are_placeholders() {
+        let (volume, _) = panel();
+        assert!(!volume.input.is_enabled() && !volume.output.is_enabled());
+        for rect in [INPUT, OUTPUT] {
+            assert!(rect.x > DIVIDER.right() && rect.right() <= AREA.right());
+            assert!(rect.bottom() <= AREA.bottom());
+        }
     }
 
     fn centre(rect: Rect) -> Point {

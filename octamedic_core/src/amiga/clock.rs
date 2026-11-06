@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{fmt::Display, time::Duration};
 
 // how long a key's held before it repeats, the same on both machines for now
 const KEY_REPEAT_DELAY: Duration = Duration::from_millis(400);
@@ -49,5 +49,17 @@ impl VideoStandard {
             VideoStandard::Pal => VideoStandard::Ntsc,
             VideoStandard::Ntsc => VideoStandard::Pal,
         };
+    }
+}
+impl Display for VideoStandard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                VideoStandard::Pal => "PAL",
+                VideoStandard::Ntsc => "NTSC",
+            }
+        )
     }
 }
