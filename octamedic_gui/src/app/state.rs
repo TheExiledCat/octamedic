@@ -46,6 +46,7 @@ const SEMITONES: u8 = SEMITONES_PER_OCTAVE;
 const MAX_SEQUENCE_ENTRIES: usize = 256;
 
 const MAX_DEBUG_LINES: usize = 256;
+const MULTIPLE_ERRORS: &str = "Multiple errors have occurred";
 
 // C up to the next C, laid out like a piano keyboard
 const BOTTOM_OCTAVE_KEYS: [char; 13] = [
@@ -444,6 +445,20 @@ impl AppState {
         self.notified_at = Instant::now();
     }
 
+    /// Each goes in the debug console, and the notification bar shows the one there is, or that
+    /// there were more.
+    pub fn report_startup_errors(&mut self, errors: Vec<String>) {
+        let notification = match errors.as_slice() {
+            [] => return,
+            [error] => error.clone(),
+            _ => MULTIPLE_ERRORS.to_owned(),
+        };
+        for error in errors {
+            self.debug(error);
+        }
+        self.notify(notification);
+    }
+
     pub fn debug(&mut self, line: impl Into<String>) {
         if self.debug_lines.len() == MAX_DEBUG_LINES {
             self.debug_lines.pop_front();
@@ -495,22 +510,23 @@ impl AppState {
         // closed first, the new one could be the same hardware
         self.engine = EngineHandle::disconnected();
         let previous = std::mem::replace(&mut self.output_device, device);
-        if !self.open_audio() && self.output_device != previous {
-            let notification = self.notification.take();
-            self.output_device = previous;
-            self.open_audio();
-            self.notification = notification;
+        if let Err(error) = self.open_audio() {
+            if self.output_device != previous {
+                self.output_device = previous;
+                let _ = self.open_audio();
+            }
+            self.notify(error);
         }
     }
 
-    /// Starts the engine on the output device and sends it everything, or says why it can't.
-    pub fn open_audio(&mut self) -> bool {
+    /// Starts the engine on the output device and sends it everything, or gives back why it
+    /// can't.
+    pub fn open_audio(&mut self) -> Result<(), String> {
         let engine = match EngineHandle::spawn(self.video.clock(), self.output_device.as_deref()) {
             Ok(engine) => engine,
             Err(error) => {
                 self.audio_failed = true;
-                self.notify(format!("NO AUDIO: {error}"));
-                return false;
+                return Err(format!("NO AUDIO: {error}"));
             }
         };
         self.engine = engine;
@@ -521,7 +537,7 @@ impl AppState {
         }
         self.engine.set_mono(self.mono);
         self.engine_active_instrument = None;
-        return true;
+        return Ok(());
     }
 
     pub fn mono(&self) -> bool {
@@ -1656,5 +1672,18 @@ mod tests {
         state.active_pattern = PatternId(1);
         state.delete_this_block();
         assert_eq!(state.song().sequence(), [0, 1].map(PatternId));
+    }
+
+    #[test]
+    fn startup_errors() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        state.report_startup_errors(Vec::new());
+        assert_eq!(state.notification, None);
+        state.report_startup_errors(vec!["NO AUDIO".to_owned()]);
+        assert_eq!(state.notification.as_deref(), Some("NO AUDIO"));
+        state.report_startup_errors(vec!["first".to_owned(), "second".to_owned()]);
+        assert_eq!(state.notification.as_deref(), Some(MULTIPLE_ERRORS));
+        let lines: Vec<&str> = state.debug_lines().iter().map(String::as_str).collect();
+        assert_eq!(lines, ["NO AUDIO", "first", "second"]);
     }
 }

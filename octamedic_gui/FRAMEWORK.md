@@ -135,6 +135,13 @@ edits while it's playing.
 
 `state.debug("...")` adds a line to the debug console.
 
+On Windows the GUI is a GUI program (`windows_subsystem = "windows"`), so no console opens with it
+and nothing printed shows anywhere. Errors from before the window opens (the folders, a module
+given on the command line, no audio) are collected in `main` and `App::new` and handed to
+`AppState::report_startup_errors`: each goes in the debug console (Ctrl+`), and the notification
+bar shows the error, or "Multiple errors have occurred" if there's more than one. Errors that stop
+the window opening at all still end `main`.
+
 Dialogs are rustuition's `Dialog` (the `Dialog` alias in `framework/widgets`). Open one with
 `state.open_dialog(dialog)`, from anywhere that has the state, even another dialog's callback.
 `DialogStack` (`framework/dialog_stack.rs`, owned by `App`) picks them up, gives the top one every

@@ -68,10 +68,15 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(ctx: &mut Context, project: OctamedicProject) -> GameResult<Self> {
+    /// `errors` are from starting up, before there was a window to show them in.
+    pub fn new(
+        ctx: &mut Context,
+        project: OctamedicProject,
+        mut errors: Vec<String>,
+    ) -> GameResult<Self> {
         mouse::set_cursor_hidden(ctx, true);
         let mut app = Self {
-            state: Self::state_with_engine(project),
+            state: Self::state_with_engine(project, &mut errors),
             main: MainView::new(),
             dialogs: DialogStack::default(),
             screen: screen_image(ctx, DEFAULT_VIDEO),
@@ -91,13 +96,16 @@ impl App {
             alts_held: [false; 2],
         };
         app.fit_viewport(ctx);
+        app.state.report_startup_errors(errors);
         return Ok(app);
     }
 
     // no audio device, run silent instead of bailing
-    fn state_with_engine(project: OctamedicProject) -> AppState {
+    fn state_with_engine(project: OctamedicProject, errors: &mut Vec<String>) -> AppState {
         let mut state = AppState::new(project, EngineHandle::disconnected());
-        state.open_audio();
+        if let Err(error) = state.open_audio() {
+            errors.push(error);
+        }
         return state;
     }
 

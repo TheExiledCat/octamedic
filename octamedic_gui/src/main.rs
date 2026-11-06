@@ -1,3 +1,6 @@
+// a GUI program on Windows, so it doesn't open a console window first
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 use std::path::PathBuf;
 
 use ggez::{
@@ -14,12 +17,12 @@ use crate::app::{DEFAULT_VIDEO, app::App, files, icon, screen};
 mod app;
 mod framework;
 
-fn load_project() -> OctamedicProject {
+fn load_project(errors: &mut Vec<String>) -> OctamedicProject {
     let Some(path) = std::env::args_os().nth(1).map(PathBuf::from) else {
         return OctamedicProject::new();
     };
     return files::load_module(&path).unwrap_or_else(|error| {
-        eprintln!("Couldn't open {}: {error}", path.display());
+        errors.push(format!("Couldn't open {}: {error}", path.display()));
         OctamedicProject::new()
     });
 }
@@ -31,10 +34,12 @@ const WINDOW_SCALE: f32 = 2.0;
 const MONITOR_SHARE: f32 = 0.9;
 
 fn main() -> GameResult<()> {
+    // shown once the window's open, there's no console to print them to on Windows
+    let mut errors = Vec::new();
     if let Err(error) = files::initialize() {
-        eprintln!("Couldn't create OctaMEDIC's folders: {error}");
+        errors.push(format!("Couldn't create OctaMEDIC's folders: {error}"));
     }
-    let project = load_project();
+    let project = load_project(&mut errors);
     let [width, height] = screen(DEFAULT_VIDEO).window_size(WINDOW_SCALE);
     let mode = WindowMode {
         maximized: false,
@@ -55,7 +60,7 @@ fn main() -> GameResult<()> {
         .window_setup(WindowSetup::default().title("OctaMEDIC").vsync(false))
         .build()?;
     open_window(&mut ctx, mode)?;
-    let app = App::new(&mut ctx, project)?;
+    let app = App::new(&mut ctx, project, errors)?;
     icon::set_window_icons(ctx.gfx.window())?;
     event::run(ctx, event_loop, app);
 }
