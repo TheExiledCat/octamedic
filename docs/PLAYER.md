@@ -72,7 +72,8 @@ slides and arpeggios, later.
 
 `OctamedicEngine::process` fills each buffer the callback asks for. It works out how many output
 frames a tick is (`sample rate x tick seconds`), renders up to the next tick, runs it, and so on.
-The leftover fraction of a frame carries over, so the tempo doesn't drift.
+The leftover fraction of a frame carries over, so the tempo doesn't drift. Ticks go on while the
+song is stopped, they just don't play rows, so notes played from the keyboard hold and decay too.
 
 On a row's first tick each track with a note triggers it. A track with only an instrument number
 remembers it for its next note, like the original.
@@ -86,6 +87,10 @@ differently.
 
 Volume is the instrument's volume scaled by track volume and song master volume (each out of 64).
 The listener's output volume comes after that and isn't part of the song.
+
+Previews (the sample import dialog's and the sample editor's) play on a channel of their own past
+the tracks, in the middle of the stereo picture, so they never touch a track's hold, volume or
+instrument.
 
 Muting a track (one of the song's 16) drops its `PaulaWrite`s before they reach the renderer, and
 cuts whatever it was playing. Everything else carries on as normal, so it picks up with the right
@@ -116,6 +121,27 @@ play the octave copy and period the tables in [FILES.md](FILES.md) pick for each
 data. ExtSample (type 7) plays two octaves under the table. The 16-bit wrap on very long copies
 isn't copied.
 
+## Hold and decay
+
+An instrument's HLD: is how many ticks each note plays, and DEC: how fast it fades after that: the
+decay comes off the note's volume (0 to 64) every tick, and a decay of 0 drops it to nothing at
+once. The channel isn't switched off, it just plays on at volume 0. Instruments with a hold of 0
+ignore all of this. Both go from 0 to 99, the two digits OctaMED's boxes take, and bigger values in
+a module or synth sound load as 99.
+
+A hold symbol, `-|-`, is a cell with an instrument but no note (Enter in the editor). It keeps a
+note going: while the *next* line has one, the hold doesn't count down. So hold 4 then two `-|-`
+lines at 6 ticks a line is 6 + 6 + 4 ticks. Like the original, it doesn't look into the next block,
+and once the decay has started nothing can stop it. A hold symbol also puts the track's volume
+back to the instrument's, so one after a decayed note brings it back at full volume.
+
+Only a note with an instrument number starts a new hold and resets the volume. One without
+carries on with the track's hold and volume, so after a note has decayed away, a note with no
+instrument number is silent. That's what MED does.
+
+These details come from libxmp's MED player (`src/med_extras.c`), checked against the manual's
+examples.
+
 ## Not done yet
 
 - Effects (the command column). `tick` has a spot for them.
@@ -126,7 +152,6 @@ isn't copied.
 - The A500's fixed RC low-pass (about 4.4kHz, always on, unlike the LED filter).
 - Paula can't fetch faster than a period of about 124 allows, the renderer doesn't limit that.
 - MIDI and synth instruments.
-- Hold and decay. An instrument with a hold length plays each note for that many ticks and then
-  fades out by its decay. A line after the note with no note but the same instrument (shown as
-  `-|-`, entered with Enter) keeps the note held past its hold length. In the module it's just a
-  cell with note 0 and an instrument number. Instruments without a hold length ignore it.
+- Command 08, which sets hold and decay for one note (left digit decay, right digit hold).
+- A note on a line followed by a tone portamento (03) also keeps its hold going in OctaMED, once
+  commands exist.

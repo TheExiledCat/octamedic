@@ -218,7 +218,9 @@ gadgets)` lays gadgets out in rows and passes events and drawing to them.
 the pointer, dragging selects, a double click selects a word, and clicking anywhere else, Enter or
 Escape lets go. It takes the usual editing keys: arrows (with Ctrl by word, with Shift to select),
 Home, End, Backspace, Delete and Ctrl+A. `on_update` gets the new text whenever typing changes it,
-`set_text` changes it without calling that, and `max_length` caps it. It needs the keys as well as
+`set_text` changes it without calling that, and `max_length` caps it. `pens` sets the box, text,
+cursor and selection pens, and `mix_pens` draws the text over the cursor and selection in their pen
+ORed with the text pen, like separate bitplanes overlapping, so white (1) on pen 6 shows as pen 7. It needs the keys as well as
 the mouse, so your event type implements `TextEvent` too, turning key presses into `TextInput`:
 
 ```rust
@@ -237,8 +239,10 @@ impl TextEvent for Event {
 }
 ```
 
-Give text boxes your events before other gadgets, so typing doesn't reach them and the box sees
-the click that unfocuses it.
+Give text boxes your events before other gadgets, so typing doesn't reach them, and give every
+text box every click (`|` rather than `||`), so a box sees the click on another one that unfocuses
+it. When the cursor is past the last char and there's no room left in the box, it's drawn on the
+last char.
 
 Any `Button`, `Textbox` or `Slider` can be disabled with `set_enabled(false)`. It's drawn as usual
 and then ghosted with `Painter::ghost`, a dot every fourth pixel and two along on every other line,

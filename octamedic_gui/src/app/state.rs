@@ -8,7 +8,7 @@ use mmd::{mmd::module::SONG_TRACKS, utility::note::SEMITONES_PER_OCTAVE};
 use octamedic_core::{
     amiga::clock::VideoStandard,
     data::{
-        instrument::{InstrumentId, MAX_INSTRUMENTS, OctamedicInstrument},
+        instrument::{InstrumentId, InstrumentKind, MAX_INSTRUMENTS, OctamedicInstrument},
         note::OctamedicNote,
         palette::{OctamedColorPalette, PALETTE_SIZE},
         pattern::{MAX_PATTERNS, OctamedicPattern, OctamedicPatternTrack, PatternId},
@@ -543,6 +543,15 @@ impl AppState {
     pub fn set_instrument(&mut self, instrument: u8) -> InstrumentId {
         self.active_instrument.0 = instrument.clamp(1, MAX_INSTRUMENT);
         return self.active_instrument;
+    }
+
+    /// Makes the last instrument with a sound active, or the first when none has one.
+    pub fn last_filled_instrument(&mut self) -> InstrumentId {
+        let last = self.song().instruments.iter().rposition(|slot| {
+            slot.as_ref()
+                .is_some_and(|instrument| !matches!(instrument.kind, InstrumentKind::Empty))
+        });
+        return self.set_instrument(last.map_or(1, |index| index as u8 + 1));
     }
 
     pub fn next_instrument(&mut self) -> InstrumentId {

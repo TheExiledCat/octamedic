@@ -16,13 +16,12 @@ use crate::{
         files::load_module,
         fonts,
         header::finished_edit,
-        pens,
         prompt::Prompt,
         state::{AppState, InstrumentSaveType, ModFormat, SaveFormat},
     },
     framework::{
         event::{Event, MouseButton},
-        widgets::{Button, Dialog, Textbox, ToggleGroup, symbols::stacked_text},
+        widgets::{self, Button, Dialog, Textbox, ToggleGroup, symbols::stacked_text},
     },
 };
 
@@ -69,11 +68,7 @@ pub struct Files {
 
 impl Files {
     pub fn new() -> Self {
-        let name_box = || {
-            Textbox::new()
-                .pens(Pen::BACKGROUND, Pen::SHINE, Pen::FILL, pens::RED)
-                .padding(0)
-        };
+        let name_box = || widgets::textbox().padding(0);
         let unhooked = |button: Button| button.enabled(false);
         return Self {
             mod_format: Button::new(mod_format_label(ModFormat::default()))
@@ -172,8 +167,9 @@ impl Gadget<AppState, Event> for Files {
     }
 
     fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
-        return self.dir.handle_event(state, event)
-            || self.file.handle_event(state, event)
+        // both see every click, it's how a text box finds out it lost focus
+        let handled = self.dir.handle_event(state, event) | self.file.handle_event(state, event);
+        return handled
             || self
                 .buttons()
                 .any(|button| button.handle_event(state, event));

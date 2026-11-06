@@ -205,6 +205,8 @@ pub struct PaulaRenderer {
     sample_rate: u32,
     clock: AmigaClock,
     channels: Vec<Channel>,
+    // heard on both sides rather than LRRL
+    centre_channel: Option<usize>,
     scopes: Arc<Scopes>,
     filter: LedFilter,
     // the filter goes over the whole mix, not each channel
@@ -222,10 +224,17 @@ impl PaulaRenderer {
             sample_rate,
             clock,
             channels: (0..channel_count).map(|_| Channel::default()).collect(),
+            centre_channel: None,
             scopes,
             filter: LedFilter::new(sample_rate),
             mix: Vec::new(),
         };
+    }
+
+    /// Plays `channel` in the middle, at half volume on each side, instead of left or right.
+    pub fn centre_channel(mut self, channel: usize) -> Self {
+        self.centre_channel = Some(channel);
+        return self;
     }
 }
 
@@ -265,6 +274,13 @@ impl PaulaRenderer {
         let frames = self.mix.len() / channels;
         let start = self.scopes.next.load(Ordering::Relaxed);
         for (index, channel) in self.channels.iter_mut().enumerate() {
+            let pan = if self.centre_channel == Some(index) {
+                Pan::Centre
+            } else if index % 4 == 0 || index % 4 == 3 {
+                Pan::Left
+            } else {
+                Pan::Right
+            };
             let scope = (index < SCOPE_CHANNELS).then_some(index);
             if channel.playing.is_none() || channel.period == 0 {
                 if let Some(scope) = scope {
@@ -280,7 +296,7 @@ impl PaulaRenderer {
                     let level = (value / MAX_VOLUME as f32).round() as i8;
                     self.scopes.write(scope, start + i, level);
                 }
-                mix(frame, index, value / VOICE_FULL_SCALE);
+                mix(frame, pan, value / VOICE_FULL_SCALE);
             }
         }
         let next = (start + frames) % SCOPE_LENGTH;
@@ -288,15 +304,24 @@ impl PaulaRenderer {
     }
 }
 
+#[derive(Clone, Copy)]
+enum Pan {
+    Left,
+    Right,
+    Centre,
+}
+
 // amiga stereo is LRRL, extra tracks repeat it. anything past 2 output channels stays silent
-fn mix(frame: &mut [f32], channel: usize, value: f32) {
-    match frame {
-        [mono] => *mono += value * MONO_GAIN,
-        [left, right, ..] => match channel % 4 {
-            0 | 3 => *left += value * STEREO_GAIN,
-            _ => *right += value * STEREO_GAIN,
-        },
-        [] => {}
+fn mix(frame: &mut [f32], pan: Pan, value: f32) {
+    match (frame, pan) {
+        ([mono], _) => *mono += value * MONO_GAIN,
+        ([left, _, ..], Pan::Left) => *left += value * STEREO_GAIN,
+        ([_, right, ..], Pan::Right) => *right += value * STEREO_GAIN,
+        ([left, right, ..], Pan::Centre) => {
+            *left += value * STEREO_GAIN / 2.0;
+            *right += value * STEREO_GAIN / 2.0;
+        }
+        ([], _) => {}
     }
 }
 
@@ -544,5 +569,15 @@ mod tests {
         let mut renderer = renderer();
         renderer.write(9, PaulaWrite::DmaOn);
         assert_near(&render(&mut renderer, 1), &[0.0]);
+    }
+
+    #[test]
+    fn centre_channel_plays_both_sides() {
+        let mut frame = [0.0, 0.0];
+        mix(&mut frame, Pan::Centre, 1.0);
+        assert_eq!(frame, [STEREO_GAIN / 2.0, STEREO_GAIN / 2.0]);
+        let mut frame = [0.0, 0.0];
+        mix(&mut frame, Pan::Right, 1.0);
+        assert_eq!(frame, [0.0, STEREO_GAIN]);
     }
 }

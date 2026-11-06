@@ -4,7 +4,8 @@ use mmd::mmd::synth::OctamedMMD0SynthInstrument;
 
 use crate::{
     data::instrument::{
-        InstrumentKind, OctamedicInstrument, OctamedicSample, OctamedicSynth, SampleOctaves,
+        InstrumentKind, MAX_HOLD_DECAY, OctamedicInstrument, OctamedicSample, OctamedicSynth,
+        SampleOctaves,
     },
     import::{Decoded, InstrumentLoadError, InstrumentLoader},
 };
@@ -25,7 +26,7 @@ impl InstrumentLoader for MshLoader {
             .map_err(|_| InstrumentLoadError::Malformed("Synth sound is damaged".to_owned()))?;
         let synth = Arc::new(OctamedicSynth::from_octamed(&msh));
         let mut instrument = OctamedicInstrument::new("");
-        instrument.decay = synth.default_decay;
+        instrument.decay = synth.default_decay.min(MAX_HOLD_DECAY);
         instrument.kind = match &msh.hybrid_sample {
             Some(bytes) => InstrumentKind::Hybrid(synth, Arc::new(hybrid_sample(&msh, bytes))),
             None => InstrumentKind::Synth(synth),

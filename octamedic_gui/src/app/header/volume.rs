@@ -13,7 +13,7 @@ use crate::{
     app::{fonts, pens, state::AppState},
     framework::{
         event::{Event, MouseButton},
-        widgets::{Button, Textbox},
+        widgets::{self, Button, Textbox},
     },
 };
 
@@ -117,6 +117,12 @@ impl Gadget<AppState, Event> for Volume {
     }
 
     fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
+        // both see every click, it's how a text box finds out it lost focus
+        if self.track_volume.handle_event(state, event)
+            | self.master_volume.handle_event(state, event)
+        {
+            return true;
+        }
         if let Event::MouseDown {
             pos,
             button: MouseButton::Left,
@@ -127,13 +133,11 @@ impl Gadget<AppState, Event> for Volume {
                 return true;
             }
         }
-        return self.track_volume.handle_event(state, event)
-            || self.master_volume.handle_event(state, event)
-            || self
-                .track_steps
-                .iter_mut()
-                .chain(&mut self.master_steps)
-                .any(|button| button.handle_event(state, event));
+        return self
+            .track_steps
+            .iter_mut()
+            .chain(&mut self.master_steps)
+            .any(|button| button.handle_event(state, event));
     }
 
     fn render(&mut self, state: &AppState, area: Rect, painter: &mut Painter) {
@@ -217,11 +221,11 @@ fn routing_button(label: &'static str) -> Button {
 }
 
 fn volume_box() -> Textbox {
-    return Textbox::new()
+    return widgets::textbox()
         .font(fonts::INTERFACE)
-        .pens(Pen::BACKGROUND, Pen::SHINE, Pen::FILL, pens::RED)
         .padding(1)
-        .max_length(2);
+        .max_length(2)
+        .select_on_focus();
 }
 
 fn step_buttons() -> [Button; STEPS.len()] {
