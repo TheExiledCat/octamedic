@@ -189,8 +189,8 @@ pub struct AppState {
     // the modifier keys down at the last mouse event, Amiga included
     pub mouse_mods: KeyMods,
     video: VideoStandard,
-    // the engine's device's id, None for the default
-    pub(super) output_device: Option<String>,
+    // the engine's device's id, None for the default. set_output_device changes it
+    pub output_device: Option<String>,
     // the last try at opening it didn't work, so the engine is disconnected
     audio_failed: bool,
     mono: bool,
@@ -478,10 +478,6 @@ impl AppState {
     pub fn set_video(&mut self, video: VideoStandard) {
         self.video = video;
         self.engine.set_machine(video.clock());
-    }
-
-    pub fn output_device(&self) -> Option<&str> {
-        return self.output_device.as_deref();
     }
 
     pub fn audio_failed(&self) -> bool {

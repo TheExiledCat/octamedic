@@ -26,7 +26,8 @@ fn output_dialog(state: &AppState, devices: Vec<OutputDevice>) -> Dialog {
     let names: Vec<&str> = names.iter().map(String::as_str).collect();
     // a device that's gone shows as the default
     let chosen = state
-        .output_device()
+        .output_device
+        .as_deref()
         .and_then(|id| devices.iter().position(|device| device.id == id))
         .map_or(0, |index| index + 1);
     let mut dialog = Dialog::new("Output")
@@ -99,7 +100,7 @@ mod tests {
         state.output_device = Some("unplugged".to_owned());
         let mut dialog = output_dialog(&state, devices());
         submit(&mut dialog, &mut state);
-        assert_eq!(state.output_device(), Some("unplugged"));
+        assert_eq!(state.output_device.as_deref(), Some("unplugged"));
     }
 
     #[test]
@@ -109,7 +110,7 @@ mod tests {
         let mut dialog = output_dialog(&state, devices());
         submit(&mut dialog, &mut state);
         assert!(dialog.is_closed());
-        assert_eq!(state.output_device(), None);
+        assert_eq!(state.output_device, None);
         assert!(state.mono());
     }
 }
