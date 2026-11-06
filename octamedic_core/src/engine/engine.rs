@@ -1420,6 +1420,9 @@ mod tests {
         assert!(engine.frames_per_tick() < pal);
     }
 
+    // the only one volume_per_tick loads
+    const LOADED_INSTRUMENT: InstrumentId = InstrumentId(1);
+
     #[derive(Clone, Copy)]
     enum Cell {
         Note,
@@ -1441,7 +1444,7 @@ mod tests {
         instrument.decay = decay;
         commands
             .send(EngineCommand::SetInstrument {
-                id: InstrumentId(1),
+                id: LOADED_INSTRUMENT,
                 instrument: Some(instrument),
             })
             .unwrap();
@@ -1451,10 +1454,10 @@ mod tests {
             match cell {
                 Cell::Note => {
                     track.note.value = 13;
-                    track.instrument_id = InstrumentId(1);
+                    track.instrument_id = LOADED_INSTRUMENT;
                 }
                 Cell::NoteWithoutInstrument => track.note.value = 13,
-                Cell::HoldSymbol => track.instrument_id = InstrumentId(1),
+                Cell::HoldSymbol => track.instrument_id = LOADED_INSTRUMENT,
             }
         }
         commands
