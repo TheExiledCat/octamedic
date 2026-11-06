@@ -14,6 +14,7 @@ pub mod keybinds;
 pub mod main;
 pub mod main_view;
 pub mod mode;
+pub mod output;
 pub mod pens;
 pub mod prompt;
 pub mod screen_filters;

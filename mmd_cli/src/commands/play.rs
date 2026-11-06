@@ -34,7 +34,7 @@ impl Command for PlayCommand {
         let song = project
             .get_song(SongId(0))
             .ok_or_else(|| CommandError::Generic("module has no song".into()))?;
-        let engine = EngineHandle::spawn(AmigaClock::PAL)
+        let engine = EngineHandle::spawn(AmigaClock::PAL, None)
             .map_err(|e| CommandError::Generic(e.to_string()))?;
         engine.set_output_volume(self.volume);
         engine.load_song(song);

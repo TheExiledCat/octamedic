@@ -10,7 +10,7 @@ use rustuition::{
 };
 
 use crate::{
-    app::{fonts, pens, state::AppState},
+    app::{fonts, output::open_output_dialog, pens, state::AppState},
     framework::{
         event::{Event, MouseButton},
         widgets::{self, Button, Textbox},
@@ -56,7 +56,7 @@ pub struct Volume {
     master_volume: Textbox,
     track_steps: [Button; STEPS.len()],
     master_steps: [Button; STEPS.len()],
-    // audio routing settings, not there yet
+    // audio input settings, not there yet
     input: Button,
     output: Button,
     // from the last render, for clicks
@@ -71,7 +71,7 @@ impl Volume {
             master_volume: volume_box(),
             track_steps: step_buttons(),
             master_steps: step_buttons(),
-            input: routing_button("INPUT"),
+            input: routing_button("INPUT").enabled(false),
             output: routing_button("OUTPUT"),
             track_boxes: [Rect::default(); SONG_TRACKS],
         };
@@ -98,6 +98,9 @@ impl Gadget<AppState, Event> for Volume {
             if button.clicked().is_some() {
                 state.set_master_volume(stepped(state.song().master_volume.get(), *step));
             }
+        }
+        if self.output.clicked().is_some() {
+            open_output_dialog(state);
         }
         let hex = state.song().flags.volumes_hex;
         if let Some(volume) = typed_volume(&self.track_volume, hex) {
@@ -137,6 +140,7 @@ impl Gadget<AppState, Event> for Volume {
             .track_steps
             .iter_mut()
             .chain(&mut self.master_steps)
+            .chain([&mut self.output])
             .any(|button| button.handle_event(state, event));
     }
 
@@ -217,7 +221,7 @@ impl Gadget<AppState, Event> for Volume {
 }
 
 fn routing_button(label: &'static str) -> Button {
-    return Button::new(label).font(fonts::LABEL).enabled(false);
+    return Button::new(label).font(fonts::LABEL);
 }
 
 fn volume_box() -> Textbox {
@@ -312,9 +316,9 @@ mod tests {
     }
 
     #[test]
-    fn routing_buttons_are_placeholders() {
+    fn routing_buttons_fit() {
         let (volume, _) = panel();
-        assert!(!volume.input.is_enabled() && !volume.output.is_enabled());
+        assert!(!volume.input.is_enabled());
         for rect in [INPUT, OUTPUT] {
             assert!(rect.x > DIVIDER.right() && rect.right() <= AREA.right());
             assert!(rect.bottom() <= AREA.bottom());
@@ -323,6 +327,13 @@ mod tests {
 
     fn centre(rect: Rect) -> Point {
         return Point::new(rect.x + rect.w / 2, rect.y + rect.h / 2);
+    }
+
+    #[test]
+    fn output_opens_its_dialog() {
+        let (mut volume, mut state) = panel();
+        click(&mut volume, &mut state, centre(OUTPUT));
+        assert_eq!(state.take_pending_dialogs().len(), 1);
     }
 
     #[test]

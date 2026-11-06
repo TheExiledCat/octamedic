@@ -96,7 +96,7 @@ impl App {
 
     // no audio device, run silent instead of bailing
     fn state_with_engine(project: OctamedicProject) -> AppState {
-        return match EngineHandle::spawn(DEFAULT_VIDEO.clock()) {
+        return match EngineHandle::spawn(DEFAULT_VIDEO.clock(), None) {
             Ok(engine) => AppState::new(project, engine),
             Err(error) => {
                 let mut state = AppState::new(project, EngineHandle::disconnected());

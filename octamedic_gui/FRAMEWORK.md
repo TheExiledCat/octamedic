@@ -81,6 +81,12 @@ Ctrl+F11 opens the screen filters (`app/screen_filters.rs`), a list of rustuitio
 order they run. While any is on, the screen and the pointer are painted into a `Framebuffer`
 instead of straight onto the GPU, filtered, and uploaded as the screen image.
 
+The VOL page's OUTPUT button opens the output dialog (`app/output.rs`): which sound device plays (cpal's output devices,
+or the default) and whether it's mixed to mono. OK on another device has `AppState::set_output_device`
+start the engine again on it and send it the song, mutes and mono; that stops playing. If the device
+can't be opened the old one carries on and the notification bar says why. Neither is saved between
+runs yet.
+
 The mode buttons set two modes: `HeaderMode` (which panel the header shows) and `MainMode` (what
 fills the screen below). Each button's `ModeBinding` in `app/mode/buttons.rs` says which. Header
 panels are in `app/header/`, one file each (`misc.rs` is MISC), and `HeaderPanels::panel` maps

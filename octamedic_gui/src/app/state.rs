@@ -189,6 +189,9 @@ pub struct AppState {
     // the modifier keys down at the last mouse event, Amiga included
     pub mouse_mods: KeyMods,
     video: VideoStandard,
+    // the engine's device's id, None for the default
+    output_device: Option<String>,
+    mono: bool,
     queued_sequence_index: Option<usize>,
     started: Option<PlayStart>,
     muted_tracks: [bool; SONG_TRACKS],
@@ -253,6 +256,8 @@ impl AppState {
             displays_off: false,
             mouse_mods: KeyMods::NONE,
             video: DEFAULT_VIDEO,
+            output_device: None,
+            mono: false,
             queued_sequence_index: None,
             started: None,
             muted_tracks: [false; SONG_TRACKS],
@@ -470,6 +475,41 @@ impl AppState {
     pub fn set_video(&mut self, video: VideoStandard) {
         self.video = video;
         self.engine.set_machine(video.clock());
+    }
+
+    pub fn output_device(&self) -> Option<&str> {
+        return self.output_device.as_deref();
+    }
+
+    /// Starts the engine again on `device`, or the default one with `None`, which stops playing.
+    /// If it can't, the old one keeps going.
+    pub fn set_output_device(&mut self, device: Option<String>) {
+        if device == self.output_device {
+            return;
+        }
+        match EngineHandle::spawn(self.video.clock(), device.as_deref()) {
+            Ok(engine) => {
+                self.stop();
+                self.engine = engine;
+                self.output_device = device;
+                self.send_all_to_engine();
+                for track in (0..SONG_TRACKS).filter(|&track| self.muted_tracks[track]) {
+                    self.engine.set_track_muted(track, true);
+                }
+                self.engine.set_mono(self.mono);
+                self.engine_active_instrument = None;
+            }
+            Err(error) => self.notify(format!("NO AUDIO: {error}")),
+        }
+    }
+
+    pub fn mono(&self) -> bool {
+        return self.mono;
+    }
+
+    pub fn set_mono(&mut self, mono: bool) {
+        self.mono = mono;
+        self.engine.set_mono(mono);
     }
 
     pub fn active_meters(&self) -> Meters {

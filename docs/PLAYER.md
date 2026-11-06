@@ -107,7 +107,12 @@ range ends, DMA off silences the channel. The output runs at the sound card's ra
 so each output frame is the average of the bytes played during it, weighted by how long each was
 held. You keep the held-byte sound without extra aliasing from the resampling. In stereo the
 channels go left, right, right, left like Paula's (the tracks past 4 repeat that), and the preview
-channel goes in the middle (`PaulaRenderer::centre_channel`).
+channel goes in the middle (`PaulaRenderer::centre_channel`). With mono on (`EngineCommand::SetMono`)
+each frame's left and right become their average after rendering, the same as Paula's mono mix, so
+a track panned to one side comes out of both at half.
+
+`EngineHandle::spawn` opens the device with the id it's given (from `output_devices`), or the
+default one.
 
 The "LED" filter (`amiga/filter.rs`) goes over the whole mix. On the real thing it's a 2-pole
 Sallen-Key low-pass that the power LED bit switches; from the board's component values it comes out
