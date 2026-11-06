@@ -18,13 +18,14 @@ mod app;
 mod crash_log;
 mod framework;
 
-fn load_project(errors: &mut Vec<String>) -> OctamedicProject {
+// just the file's name in the error, a whole path doesn't fit in the notification bar
+fn load_project() -> Result<OctamedicProject, String> {
     let Some(path) = std::env::args_os().nth(1).map(PathBuf::from) else {
-        return OctamedicProject::new();
+        return Ok(OctamedicProject::new());
     };
-    return files::load_module(&path).unwrap_or_else(|error| {
-        errors.push(format!("Couldn't open {}: {error}", path.display()));
-        OctamedicProject::new()
+    return files::load_module(&path).map_err(|error| {
+        let name = path.file_name().unwrap_or(path.as_os_str());
+        format!("Couldn't open {}: {error}", name.to_string_lossy())
     });
 }
 
@@ -41,7 +42,10 @@ fn main() {
     if let Err(error) = files::initialize() {
         errors.push(format!("Couldn't create OctaMEDIC's folders: {error}"));
     }
-    let project = load_project(&mut errors);
+    let project = load_project().unwrap_or_else(|error| {
+        errors.push(error);
+        OctamedicProject::new()
+    });
     // only comes back if the window couldn't open
     let Err(error) = run(project, &errors);
     crash_log::log_error(&error.to_string(), &errors);

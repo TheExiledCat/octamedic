@@ -72,11 +72,14 @@ impl App {
     pub fn new(
         ctx: &mut Context,
         project: OctamedicProject,
-        mut errors: Vec<String>,
+        errors: Vec<String>,
     ) -> GameResult<Self> {
         mouse::set_cursor_hidden(ctx, true);
+        // no audio device, run silent instead of bailing
+        let mut state = AppState::new(project, EngineHandle::disconnected());
+        let audio = state.open_audio();
         let mut app = Self {
-            state: Self::state_with_engine(project, &mut errors),
+            state,
             main: MainView::new(),
             dialogs: DialogStack::default(),
             screen: screen_image(ctx, DEFAULT_VIDEO),
@@ -96,17 +99,9 @@ impl App {
             alts_held: [false; 2],
         };
         app.fit_viewport(ctx);
-        app.state.report_startup_errors(errors);
+        app.state
+            .report_startup_errors(errors.into_iter().chain(audio.err()).collect());
         return Ok(app);
-    }
-
-    // no audio device, run silent instead of bailing
-    fn state_with_engine(project: OctamedicProject, errors: &mut Vec<String>) -> AppState {
-        let mut state = AppState::new(project, EngineHandle::disconnected());
-        if let Err(error) = state.open_audio() {
-            errors.push(error);
-        }
-        return state;
     }
 
     // vsync is off, frames get paced to the PAL or NTSC rate by hand. fixed schedule so
