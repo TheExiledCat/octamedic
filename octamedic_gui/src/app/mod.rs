@@ -18,6 +18,7 @@ pub mod output;
 pub mod pens;
 pub mod prompt;
 pub mod screen_filters;
+pub mod settings;
 pub mod state;
 pub mod status_bar;
 pub mod title_bar;

@@ -2064,6 +2064,8 @@ dependencies = [
  "octamedic_core",
  "octamedic_util",
  "rustuition",
+ "serde",
+ "toml",
 ]
 
 [[package]]

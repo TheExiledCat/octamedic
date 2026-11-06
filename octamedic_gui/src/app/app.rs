@@ -24,7 +24,7 @@ use rustuition::{
 
 use crate::{
     app::{
-        DEFAULT_VIDEO, main_view::MainView, prompt, screen, state::AppState,
+        files, main_view::MainView, prompt, screen, settings::Settings, state::AppState,
         window_shape::WindowShape,
     },
     framework::{
@@ -72,18 +72,22 @@ impl App {
     pub fn new(
         ctx: &mut Context,
         project: OctamedicProject,
+        settings: Settings,
         errors: Vec<String>,
     ) -> GameResult<Self> {
         mouse::set_cursor_hidden(ctx, true);
         // no audio device, run silent instead of bailing
         let mut state = AppState::new(project, EngineHandle::disconnected());
+        state.apply_settings(&settings);
+        state.settings_path = files::get_config_file_path().ok();
         let audio = state.open_audio();
+        let video = state.video();
         let mut app = Self {
             state,
             main: MainView::new(),
             dialogs: DialogStack::default(),
-            screen: screen_image(ctx, DEFAULT_VIDEO),
-            video: DEFAULT_VIDEO,
+            screen: screen_image(ctx, video),
+            video,
             cursor: Image::from_bytes(ctx, CURSOR)?,
             cursor_pixels: CursorPixels::decode(CURSOR)?,
             // fills the window at any size, not just whole steps

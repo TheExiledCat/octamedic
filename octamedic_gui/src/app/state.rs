@@ -1,5 +1,6 @@
 use std::{
     collections::{HashSet, VecDeque},
+    path::PathBuf,
     time::{Duration, Instant},
 };
 
@@ -29,6 +30,7 @@ use crate::{
         mode::{HeaderMode, MainMode},
         prompt::Prompt,
         screen_filters::ScreenFilters,
+        settings::{OutputSettings, Settings},
     },
     framework::widgets::Dialog,
 };
@@ -192,6 +194,8 @@ pub struct AppState {
     video: VideoStandard,
     // the engine's device's id, None for the default. set_output_device changes it
     pub output_device: Option<String>,
+    // where settings are saved when they change. None in tests
+    pub settings_path: Option<PathBuf>,
     // the last try at opening it didn't work, so the engine is disconnected
     audio_failed: bool,
     mono: bool,
@@ -260,6 +264,7 @@ impl AppState {
             mouse_mods: KeyMods::NONE,
             video: DEFAULT_VIDEO,
             output_device: None,
+            settings_path: None,
             audio_failed: false,
             mono: false,
             queued_sequence_index: None,
@@ -493,6 +498,7 @@ impl AppState {
     pub fn set_video(&mut self, video: VideoStandard) {
         self.video = video;
         self.engine.set_machine(video.clock());
+        self.save_settings();
     }
 
     pub fn audio_failed(&self) -> bool {
@@ -517,6 +523,7 @@ impl AppState {
             }
             self.notify(error);
         }
+        self.save_settings();
     }
 
     /// Starts the engine on the output device and sends it everything, or gives back why it
@@ -547,6 +554,32 @@ impl AppState {
     pub fn set_mono(&mut self, mono: bool) {
         self.mono = mono;
         self.engine.set_mono(mono);
+        self.save_settings();
+    }
+
+    pub fn apply_settings(&mut self, settings: &Settings) {
+        self.video = settings.video;
+        self.output_device = match settings.output.device.as_deref() {
+            Some("Default") | Some("") => None,
+            other => other.map(ToOwned::to_owned),
+        };
+        self.mono = settings.output.mono;
+    }
+
+    pub fn save_settings(&mut self) {
+        let Some(path) = self.settings_path.clone() else {
+            return;
+        };
+        let settings = Settings {
+            video: self.video,
+            output: OutputSettings {
+                device: self.output_device.clone(),
+                mono: self.mono,
+            },
+        };
+        if let Err(error) = settings.save_to_path(&path) {
+            self.debug(format!("Couldn't save settings: {error}"));
+        }
     }
 
     pub fn active_meters(&self) -> Meters {
@@ -1685,5 +1718,45 @@ mod tests {
         assert_eq!(state.notification.as_deref(), Some(MULTIPLE_ERRORS));
         let lines: Vec<&str> = state.debug_lines().iter().map(String::as_str).collect();
         assert_eq!(lines, ["NO AUDIO", "first", "second"]);
+    }
+
+    #[test]
+    fn apply_settings_updates_state() {
+        let mut state = state();
+        let settings = Settings {
+            video: VideoStandard::Ntsc,
+            output: OutputSettings {
+                device: Some("USB Audio".to_owned()),
+                mono: true,
+            },
+        };
+        state.apply_settings(&settings);
+        assert_eq!(state.video(), VideoStandard::Ntsc);
+        assert_eq!(state.output_device.as_deref(), Some("USB Audio"));
+        assert!(state.mono());
+    }
+
+    #[test]
+    fn state_saves_settings_when_changed() {
+        let folder =
+            std::env::temp_dir().join(format!("octamedic-state-settings-{}", std::process::id()));
+        let path = folder.join("config.toml");
+        let mut state = state();
+        state.settings_path = Some(path.clone());
+
+        state.set_video(VideoStandard::Ntsc);
+        let (loaded, _) = Settings::load_from_path(&path);
+        assert_eq!(loaded.video, VideoStandard::Ntsc);
+
+        state.output_device = Some("DAC".to_owned());
+        state.save_settings();
+        let (loaded, _) = Settings::load_from_path(&path);
+        assert_eq!(loaded.output.device.as_deref(), Some("DAC"));
+
+        state.set_mono(true);
+        let (loaded, _) = Settings::load_from_path(&path);
+        assert!(loaded.output.mono);
+
+        let _ = std::fs::remove_dir_all(&folder);
     }
 }
