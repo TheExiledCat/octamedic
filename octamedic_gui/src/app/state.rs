@@ -48,6 +48,8 @@ const MAX_SEQUENCE_ENTRIES: usize = 256;
 const MAX_DEBUG_LINES: usize = 256;
 const MULTIPLE_ERRORS: &str = "Multiple errors have occurred";
 
+const UNSAVED_PROMPT: &str = "Song has unsaved changes";
+
 // C up to the next C, laid out like a piano keyboard
 const BOTTOM_OCTAVE_KEYS: [char; 13] = [
     'z', 's', 'x', 'd', 'c', 'v', 'g', 'b', 'h', 'n', 'j', 'm', ',',
@@ -472,6 +474,16 @@ impl AppState {
 
     pub fn request_exit(&mut self) {
         self.exit_requested = true;
+    }
+
+    /// Runs `action` now if the song is saved, otherwise once the unsaved changes prompt gets a
+    /// yes.
+    pub fn confirm_if_unsaved(&mut self, action: fn(&mut AppState)) {
+        if self.is_saved() {
+            action(self);
+        } else {
+            self.open_prompt(Prompt::yes_no(UNSAVED_PROMPT, action));
+        }
     }
 
     pub fn play_song(&mut self, sequence_index: usize, row: usize) {

@@ -324,6 +324,11 @@ impl EventHandler for App {
         return Ok(());
     }
 
+    // true cancels the quit
+    fn quit_event(&mut self, _ctx: &mut Context) -> GameResult<bool> {
+        return Ok(!quit_now(&mut self.state));
+    }
+
     fn key_down_event(
         &mut self,
         _ctx: &mut Context,
@@ -381,6 +386,15 @@ impl EventHandler for App {
         });
         return Ok(());
     }
+}
+
+// every quit ends up here: QUIT and Ctrl+Q once they've asked about unsaved changes, and the
+// window's close button, which asks now
+fn quit_now(state: &mut AppState) -> bool {
+    if !state.exit_requested {
+        state.confirm_if_unsaved(AppState::request_exit);
+    }
+    return state.exit_requested;
 }
 
 // the key's toggle isn't in the modifiers, and it may already be on at startup, so a typed letter
@@ -477,5 +491,36 @@ mod tests {
         assert_eq!(caps_lock_from_letter('a', true), Some(true));
         assert_eq!(caps_lock_from_letter('A', true), Some(false));
         assert_eq!(caps_lock_from_letter('5', false), None);
+    }
+
+    fn state() -> AppState {
+        return AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+    }
+
+    fn answer(state: &mut AppState, key: KeyCode) {
+        let event = Event::Key {
+            key,
+            mods: KeyMods::empty(),
+            repeat: false,
+        };
+        assert!(prompt::handle_event(state, &event));
+    }
+
+    #[test]
+    fn closing_a_saved_song_quits() {
+        assert!(quit_now(&mut state()));
+    }
+
+    #[test]
+    fn closing_with_unsaved_changes_asks_first() {
+        let mut state = state();
+        state.set_song_name("changed");
+        assert!(!quit_now(&mut state));
+        answer(&mut state, KeyCode::N);
+        assert!(!quit_now(&mut state));
+        answer(&mut state, KeyCode::Y);
+        // the yes doesn't ask again
+        assert!(quit_now(&mut state));
+        assert!(state.prompt.is_none());
     }
 }
