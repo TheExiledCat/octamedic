@@ -150,7 +150,14 @@ function for that effect. Only 0C so far.
 0C sets the track's volume, read as hex or as two decimal digits depending on the song's VOL HEX/DEC
 setting, and capped at 64. It's the same volume decay fades, and like MED it lasts until the track's
 next note with an instrument number, a hold symbol, or stop. A 0C on a note's or a `-|-`'s line wins
-over the reset those do.
+over the reset those do, and the footer's meters show the note at the volume it sets. Once a hold
+has run out the note is over, so a volume command after that does nothing until a note or `-|-`
+starts the track again.
+
+Clicking HEX or DEC only changes how volume commands are read, so a song's volume commands play
+differently. With Shift held, every volume command in the song is rewritten as well so it plays the
+same as before (decimal 40 becomes hex 28), like OctaMED. `set_volume_value` and `set_volume_argument` in `data/volume.rs` go between
+the two.
 
 ## Not done yet
 

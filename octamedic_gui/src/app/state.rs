@@ -709,6 +709,17 @@ impl AppState {
         }
     }
 
+    /// Like `set_volumes_hex`, rewriting every volume command in the song so it still plays the
+    /// same. What Shift-click on HEX or DEC does.
+    pub fn convert_volumes_hex(&mut self, hex: bool) {
+        if self.song().flags.volumes_hex == hex {
+            return;
+        }
+        let changed = self.song_mut().convert_volume_commands(hex);
+        self.changed_patterns.extend(changed);
+        self.set_volumes_hex(hex);
+    }
+
     pub fn set_filter(&mut self, on: bool) {
         if self.song().flags.filter_on != on {
             self.song_mut().flags.filter_on = on;
