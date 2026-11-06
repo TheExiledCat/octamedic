@@ -1,7 +1,7 @@
 // a GUI program on Windows, so it doesn't open a console window first
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
-use std::path::PathBuf;
+use std::{convert::Infallible, path::PathBuf};
 
 use ggez::{
     Context, ContextBuilder, GameResult,
@@ -15,6 +15,7 @@ use rustuition::screen::Screen;
 use crate::app::{DEFAULT_VIDEO, app::App, files, icon, screen};
 
 mod app;
+mod crash_log;
 mod framework;
 
 fn load_project(errors: &mut Vec<String>) -> OctamedicProject {
@@ -33,13 +34,21 @@ const WINDOW_SCALE: f32 = 2.0;
 // dock, which winit doesn't tell us about
 const MONITOR_SHARE: f32 = 0.9;
 
-fn main() -> GameResult<()> {
+fn main() {
+    crash_log::log_panics();
     // shown once the window's open, there's no console to print them to on Windows
     let mut errors = Vec::new();
     if let Err(error) = files::initialize() {
         errors.push(format!("Couldn't create OctaMEDIC's folders: {error}"));
     }
     let project = load_project(&mut errors);
+    // only comes back if the window couldn't open
+    let Err(error) = run(project, &errors);
+    crash_log::log_error(&error.to_string(), &errors);
+    std::process::exit(1);
+}
+
+fn run(project: OctamedicProject, errors: &[String]) -> GameResult<Infallible> {
     let [width, height] = screen(DEFAULT_VIDEO).window_size(WINDOW_SCALE);
     let mode = WindowMode {
         maximized: false,
@@ -60,7 +69,7 @@ fn main() -> GameResult<()> {
         .window_setup(WindowSetup::default().title("OctaMEDIC").vsync(false))
         .build()?;
     open_window(&mut ctx, mode)?;
-    let app = App::new(&mut ctx, project, errors)?;
+    let app = App::new(&mut ctx, project, errors.to_vec())?;
     icon::set_window_icons(ctx.gfx.window())?;
     event::run(ctx, event_loop, app);
 }

@@ -140,7 +140,9 @@ and nothing printed shows anywhere. Errors from before the window opens (the fol
 given on the command line, no audio) are collected in `main` and `App::new` and handed to
 `AppState::report_startup_errors`: each goes in the debug console (Ctrl+`), and the notification
 bar shows the error, or "Multiple errors have occurred" if there's more than one. Errors that stop
-the window opening at all still end `main`.
+the window opening at all end `main`, and they go in `crash.log` in the config folder (the temp
+folder if there isn't one) with the startup errors before them. Panics go there too, with a
+backtrace (`crash_log.rs`). Only the last crash is kept.
 
 Dialogs are rustuition's `Dialog` (the `Dialog` alias in `framework/widgets`). Open one with
 `state.open_dialog(dialog)`, from anywhere that has the state, even another dialog's callback.
