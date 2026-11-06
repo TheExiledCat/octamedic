@@ -98,6 +98,7 @@ impl Gadget<AppState, Event> for SongList {
             let y = inside.y + (inside.h - CHAR_HEIGHT) / 2;
             painter.text(x, y, empty, Pen::SHADOW);
             scroller.lines_that_fit = (inside.h / CHAR_HEIGHT) as usize;
+            scroller.list_area = list;
             let scroller_area = Rect::new(list.right(), list.y, SCROLLER_WIDTH, height);
             scroller.render(state, scroller_area, 0, painter);
         }

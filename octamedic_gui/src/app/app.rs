@@ -29,7 +29,7 @@ use crate::{
     },
     framework::{
         dialog_stack::DialogStack,
-        event::{self, Event},
+        event::{self, Event, Wheel},
         key_repeat::KeyRepeat,
         keymap::amiga_mods,
     },
@@ -308,6 +308,18 @@ impl EventHandler for App {
     ) -> GameResult {
         if let Some(button) = mouse_button(button) {
             self.mouse_event(ctx, x, y, |pos| Event::MouseUp { pos, button });
+        }
+        return Ok(());
+    }
+
+    fn mouse_wheel_event(&mut self, ctx: &mut Context, x: f32, y: f32) -> GameResult {
+        let pointer = ctx.mouse.position();
+        // like presses, the bars around the screen would land on its edge
+        if self.viewport.contains([pointer.x, pointer.y]) {
+            let delta = [x, y];
+            self.mouse_event(ctx, pointer.x, pointer.y, |pos| {
+                Event::Wheel(Wheel { pos, delta })
+            });
         }
         return Ok(());
     }
