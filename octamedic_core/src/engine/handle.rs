@@ -61,6 +61,8 @@ pub enum EngineCommand {
     },
     SetMasterVolume(u8),
     SetOutputVolume(u8),
+    /// Mixes the left and right sides together, for one speaker.
+    SetMono(bool),
     SetGlobalTranspose(i8),
     SetTrackMuted {
         track: usize,
@@ -227,6 +229,7 @@ impl EngineStatus {
 #[derive(Debug)]
 pub enum EngineError {
     NoOutputDevice,
+    DeviceNotFound(String),
     UnsupportedSampleFormat(SampleFormat),
     Audio(String),
     Thread(std::io::Error),
@@ -236,6 +239,7 @@ impl Display for EngineError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         return match self {
             EngineError::NoOutputDevice => write!(f, "no audio output device available"),
+            EngineError::DeviceNotFound(id) => write!(f, "output device {id} not found"),
             EngineError::UnsupportedSampleFormat(format) => {
                 write!(f, "unsupported output sample format {format}")
             }
@@ -253,6 +257,27 @@ impl EngineError {
     }
 }
 
+/// An output device to play through. `id` picks it in [`EngineHandle::spawn`] and stays the same
+/// between runs, `name` is for showing.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OutputDevice {
+    pub id: String,
+    pub name: String,
+}
+
+pub fn output_devices() -> Vec<OutputDevice> {
+    let Ok(devices) = cpal::default_host().output_devices() else {
+        return Vec::new();
+    };
+    return devices
+        .filter_map(|device| {
+            let id = device.id().ok()?.to_string();
+            let name = device.description().ok()?.name().to_owned();
+            return Some(OutputDevice { id, name });
+        })
+        .collect();
+}
+
 /// UI side of the engine. The stream lives on its own thread until the handle drops.
 pub struct EngineHandle {
     commands: Sender<EngineCommand>,
@@ -262,8 +287,9 @@ pub struct EngineHandle {
 }
 
 impl EngineHandle {
-    /// Default output device.
-    pub fn spawn(machine: AmigaClock) -> Result<Self, EngineError> {
+    /// Plays through the device with the id `device`, or the default one with `None`.
+    pub fn spawn(machine: AmigaClock, device: Option<&str>) -> Result<Self, EngineError> {
+        let device = device.map(str::to_owned);
         let (commands, receiver) = mpsc::channel();
         let (shutdown, shutdown_receiver) = mpsc::channel::<()>();
         let (ready, ready_receiver) = mpsc::channel();
@@ -273,7 +299,7 @@ impl EngineHandle {
         let thread = thread::Builder::new()
             .name("octamedic-engine".into())
             .spawn(move || {
-                let stream = match open_stream(receiver, engine_status, machine) {
+                let stream = match open_stream(device, receiver, engine_status, machine) {
                     Ok(stream) => stream,
                     Err(error) => {
                         let _ = ready.send(Err(error));
@@ -387,6 +413,10 @@ impl EngineHandle {
         self.send(EngineCommand::SetOutputVolume(volume));
     }
 
+    pub fn set_mono(&self, mono: bool) {
+        self.send(EngineCommand::SetMono(mono));
+    }
+
     pub fn set_track_muted(&self, track: usize, muted: bool) {
         self.send(EngineCommand::SetTrackMuted { track, muted });
     }
@@ -442,13 +472,22 @@ impl Drop for EngineHandle {
 }
 
 fn open_stream(
+    device: Option<String>,
     commands: Receiver<EngineCommand>,
     status: Arc<EngineStatus>,
     machine: AmigaClock,
 ) -> Result<Stream, EngineError> {
-    let device = cpal::default_host()
-        .default_output_device()
-        .ok_or(EngineError::NoOutputDevice)?;
+    let host = cpal::default_host();
+    let device = match device {
+        Some(id) => id
+            .parse()
+            .ok()
+            .and_then(|parsed| host.device_by_id(&parsed))
+            .ok_or(EngineError::DeviceNotFound(id))?,
+        None => host
+            .default_output_device()
+            .ok_or(EngineError::NoOutputDevice)?,
+    };
     let config = device.default_output_config().map_err(EngineError::audio)?;
     let engine = OctamedicEngine::new(commands, status, config.sample_rate(), machine);
     let stream_config = config.config();

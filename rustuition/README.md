@@ -266,7 +266,8 @@ let dialog = dialog.on_submit(move |state, result| state.rename(result.get(name)
 `with` adds something that only shows (a `Label`), `add_field` something with a value
 (`TextField`, `Checkbox`, `Cycle`, `Dropdown`, `Toggle`, `NumberField`, `ReorderableList`, or a
 `Label` whose text changes) and gives back a `Field` that reads it from the `DialogResult`,
-already the right type. Each button submits or cancels; Enter presses the first submit button,
+already the right type. A `Dropdown`'s list opens under it, or as far up as it needs to stay on
+screen. Each button submits or cancels; Enter presses the first submit button,
 and Escape and the close gadget cancel unless `cancellable(false)`. `on_submit_checked` can
 refuse with a message, which keeps the dialog open.
 `on_change` runs when it opens and whenever a component takes an event, and its `DialogFields`

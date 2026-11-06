@@ -31,6 +31,11 @@ impl<'a> Painter<'a> {
         return self.palette.get(pen).to_rgba();
     }
 
+    /// Where drawing goes: the whole target unless it's in [`Painter::clipped`].
+    pub fn clip(&self) -> Rect {
+        return self.target.get_clip();
+    }
+
     /// Runs `draw` with drawing clipped to `rect`.
     // draw isn't called at all if rect is empty or off screen
     pub fn clipped(&mut self, rect: Rect, draw: impl FnOnce(&mut Self)) {

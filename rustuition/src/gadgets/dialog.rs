@@ -1162,14 +1162,17 @@ impl<S, E: PointerEvent> DialogComponent<S, E> for Dropdown<S, E> {
         return FIELD_HEIGHT;
     }
 
-    // under the button, as wide as it, the chosen option filled in
+    // under the button, as wide as it, the chosen option filled in. moved up as far as it needs
+    // to stay on screen
     fn render_overlay(&mut self, _state: &S, painter: &mut Painter) {
         if !self.open {
             return;
         }
         let button = self.button.area();
         let height = self.options.len() as i32 * DROPDOWN_ROW_HEIGHT + 2;
-        self.list_area = Rect::new(button.x, button.bottom(), button.w, height);
+        let screen = painter.clip();
+        let y = button.bottom().min(screen.bottom() - height).max(screen.y);
+        self.list_area = Rect::new(button.x, y, button.w, height);
         painter.fill(self.list_area, Pen::FILL);
         let inside = painter.frame(self.list_area, 1);
         for (index, option) in self.options.iter().enumerate() {
@@ -1706,6 +1709,22 @@ mod tests {
         click(&mut dialog, &mut log, third);
         key(&mut dialog, &mut log, EditKey::Enter);
         assert_eq!(log.button, Some(2));
+    }
+
+    #[test]
+    fn dropdown_list_stays_on_screen() {
+        let options: Vec<String> = (0..8).map(|option| option.to_string()).collect();
+        let options: Vec<&str> = options.iter().map(String::as_str).collect();
+        let mut dropdown = Dropdown::<Log, MouseEvent>::new("", &options);
+        let mut screen = Framebuffer::new(200, 100);
+        let palette = IntuitionColorPalette::default();
+        let mut painter = Painter::new(&mut screen, &palette);
+        let log = Log::default();
+        dropdown.render(&log, Rect::new(0, 80, 100, FIELD_HEIGHT), &mut painter);
+        dropdown.open = true;
+        dropdown.render_overlay(&log, &mut painter);
+        assert_eq!(dropdown.list_area.bottom(), 100);
+        assert_eq!(dropdown.list_area.h, 8 * DROPDOWN_ROW_HEIGHT + 2);
     }
 
     #[test]

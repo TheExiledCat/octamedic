@@ -68,6 +68,7 @@ pub struct OctamedicEngine {
     volumes_hex: bool,
     // listener's volume, not saved with the song
     output_volume: u8,
+    mono: bool,
     muted_tracks: [bool; SONG_TRACKS],
 
     mode: PlayMode,
@@ -124,6 +125,7 @@ impl OctamedicEngine {
             global_transpose: 0,
             volumes_hex: false,
             output_volume: MAX_INSTRUMENT_VOLUME,
+            mono: false,
             muted_tracks: [false; SONG_TRACKS],
             mode: PlayMode::Paused,
             position: Position {
@@ -163,6 +165,9 @@ impl OctamedicEngine {
             );
             self.frames_until_tick -= frames as f64;
             frame += frames;
+        }
+        if self.mono {
+            mix_to_mono(out, channels);
         }
         let gain = self.output_volume as f32 / MAX_INSTRUMENT_VOLUME as f32;
         out.iter_mut()
@@ -216,6 +221,7 @@ impl OctamedicEngine {
             EngineCommand::SetOutputVolume(volume) => {
                 self.output_volume = volume.min(MAX_INSTRUMENT_VOLUME)
             }
+            EngineCommand::SetMono(mono) => self.mono = mono,
             EngineCommand::PlayNote {
                 track,
                 note,
@@ -730,6 +736,18 @@ impl Hold {
     }
 }
 
+// both sides become their average, so a channel panned to one side comes out of both at half
+fn mix_to_mono(out: &mut [f32], channels: usize) {
+    if channels < 2 {
+        return;
+    }
+    for frame in out.chunks_exact_mut(channels) {
+        let middle = (frame[0] + frame[1]) / 2.0;
+        frame[0] = middle;
+        frame[1] = middle;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::{
@@ -1226,6 +1244,27 @@ mod tests {
         let quarter = run(&mut engine, 1)[0];
         assert!(full > 0.0);
         assert!((quarter - full / 4.0).abs() < 1e-6, "{full} {quarter}");
+    }
+
+    #[test]
+    fn mono_plays_a_left_track_on_both_sides() {
+        let (mut engine, commands, _) = engine();
+        commands
+            .send(EngineCommand::SetInstrument {
+                id: InstrumentId(1),
+                instrument: Some(instrument()),
+            })
+            .unwrap();
+        play_note(&commands, 0);
+        let mut stereo = [0.0; 2];
+        engine.process(&mut stereo, 2);
+        commands.send(EngineCommand::SetMono(true)).unwrap();
+        let mut mono = [0.0; 2];
+        engine.process(&mut mono, 2);
+        let [left, right] = stereo;
+        assert!(left > 0.0);
+        assert_eq!(right, 0.0);
+        assert_eq!(mono, [left / 2.0; 2]);
     }
 
     #[test]

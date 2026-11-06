@@ -189,6 +189,11 @@ pub struct AppState {
     // the modifier keys down at the last mouse event, Amiga included
     pub mouse_mods: KeyMods,
     video: VideoStandard,
+    // the engine's device's id, None for the default. set_output_device changes it
+    pub output_device: Option<String>,
+    // the last try at opening it didn't work, so the engine is disconnected
+    audio_failed: bool,
+    mono: bool,
     queued_sequence_index: Option<usize>,
     started: Option<PlayStart>,
     muted_tracks: [bool; SONG_TRACKS],
@@ -253,6 +258,9 @@ impl AppState {
             displays_off: false,
             mouse_mods: KeyMods::NONE,
             video: DEFAULT_VIDEO,
+            output_device: None,
+            audio_failed: false,
+            mono: false,
             queued_sequence_index: None,
             started: None,
             muted_tracks: [false; SONG_TRACKS],
@@ -470,6 +478,59 @@ impl AppState {
     pub fn set_video(&mut self, video: VideoStandard) {
         self.video = video;
         self.engine.set_machine(video.clock());
+    }
+
+    pub fn audio_failed(&self) -> bool {
+        return self.audio_failed;
+    }
+
+    /// Starts the engine again on `device`, or the default one with `None`, which stops playing.
+    /// If that can't be opened it goes back to the one before. The same device again only opens
+    /// if the last try failed.
+    pub fn set_output_device(&mut self, device: Option<String>) {
+        if device == self.output_device && !self.audio_failed {
+            return;
+        }
+        self.stop();
+        // closed first, the new one could be the same hardware
+        self.engine = EngineHandle::disconnected();
+        let previous = std::mem::replace(&mut self.output_device, device);
+        if !self.open_audio() && self.output_device != previous {
+            let notification = self.notification.take();
+            self.output_device = previous;
+            self.open_audio();
+            self.notification = notification;
+        }
+    }
+
+    /// Starts the engine on the output device and sends it everything, or says why it can't.
+    pub fn open_audio(&mut self) -> bool {
+        let engine = match EngineHandle::spawn(self.video.clock(), self.output_device.as_deref()) {
+            Ok(engine) => engine,
+            Err(error) => {
+                self.audio_failed = true;
+                self.notify(format!("NO AUDIO: {error}"));
+                return false;
+            }
+        };
+        self.engine = engine;
+        self.audio_failed = false;
+        self.send_all_to_engine();
+        for track in (0..SONG_TRACKS).filter(|&track| self.muted_tracks[track]) {
+            self.engine.set_track_muted(track, true);
+        }
+        self.engine.set_mono(self.mono);
+        self.engine_active_instrument = None;
+        return true;
+    }
+
+    pub fn mono(&self) -> bool {
+        return self.mono;
+    }
+
+    pub fn set_mono(&mut self, mono: bool) {
+        self.mono = mono;
+        self.engine.set_mono(mono);
     }
 
     pub fn active_meters(&self) -> Meters {
