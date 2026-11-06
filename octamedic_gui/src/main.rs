@@ -1,4 +1,7 @@
-use std::path::PathBuf;
+// a GUI program on Windows, so it doesn't open a console window first
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
+use std::{convert::Infallible, path::PathBuf};
 
 use ggez::{
     Context, ContextBuilder, GameResult,
@@ -12,15 +15,17 @@ use rustuition::screen::Screen;
 use crate::app::{DEFAULT_VIDEO, app::App, files, icon, screen};
 
 mod app;
+mod crash_log;
 mod framework;
 
-fn load_project() -> OctamedicProject {
+// just the file's name in the error, a whole path doesn't fit in the notification bar
+fn load_project() -> Result<OctamedicProject, String> {
     let Some(path) = std::env::args_os().nth(1).map(PathBuf::from) else {
-        return OctamedicProject::new();
+        return Ok(OctamedicProject::new());
     };
-    return files::load_module(&path).unwrap_or_else(|error| {
-        eprintln!("Couldn't open {}: {error}", path.display());
-        OctamedicProject::new()
+    return files::load_module(&path).map_err(|error| {
+        let name = path.file_name().unwrap_or(path.as_os_str());
+        format!("Couldn't open {}: {error}", name.to_string_lossy())
     });
 }
 
@@ -30,11 +35,24 @@ const WINDOW_SCALE: f32 = 2.0;
 // dock, which winit doesn't tell us about
 const MONITOR_SHARE: f32 = 0.9;
 
-fn main() -> GameResult<()> {
+fn main() {
+    crash_log::log_panics();
+    // shown once the window's open, there's no console to print them to on Windows
+    let mut errors = Vec::new();
     if let Err(error) = files::initialize() {
-        eprintln!("Couldn't create OctaMEDIC's folders: {error}");
+        errors.push(format!("Couldn't create OctaMEDIC's folders: {error}"));
     }
-    let project = load_project();
+    let project = load_project().unwrap_or_else(|error| {
+        errors.push(error);
+        OctamedicProject::new()
+    });
+    // only comes back if the window couldn't open
+    let Err(error) = run(project, &errors);
+    crash_log::log_error(&error.to_string(), &errors);
+    std::process::exit(1);
+}
+
+fn run(project: OctamedicProject, errors: &[String]) -> GameResult<Infallible> {
     let [width, height] = screen(DEFAULT_VIDEO).window_size(WINDOW_SCALE);
     let mode = WindowMode {
         maximized: false,
@@ -55,7 +73,7 @@ fn main() -> GameResult<()> {
         .window_setup(WindowSetup::default().title("OctaMEDIC").vsync(false))
         .build()?;
     open_window(&mut ctx, mode)?;
-    let app = App::new(&mut ctx, project)?;
+    let app = App::new(&mut ctx, project, errors.to_vec())?;
     icon::set_window_icons(ctx.gfx.window())?;
     event::run(ctx, event_loop, app);
 }
