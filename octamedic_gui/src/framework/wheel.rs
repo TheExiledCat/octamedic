@@ -1,12 +1,14 @@
-/// Wheel delta to whole lines: 1.0 per line, fraction carried, capped at one line per event since
-/// ggez doesn't separate line deltas (wheels) from pixel deltas (trackpads).
+/// For handlers that scroll by lines, each keeping its own. Wheel delta to whole lines: 1.0 per
+/// line, fraction carried, capped at one line per event since ggez doesn't separate line deltas
+/// (wheels) from pixel deltas (trackpads).
 #[derive(Default)]
 pub struct WheelLines {
     saved: f32,
 }
 
 impl WheelLines {
-    /// `y` is ggez's, positive away from you. The lines are positive towards the end of a list.
+    /// `y` is `Wheel::delta`'s, positive away from you. The lines are positive towards the end of
+    /// a list.
     pub fn lines(&mut self, y: f32) -> i32 {
         // turning back starts over
         if y * self.saved < 0.0 {

@@ -247,6 +247,7 @@ mod tests {
     use rustuition::target::Framebuffer;
 
     use super::*;
+    use crate::framework::event::Wheel;
 
     const SCREEN_AREA: Rect = Rect::new(0, 77, 640, 120);
     const SHORTCUTS: usize = 1;
@@ -393,11 +394,14 @@ mod tests {
         state.browser.open(&temp).unwrap();
         let mut browser = FileBrowser::new();
         render(&mut browser, &mut state);
-        let wheel = Event::Wheel {
+        // two notches towards you
+        let notch = Event::Wheel(Wheel {
             pos: Point::new(FILE_LIST[0] + 20, SCREEN_AREA.y + LISTS_TOP + 20),
-            lines: 2,
-        };
-        assert!(browser.handle_event(&mut state, &wheel));
+            delta: [0.0, -1.0],
+        });
+        for _ in 0..2 {
+            assert!(browser.handle_event(&mut state, &notch));
+        }
         render(&mut browser, &mut state);
         let _ = fs::remove_dir_all(&temp);
         assert_eq!(browser.scrollers[FILES].first_visible_entry, 2);

@@ -29,10 +29,9 @@ use crate::{
     },
     framework::{
         dialog_stack::DialogStack,
-        event::{self, Event},
+        event::{self, Event, Wheel},
         key_repeat::KeyRepeat,
         keymap::amiga_mods,
-        wheel::WheelLines,
     },
 };
 
@@ -66,7 +65,6 @@ pub struct App {
     repeat_held_back: bool,
     // the modifiers don't say which Alt, and right Alt is the Amiga key
     alts_held: [bool; 2],
-    wheel: WheelLines,
 }
 
 impl App {
@@ -91,7 +89,6 @@ impl App {
             key_repeat: KeyRepeat::default(),
             repeat_held_back: false,
             alts_held: [false; 2],
-            wheel: WheelLines::default(),
         };
         app.fit_viewport(ctx);
         return Ok(app);
@@ -317,12 +314,14 @@ impl EventHandler for App {
         return Ok(());
     }
 
-    fn mouse_wheel_event(&mut self, ctx: &mut Context, _x: f32, y: f32) -> GameResult {
-        let lines = self.wheel.lines(y);
+    fn mouse_wheel_event(&mut self, ctx: &mut Context, x: f32, y: f32) -> GameResult {
         let pointer = ctx.mouse.position();
         // like presses, the bars around the screen would land on its edge
-        if lines != 0 && self.viewport.contains([pointer.x, pointer.y]) {
-            self.mouse_event(ctx, pointer.x, pointer.y, |pos| Event::Wheel { pos, lines });
+        if self.viewport.contains([pointer.x, pointer.y]) {
+            let delta = [x, y];
+            self.mouse_event(ctx, pointer.x, pointer.y, |pos| {
+                Event::Wheel(Wheel { pos, delta })
+            });
         }
         return Ok(());
     }

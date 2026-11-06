@@ -19,11 +19,7 @@ pub enum Event {
         pos: Point,
         button: MouseButton,
     },
-    /// The mouse wheel or a trackpad, in whole lines, positive towards the end of a list.
-    Wheel {
-        pos: Point,
-        lines: i32,
-    },
+    Wheel(Wheel),
     Key {
         key: KeyCode,
         mods: KeyMods,
@@ -34,6 +30,15 @@ pub enum Event {
         mods: KeyMods,
         repeat: bool,
     },
+}
+
+/// The mouse wheel or a trackpad, as ggez gives it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Wheel {
+    pub pos: Point,
+    /// x and y, lines from a mouse wheel but logical pixels from a trackpad. y is positive away
+    /// from you, x to the right.
+    pub delta: [f32; 2],
 }
 
 impl Event {
@@ -51,7 +56,7 @@ impl PointerEvent for Event {
             Event::MouseMove { pos } => Some(MouseEvent::Move { pos }),
             Event::MouseDown { pos, button } => Some(MouseEvent::Down { pos, button }),
             Event::MouseUp { pos, button } => Some(MouseEvent::Up { pos, button }),
-            Event::Wheel { .. } | Event::Key { .. } | Event::Text { .. } => None,
+            Event::Wheel(_) | Event::Key { .. } | Event::Text { .. } => None,
         };
     }
 }
