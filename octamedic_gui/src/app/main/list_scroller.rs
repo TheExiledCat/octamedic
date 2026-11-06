@@ -17,11 +17,12 @@ pub struct ListScroller {
     pub first_visible_entry: usize,
     // set by whoever draws the list
     pub lines_that_fit: usize,
+    // set by whoever draws the list too, for the wheel
     pub list_area: Rect,
     // from the last render
     area: Rect,
-    // from the last update
-    last_first_entry: usize,
+    // the furthest the first entry can go, from the last update
+    max_first_entry: usize,
     wheel: WheelLines,
 }
 
@@ -33,7 +34,7 @@ impl ListScroller {
             lines_that_fit: 0,
             list_area: Rect::default(),
             area: Rect::default(),
-            last_first_entry: 0,
+            max_first_entry: 0,
             wheel: WheelLines::default(),
         };
     }
@@ -42,7 +43,7 @@ impl ListScroller {
         let last = total
             .saturating_sub(self.lines_that_fit)
             .min(u16::MAX as usize);
-        self.last_first_entry = last;
+        self.max_first_entry = last;
         self.first_visible_entry = self.first_visible_entry.min(last);
         self.slider.set_range(0, last as u16);
         if let Some(first) = self.slider.update(state, self.first_visible_entry as u16) {
@@ -78,7 +79,7 @@ impl ListScroller {
         let first = self
             .first_visible_entry
             .saturating_add_signed(lines as isize);
-        self.first_visible_entry = first.min(self.last_first_entry);
+        self.first_visible_entry = first.min(self.max_first_entry);
     }
 }
 
