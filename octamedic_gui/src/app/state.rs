@@ -705,6 +705,7 @@ impl AppState {
     pub fn set_volumes_hex(&mut self, hex: bool) {
         if self.song().flags.volumes_hex != hex {
             self.song_mut().flags.volumes_hex = hex;
+            self.engine.set_volumes_hex(hex);
         }
     }
 

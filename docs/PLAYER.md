@@ -142,9 +142,19 @@ instrument number is silent. That's what MED does.
 These details come from libxmp's MED player (`src/med_extras.c`), checked against the manual's
 examples.
 
+## Effects
+
+`apply_effects` runs on a line's first tick, after its note, and matches the command number to a
+function for that effect. Only 0C so far.
+
+0C sets the track's volume, read as hex or as two decimal digits depending on the song's VOL HEX/DEC
+setting, and capped at 64. It's the same volume decay fades, and like MED it lasts until the track's
+next note with an instrument number, a hold symbol, or stop. A 0C on a note's or a `-|-`'s line wins
+over the reset those do.
+
 ## Not done yet
 
-- Effects (the command column). `tick` has a spot for them.
+- Effects other than 0C. Each gets a function, called from `apply_effects`.
 - 5 to 8 channel songs, where OctaMED mixes two tracks into each Paula channel in software. That
   will be its own renderer.
 - Stereo. Paula puts channels 0 and 3 left and 1 and 2 right; the renderer puts everything in the

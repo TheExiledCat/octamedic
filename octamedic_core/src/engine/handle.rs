@@ -53,6 +53,8 @@ pub enum EngineCommand {
     SetTempo(OctamedicTempo),
     SetMachine(AmigaClock),
     SetFilter(bool),
+    /// Whether 0C's argument is hex rather than two decimal digits.
+    SetVolumesHex(bool),
     SetTrackVolume {
         track: usize,
         volume: u8,
@@ -92,6 +94,7 @@ impl EngineCommand {
             EngineCommand::SetMasterVolume(song.master_volume.get()),
             EngineCommand::SetGlobalTranspose(song.global_transpose),
             EngineCommand::SetFilter(song.flags.filter_on),
+            EngineCommand::SetVolumesHex(song.flags.volumes_hex),
         ];
         for (track, volume) in song.track_volumes.iter().enumerate() {
             commands.push(EngineCommand::SetTrackVolume {
@@ -360,6 +363,10 @@ impl EngineHandle {
 
     pub fn set_filter(&self, on: bool) {
         self.send(EngineCommand::SetFilter(on));
+    }
+
+    pub fn set_volumes_hex(&self, hex: bool) {
+        self.send(EngineCommand::SetVolumesHex(hex));
     }
 
     pub fn set_tempo(&self, tempo: OctamedicTempo) {

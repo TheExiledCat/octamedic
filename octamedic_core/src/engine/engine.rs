@@ -27,6 +27,8 @@ const MAX_NOTE: u8 = 0x7F;
 // a channel past the tracks for previews and the sample editor, so they leave the song's alone
 const PREVIEW_CHANNEL: usize = MAX_TRACKS;
 
+const SET_VOLUME: u8 = 0x0C;
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(u8)]
 pub enum PlayMode {
@@ -63,6 +65,7 @@ pub struct OctamedicEngine {
     track_volumes: [u8; MAX_TRACKS],
     master_volume: u8,
     global_transpose: i8,
+    volumes_hex: bool,
     // listener's volume, not saved with the song
     output_volume: u8,
     muted_tracks: [bool; SONG_TRACKS],
@@ -119,6 +122,7 @@ impl OctamedicEngine {
             track_volumes: [MAX_INSTRUMENT_VOLUME; MAX_TRACKS],
             master_volume: MAX_INSTRUMENT_VOLUME,
             global_transpose: 0,
+            volumes_hex: false,
             output_volume: MAX_INSTRUMENT_VOLUME,
             muted_tracks: [false; SONG_TRACKS],
             mode: PlayMode::Paused,
@@ -198,6 +202,7 @@ impl OctamedicEngine {
                 self.renderer.set_clock(machine);
             }
             EngineCommand::SetFilter(on) => self.renderer.set_filter(on),
+            EngineCommand::SetVolumesHex(hex) => self.volumes_hex = hex,
             EngineCommand::SetTrackVolume { track, volume } => {
                 if let Some(track_volume) = self.track_volumes.get_mut(track) {
                     *track_volume = volume.min(MAX_INSTRUMENT_VOLUME);
@@ -467,8 +472,31 @@ impl OctamedicEngine {
             } else if let Some(id) = instrument {
                 self.hold_symbol(track, id);
             }
+            self.apply_effects(track, line);
             self.holds[track].paused = self.next_line_has_hold_symbol(track);
         }
+    }
+
+    // after the line's note, so they act on it
+    #[allow(clippy::single_match)]
+    fn apply_effects(&mut self, track: usize, cell: OctamedicPatternTrack) {
+        match cell.command_id.0 {
+            SET_VOLUME => self.set_volume(track, cell.command_value),
+            _ => {}
+        }
+    }
+
+    // 0C, kept until the track's next note with an instrument number, or stop
+    fn set_volume(&mut self, track: usize, argument: u8) {
+        let volume = if self.volumes_hex {
+            argument
+        } else {
+            (argument >> 4) * 10 + (argument & 0x0F)
+        };
+        let volume = volume.min(MAX_INSTRUMENT_VOLUME);
+        self.note_volumes[track] = volume;
+        let volume = self.mixed_volume(track, volume);
+        self.write(track, PaulaWrite::Volume(volume));
     }
 
     // OctaMED 3.00 on resets the volume here
@@ -691,7 +719,10 @@ mod tests {
 
     use super::*;
     use crate::{
-        data::instrument::{InstrumentKind, SampleOctaves},
+        data::{
+            command::CommandId,
+            instrument::{InstrumentKind, SampleOctaves},
+        },
         engine::period::note_period,
     };
 
@@ -1438,6 +1469,8 @@ mod tests {
         Note,
         NoteWithoutInstrument,
         HoldSymbol,
+        // 0C with this argument, on top of whatever else is on the line
+        SetVolume(u8),
     }
 
     // channel 0's volume after each tick, 0 while DMA's off
@@ -1448,7 +1481,21 @@ mod tests {
         cells: &[(usize, Cell)],
         ticks: usize,
     ) -> Vec<u8> {
+        return volume_per_tick_in(false, hold, decay, ticks_per_line, cells, ticks);
+    }
+
+    fn volume_per_tick_in(
+        volumes_hex: bool,
+        hold: u8,
+        decay: u8,
+        ticks_per_line: u8,
+        cells: &[(usize, Cell)],
+        ticks: usize,
+    ) -> Vec<u8> {
         let (mut engine, commands, recorder) = recording_engine();
+        commands
+            .send(EngineCommand::SetVolumesHex(volumes_hex))
+            .unwrap();
         let mut instrument = instrument();
         instrument.hold = hold;
         instrument.decay = decay;
@@ -1468,6 +1515,10 @@ mod tests {
                 }
                 Cell::NoteWithoutInstrument => track.note.value = 13,
                 Cell::HoldSymbol => track.instrument_id = LOADED_INSTRUMENT,
+                Cell::SetVolume(argument) => {
+                    track.command_id = CommandId(SET_VOLUME);
+                    track.command_value = argument;
+                }
             }
         }
         commands
@@ -1581,5 +1632,58 @@ mod tests {
         let heard = volume_per_tick(1, 32, 6, &cells, 18);
         assert_eq!(&heard[..4], [FULL_VOLUME, 32, 0, 0]);
         assert!(heard[12..].iter().all(|&volume| volume == FULL_VOLUME));
+    }
+
+    #[test]
+    fn set_volume_is_decimal_by_default() {
+        let cells = [(0, Cell::Note), (0, Cell::SetVolume(0x20))];
+        assert_eq!(volume_per_tick(0, 0, 2, &cells, 2), [20, 20]);
+        // and never above 64
+        let cells = [(0, Cell::Note), (0, Cell::SetVolume(0x99))];
+        assert_eq!(volume_per_tick(0, 0, 2, &cells, 1), [FULL_VOLUME]);
+    }
+
+    #[test]
+    fn set_volume_in_hex() {
+        let cells = [(0, Cell::Note), (0, Cell::SetVolume(0x20))];
+        assert_eq!(volume_per_tick_in(true, 0, 0, 2, &cells, 1), [32]);
+    }
+
+    #[test]
+    fn set_volume_changes_a_playing_note() {
+        let cells = [(0, Cell::Note), (1, Cell::SetVolume(0x10))];
+        assert_eq!(
+            volume_per_tick(0, 0, 2, &cells, 4),
+            [FULL_VOLUME, FULL_VOLUME, 10, 10]
+        );
+    }
+
+    #[test]
+    fn set_volume_lasts_until_a_numbered_note() {
+        let cells = [
+            (0, Cell::Note),
+            (0, Cell::SetVolume(0x10)),
+            (1, Cell::NoteWithoutInstrument),
+            (2, Cell::Note),
+        ];
+        assert_eq!(volume_per_tick(0, 0, 1, &cells, 3), [10, 10, FULL_VOLUME]);
+    }
+
+    #[test]
+    fn decay_fades_from_the_set_volume() {
+        let cells = [(0, Cell::Note), (0, Cell::SetVolume(0x40))];
+        assert_eq!(volume_per_tick(1, 16, 6, &cells, 4), [40, 24, 8, 0]);
+    }
+
+    #[test]
+    fn a_hold_symbol_resets_the_set_volume() {
+        let cells = [
+            (0, Cell::Note),
+            (0, Cell::SetVolume(0x20)),
+            (1, Cell::HoldSymbol),
+            (2, Cell::HoldSymbol),
+            (2, Cell::SetVolume(0x10)),
+        ];
+        assert_eq!(volume_per_tick(0, 0, 1, &cells, 3), [20, FULL_VOLUME, 10]);
     }
 }
