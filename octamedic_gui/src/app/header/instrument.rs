@@ -20,7 +20,6 @@ use rustuition::{
 use crate::{
     app::{
         fonts,
-        header::finished_edit,
         state::{AppState, NameEdit},
     },
     framework::{
@@ -118,7 +117,6 @@ pub struct Instrument {
     // transpose, then finetune
     stepped: [Stepper; 2],
     hold_decay: [Textbox; 2],
-    hold_decay_was_focused: [bool; 2],
     // the loop's start and length
     repeats: [Textbox; 2],
     types: [Button; 3],
@@ -154,13 +152,7 @@ impl Instrument {
                 Stepper::new(i8::MIN as i32, i8::MAX as i32),
                 Stepper::new(MIN_FINETUNE as i32, MAX_FINETUNE as i32),
             ],
-            hold_decay: std::array::from_fn(|_| {
-                widgets::textbox()
-                    .padding(1)
-                    .max_length(2)
-                    .select_on_focus()
-            }),
-            hold_decay_was_focused: [false; 2],
+            hold_decay: std::array::from_fn(hold_decay_box),
             repeats: std::array::from_fn(|_| widgets::textbox()),
             types: TYPES.map(|(label, _)| label_button(label)),
             volume: Button::new("00/00").font(fonts::INTERFACE),
@@ -209,6 +201,27 @@ impl Instrument {
         let volume = active(state).map_or(0, |instrument| instrument.volume);
         self.volume.set_text(format!("{volume:02}/{volume:02X}"));
     }
+}
+
+// takes what's typed straight away, two digits are always 0 to 99
+fn hold_decay_box(index: usize) -> Textbox {
+    return widgets::textbox()
+        .padding(1)
+        .max_length(2)
+        .select_on_focus()
+        .on_update(move |state: &mut AppState, text| {
+            let Some(value) = text
+                .parse::<u8>()
+                .ok()
+                .filter(|value| *value <= MAX_HOLD_DECAY)
+            else {
+                return;
+            };
+            state.edit_active_instrument(|instrument| match index {
+                0 => instrument.hold = value,
+                _ => instrument.decay = value,
+            });
+        });
 }
 
 // a number typed in its box or stepped with - and +, from `min` to `max`
@@ -300,25 +313,9 @@ impl Gadget<AppState, Event> for Instrument {
         self.update_volume(state, volume);
         let hold_decay =
             active(state).map_or([0, 0], |instrument| [instrument.hold, instrument.decay]);
-        for (index, (textbox, was_focused)) in self
-            .hold_decay
-            .iter_mut()
-            .zip(&mut self.hold_decay_was_focused)
-            .enumerate()
-        {
-            // read before the refresh below overwrites it
-            let typed = finished_edit(textbox, was_focused)
-                .and_then(|text| text.trim().parse::<u8>().ok())
-                .filter(|value| *value <= MAX_HOLD_DECAY);
-            if let Some(value) = typed {
-                state.edit_active_instrument(|instrument| match index {
-                    0 => instrument.hold = value,
-                    _ => instrument.decay = value,
-                });
-            }
+        for (textbox, value) in self.hold_decay.iter_mut().zip(hold_decay) {
             if !textbox.is_focused() {
-                let shown = typed.unwrap_or(hold_decay[index]);
-                textbox.set_text(shown.to_string());
+                textbox.set_text(value.to_string());
             }
         }
 
@@ -565,21 +562,20 @@ mod tests {
     #[test]
     fn typing_hold_and_decay() {
         let (mut panel, mut state) = panel();
-        for (index, typed) in [(0, "12"), (1, "3")] {
-            panel.hold_decay[index].set_focused(true);
-            update(&mut panel, &mut state);
-            panel.hold_decay[index].set_text(typed);
-            panel.hold_decay[index].set_focused(false);
+        for (rect, typed) in [(SUNKEN_BOXES[0], "12"), (SUNKEN_BOXES[1], "3")] {
+            click(&mut panel, &mut state, rect);
+            for character in typed.chars() {
+                panel.handle_event(&mut state, &Event::text(character));
+            }
+            // taken as it's typed, not when the box is left
             update(&mut panel, &mut state);
         }
         assert_eq!((active(&state).hold, active(&state).decay), (12, 3));
-        assert_eq!(panel.hold_decay[0].text(), "12");
-        // octamed's boxes only go to 99
-        panel.hold_decay[1].set_focused(true);
-        update(&mut panel, &mut state);
-        panel.hold_decay[1].set_text("100");
-        panel.hold_decay[1].set_focused(false);
-        update(&mut panel, &mut state);
+        // a letter isn't a number, and leaving puts the 3 back
+        click(&mut panel, &mut state, NAME);
+        click(&mut panel, &mut state, SUNKEN_BOXES[1]);
+        panel.handle_event(&mut state, &Event::text('x'));
+        click(&mut panel, &mut state, NAME);
         assert_eq!(active(&state).decay, 3);
         assert_eq!(panel.hold_decay[1].text(), "3");
     }
