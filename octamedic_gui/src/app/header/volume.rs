@@ -221,7 +221,8 @@ fn volume_box() -> Textbox {
         .font(fonts::INTERFACE)
         .pens(Pen::BACKGROUND, Pen::SHINE, Pen::FILL, pens::RED)
         .padding(1)
-        .max_length(2);
+        .max_length(2)
+        .select_on_focus();
 }
 
 fn step_buttons() -> [Button; STEPS.len()] {

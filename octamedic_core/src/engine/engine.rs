@@ -73,6 +73,9 @@ pub struct OctamedicEngine {
     track_instruments: [Option<InstrumentId>; MAX_TRACKS],
     // the instrument each track's voice was last started with, None for a preview
     voices: [Option<InstrumentId>; MAX_TRACKS],
+    // before track and master volume
+    note_volumes: [u8; MAX_TRACKS],
+    holds: [Hold; MAX_TRACKS],
     active_instrument: Option<InstrumentId>,
 }
 
@@ -121,6 +124,8 @@ impl OctamedicEngine {
             renderer,
             track_instruments: [None; MAX_TRACKS],
             voices: [None; MAX_TRACKS],
+            note_volumes: [0; MAX_TRACKS],
+            holds: [Hold::default(); MAX_TRACKS],
             active_instrument: None,
         };
     }
@@ -213,6 +218,7 @@ impl OctamedicEngine {
                 let played = sample_note(note.value, 0, 0, sample.octaves);
                 self.trigger(0, sample, played, MAX_INSTRUMENT_VOLUME);
                 self.voices[0] = None;
+                self.holds[0] = Hold::default();
             }
             EngineCommand::Preview(None) => self.release(0),
             EngineCommand::SetActiveInstrument(instrument) => {
@@ -293,6 +299,7 @@ impl OctamedicEngine {
         self.position.row = self.position.row.min(lines.saturating_sub(1));
         self.release_all();
         self.track_instruments = [None; MAX_TRACKS];
+        self.note_volumes = [0; MAX_TRACKS];
         self.queued_sequence_index = None;
         self.clock = Some(Clock {
             tick: 0,
@@ -356,6 +363,28 @@ impl OctamedicEngine {
             self.play_row();
         }
         // todo effects
+        for track in 0..MAX_TRACKS {
+            self.hold_and_decay(track);
+        }
+    }
+
+    fn hold_and_decay(&mut self, track: usize) {
+        let hold = &mut self.holds[track];
+        let Some(left) = hold.ticks_left else {
+            return;
+        };
+        if left == 0 {
+            let volume = &mut self.note_volumes[track];
+            let step = if hold.decay == 0 { *volume } else { hold.decay };
+            *volume = volume.saturating_sub(step);
+            if *volume == 0 {
+                hold.ticks_left = None;
+            }
+            let volume = self.scaled_volume(track, self.note_volumes[track]);
+            self.write(track, PaulaWrite::Volume(volume));
+        } else if !hold.sustained {
+            hold.ticks_left = Some(left - 1);
+        }
     }
 
     fn advance_row(&mut self) {
@@ -432,23 +461,63 @@ impl OctamedicEngine {
             let instrument = (line.instrument_id.0 != 0).then_some(line.instrument_id);
             if line.note.value != 0 {
                 self.note_on(track, line.note, instrument);
-            } else if instrument.is_some() {
-                self.track_instruments[track] = instrument;
+            } else if let Some(id) = instrument {
+                self.hold_symbol(track, id);
             }
+            self.holds[track].sustained = self.next_line_holds(track);
         }
     }
 
-    fn note_on(&mut self, track: usize, note: OctamedicNote, instrument: Option<InstrumentId>) {
+    // OctaMED 3.00 on resets the volume here
+    fn hold_symbol(&mut self, track: usize, id: InstrumentId) {
+        self.track_instruments[track] = Some(id);
+        let Some(default_volume) = self.instrument(id).map(|instrument| instrument.volume) else {
+            return;
+        };
+        self.note_volumes[track] = default_volume;
+        let volume = self.scaled_volume(track, default_volume);
+        self.write(track, PaulaWrite::Volume(volume));
+    }
+
+    // -|- on the next line pauses the hold on this one. Like OctaMED, not across blocks
+    fn next_line_holds(&self, track: usize) -> bool {
+        if self.holds[track].ticks_left.is_none_or(|left| left == 0) {
+            return false;
+        }
+        let next = self
+            .current_pattern()
+            .and_then(|pattern| pattern.lines.get(self.position.row + 1))
+            .and_then(|line| line.tracks.get(track));
+        return next.is_some_and(|cell| cell.note.value == 0 && cell.instrument_id.0 != 0);
+    }
+
+    fn instrument(&self, id: InstrumentId) -> Option<&OctamedicInstrument> {
+        return id
+            .index()
+            .and_then(|index| self.instruments.get(index))
+            .and_then(Option::as_ref);
+    }
+
+    fn scaled_volume(&self, track: usize, volume: u8) -> u8 {
+        let max = MAX_INSTRUMENT_VOLUME as u32;
+        let volume = volume as u32 * self.track_volumes[track] as u32 / max
+            * self.master_volume as u32
+            / max;
+        return volume as u8;
+    }
+
+    fn note_on(
+        &mut self,
+        track: usize,
+        note: OctamedicNote,
+        instrument_number: Option<InstrumentId>,
+    ) {
         if track >= MAX_TRACKS || note.value == 0 || note.value > MAX_NOTE {
             return;
         }
-        let instrument_id = instrument.or(self.track_instruments[track]);
+        let instrument_id = instrument_number.or(self.track_instruments[track]);
         self.track_instruments[track] = instrument_id;
-        let Some(instrument) = instrument_id
-            .and_then(|id| id.index())
-            .and_then(|index| self.instruments.get(index))
-            .and_then(Option::as_ref)
-        else {
+        let Some(instrument) = instrument_id.and_then(|id| self.instrument(id)) else {
             self.release(track);
             return;
         };
@@ -458,16 +527,20 @@ impl OctamedicEngine {
         };
         let transpose = instrument.transpose.wrapping_add(self.global_transpose);
         let played = sample_note(note.value, transpose, instrument.finetune, sample.octaves);
-        let max = MAX_INSTRUMENT_VOLUME as u32;
-        let volume = instrument.volume as u32 * self.track_volumes[track] as u32 / max
-            * self.master_volume as u32
-            / max;
+        let hold = Hold::new(instrument.hold, instrument.decay);
+        let default_volume = instrument.volume;
+        // like MED, a note without an instrument number keeps the track's hold and volume
+        if instrument_number.is_some() {
+            self.holds[track] = hold;
+            self.note_volumes[track] = default_volume;
+        }
+        let volume = self.scaled_volume(track, self.note_volumes[track]);
         if !self.is_muted(track) {
             let instrument = instrument_id.map_or(0, |id| id.0);
             self.status
-                .note_triggered(track, note.value, instrument, volume as u8);
+                .note_triggered(track, note.value, instrument, volume);
         }
-        self.trigger(track, sample, played, volume as u8);
+        self.trigger(track, sample, played, volume);
         self.voices[track] = instrument_id;
     }
 
@@ -552,10 +625,14 @@ impl OctamedicEngine {
             self.write(0, write);
         }
         self.voices[0] = Some(instrument);
+        self.holds[0] = Hold::default();
     }
 
     fn release(&mut self, track: usize) {
         self.write(track, PaulaWrite::DmaOff);
+        if let Some(hold) = self.holds.get_mut(track) {
+            *hold = Hold::default();
+        }
     }
 
     fn write(&mut self, channel: usize, write: PaulaWrite) {
@@ -586,6 +663,25 @@ struct Clock {
     tick: u32,
     // keep the fraction or the tempo drifts
     frames_until_tick: f64,
+}
+
+#[derive(Clone, Copy, Default)]
+struct Hold {
+    // None without a hold, or once decayed
+    ticks_left: Option<u32>,
+    decay: u8,
+    // the next line has a -|-
+    sustained: bool,
+}
+
+impl Hold {
+    fn new(hold: u8, decay: u8) -> Self {
+        return Self {
+            ticks_left: (hold > 0).then_some(hold as u32),
+            decay,
+            sustained: false,
+        };
+    }
 }
 
 #[cfg(test)]
@@ -1322,5 +1418,130 @@ mod tests {
             .unwrap();
         run(&mut engine, 1);
         assert!(engine.frames_per_tick() < pal);
+    }
+
+    #[derive(Clone, Copy)]
+    enum Cell {
+        Note,
+        NoInstrument,
+        HoldSymbol,
+    }
+
+    // channel 0's volume after each tick, 0 while DMA's off
+    fn volume_per_tick(
+        hold: u8,
+        decay: u8,
+        ticks_per_line: u8,
+        cells: &[(usize, Cell)],
+        ticks: usize,
+    ) -> Vec<u8> {
+        let (mut engine, commands, recorder) = recording_engine();
+        let mut instrument = instrument();
+        instrument.hold = hold;
+        instrument.decay = decay;
+        commands
+            .send(EngineCommand::SetInstrument {
+                id: InstrumentId(1),
+                instrument: Some(instrument),
+            })
+            .unwrap();
+        let mut block = pattern(16, &[]);
+        for &(line, cell) in cells {
+            let track = &mut block.lines[line].tracks[0];
+            match cell {
+                Cell::Note => {
+                    track.note.value = 13;
+                    track.instrument_id = InstrumentId(1);
+                }
+                Cell::NoInstrument => track.note.value = 13,
+                Cell::HoldSymbol => track.instrument_id = InstrumentId(1),
+            }
+        }
+        commands
+            .send(EngineCommand::SetPattern {
+                id: PatternId(0),
+                pattern: Arc::new(block),
+            })
+            .unwrap();
+        commands
+            .send(EngineCommand::SetTempo(tempo(ticks_per_line)))
+            .unwrap();
+        commands
+            .send(EngineCommand::PlayPattern {
+                pattern: PatternId(0),
+                row: 0,
+                looping: false,
+            })
+            .unwrap();
+        let (mut volume, mut on) = (0, false);
+        let mut heard = Vec::new();
+        for _ in 0..ticks {
+            recorder.writes.lock().unwrap().clear();
+            // a tick is just under 100 frames, so this runs exactly the one due at its start
+            run(&mut engine, 100);
+            for write in channel_writes(&recorder, 0) {
+                match write {
+                    PaulaWrite::Volume(written) => volume = written,
+                    PaulaWrite::DmaOn => on = true,
+                    PaulaWrite::DmaOff => on = false,
+                    _ => {}
+                }
+            }
+            heard.push(if on { volume } else { 0 });
+        }
+        return heard;
+    }
+
+    const FULL: u8 = MAX_INSTRUMENT_VOLUME;
+
+    #[test]
+    fn hold_cuts_the_note_after_its_ticks() {
+        // the manual's example
+        let heard = volume_per_tick(2, 0, 6, &[(0, Cell::Note), (1, Cell::Note)], 9);
+        assert_eq!(heard, [FULL, FULL, 0, 0, 0, 0, FULL, FULL, 0]);
+    }
+
+    #[test]
+    fn no_hold_plays_on() {
+        let heard = volume_per_tick(0, 3, 6, &[(0, Cell::Note)], 12);
+        assert!(heard.iter().all(|&volume| volume == FULL));
+    }
+
+    #[test]
+    fn decay_fades_by_its_value_each_tick() {
+        let heard = volume_per_tick(2, 16, 6, &[(0, Cell::Note)], 8);
+        assert_eq!(heard, [FULL, FULL, 48, 32, 16, 0, 0, 0]);
+    }
+
+    #[test]
+    fn hold_symbols_keep_the_note_going() {
+        // the manual's 08 example, 6 + 6 + 4 ticks
+        let cells = [
+            (0, Cell::Note),
+            (1, Cell::HoldSymbol),
+            (2, Cell::HoldSymbol),
+        ];
+        let heard = volume_per_tick(4, 0, 6, &cells, 20);
+        assert!(heard[..16].iter().all(|&volume| volume == FULL));
+        assert!(heard[16..].iter().all(|&volume| volume == 0));
+    }
+
+    #[test]
+    fn a_note_without_an_instrument_number_keeps_the_hold_going() {
+        // still cut 8 ticks after line 0's note
+        let heard = volume_per_tick(8, 0, 6, &[(0, Cell::Note), (1, Cell::NoInstrument)], 10);
+        assert_eq!(&heard[6..], [FULL, FULL, 0, 0]);
+        // silent once decayed, like MED
+        let heard = volume_per_tick(1, 0, 6, &[(0, Cell::Note), (1, Cell::NoInstrument)], 8);
+        assert_eq!(&heard[6..], [0, 0]);
+    }
+
+    #[test]
+    fn a_hold_symbol_puts_the_volume_back() {
+        // -|- after the decay brings the volume back for good
+        let cells = [(0, Cell::Note), (2, Cell::HoldSymbol)];
+        let heard = volume_per_tick(1, 32, 6, &cells, 18);
+        assert_eq!(&heard[..4], [FULL, 32, 0, 0]);
+        assert!(heard[12..].iter().all(|&volume| volume == FULL));
     }
 }

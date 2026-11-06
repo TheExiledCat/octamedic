@@ -172,8 +172,9 @@ impl Gadget<AppState, Event> for Files {
     }
 
     fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
-        return self.dir.handle_event(state, event)
-            || self.file.handle_event(state, event)
+        // both see every click, it's how a text box finds out it lost focus
+        let handled = self.dir.handle_event(state, event) | self.file.handle_event(state, event);
+        return handled
             || self
                 .buttons()
                 .any(|button| button.handle_event(state, event));

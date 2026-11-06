@@ -126,6 +126,7 @@ impl Block {
                 .font(fonts::INTERFACE)
                 .pens(Pen::BACKGROUND, Pen::SHINE, Pen::FILL, pens::RED)
                 .padding(padding)
+                .select_on_focus()
         };
         return Self {
             cut_track: label(&[(13, "CUT")]),
@@ -494,8 +495,10 @@ impl Gadget<AppState, Event> for Block {
     }
 
     fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
-        return self.lines_box.handle_event(state, event)
-            || self.expand_factor.handle_event(state, event)
+        // both see every click, it's how a text box finds out it lost focus
+        let handled = self.lines_box.handle_event(state, event)
+            | self.expand_factor.handle_event(state, event);
+        return handled
             || self
                 .buttons()
                 .any(|button| button.handle_event(state, event));

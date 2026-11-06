@@ -33,6 +33,7 @@ pub struct Textbox<S, E = MouseEvent> {
     // first char shown, when the text is wider than the box
     scroll: usize,
     max_length: Option<usize>,
+    select_on_focus: bool,
     font: Font,
     border: i32,
     padding: i32,
@@ -59,6 +60,7 @@ impl<S, E> Textbox<S, E> {
             last_click: None,
             scroll: 0,
             max_length: None,
+            select_on_focus: false,
             font: Font::TOPAZ,
             border: 1,
             padding: 2,
@@ -82,6 +84,12 @@ impl<S, E> Textbox<S, E> {
     /// Stops typing past `length` chars.
     pub fn max_length(mut self, length: usize) -> Self {
         self.max_length = Some(length);
+        return self;
+    }
+
+    /// Selects the whole text when a click focuses it, so typing replaces it. For number boxes.
+    pub fn select_on_focus(mut self) -> Self {
+        self.select_on_focus = true;
         return self;
     }
 
@@ -340,6 +348,13 @@ impl<S, E> Textbox<S, E> {
         let double = self.last_click.is_some_and(|(at, clicked)| {
             clicked == index && now.duration_since(at) <= DOUBLE_CLICK
         });
+        if self.select_on_focus && !self.focused {
+            self.focused = true;
+            self.anchor = Some(0);
+            self.cursor = self.len();
+            self.last_click = None;
+            return;
+        }
         self.focused = true;
         if double {
             self.last_click = None;
@@ -368,14 +383,10 @@ impl<S, E> Textbox<S, E> {
     fn scroll_to_cursor(&mut self, width: i32) {
         self.scroll = self.scroll.min(self.cursor);
         let chars = self.chars();
+        // the cursor after the last char gets no room, so only text wider than the box scrolls
         let cursor_end = |scroll: usize| -> i32 {
             let shown = chars.iter().skip(scroll).take(self.cursor + 1 - scroll);
-            let cursor_width = if self.cursor < chars.len() {
-                0
-            } else {
-                self.font.advance(' ')
-            };
-            shown.map(|&c| self.font.advance(c)).sum::<i32>() + cursor_width
+            shown.map(|&c| self.font.advance(c)).sum::<i32>()
         };
         while self.scroll < self.cursor && cursor_end(self.scroll) > width {
             self.scroll += 1;
@@ -443,7 +454,12 @@ impl<S, E: PointerEvent + TextEvent> Gadget<S, E> for Textbox<S, E> {
         painter.fill(area, self.fill);
         painter.frame(area, self.border);
         let inner = self.inner(area);
-        self.scroll_to_cursor(inner.w);
+        // scrolled for the cursor while typing, so a short text could stay half hidden after
+        if self.focused {
+            self.scroll_to_cursor(inner.w);
+        } else {
+            self.scroll = 0;
+        }
         // a row lower when it can't be centred exactly, a font's bottom row is room for descenders
         let y = inner.y + ((inner.h - self.font.height() + 1) / 2).max(0);
         let selection = self.selection().filter(|_| self.focused);
@@ -488,7 +504,11 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use super::*;
-    use crate::rect::Point;
+    use crate::{
+        palette::{Color, IntuitionColorPalette},
+        rect::Point,
+        target::Framebuffer,
+    };
 
     const AREA: Rect = Rect::new(0, 0, 100, 10);
 
@@ -564,6 +584,22 @@ mod tests {
         };
         textbox.handle_event(&mut (), &past_end);
         assert_eq!(textbox.cursor, 5);
+    }
+
+    #[test]
+    fn select_on_focus_selects_everything_and_typing_replaces_it() {
+        let mut textbox = textbox("64").select_on_focus();
+        let down = MouseEvent::Down {
+            pos: Point::new(char_x(0), 5),
+            button: MouseButton::Left,
+        };
+        textbox.handle_event(&mut (), &down);
+        assert_eq!(textbox.selection(), Some((0, 2)));
+        typed(&mut textbox, &[TextInput::Char('9')]);
+        assert_eq!(textbox.text(), "9");
+        // once it's focused, a click places the cursor as usual
+        textbox.handle_event(&mut (), &down);
+        assert_eq!((textbox.cursor, textbox.selection()), (0, None));
     }
 
     #[test]
@@ -730,9 +766,35 @@ mod tests {
         textbox.set_focused(true);
         textbox.cursor = textbox.len();
         textbox.scroll_to_cursor(40);
-        assert_eq!(textbox.scroll, textbox.len() - 4);
+        assert_eq!(textbox.scroll, textbox.len() - 5);
+
         textbox.cursor = 0;
         textbox.scroll_to_cursor(40);
+        assert_eq!(textbox.scroll, 0);
+    }
+
+    #[test]
+    fn a_full_box_doesnt_scroll_for_the_cursor_after_it() {
+        let mut full = textbox("abcde");
+        full.set_focused(true);
+        full.cursor = full.len();
+        full.scroll_to_cursor(40);
+        assert_eq!(full.scroll, 0);
+    }
+
+    #[test]
+    fn shows_the_start_once_unfocused() {
+        let mut textbox = textbox("a fairly long song name");
+        textbox.set_focused(true);
+        textbox.cursor = textbox.len();
+        let palette =
+            IntuitionColorPalette::new([Color(0x000), Color(0xFFF), Color(0x666), Color(0xAAA)]);
+        let mut screen = Framebuffer::new(AREA.w, AREA.h);
+        let narrow = Rect::new(0, 0, 40, 10);
+        textbox.render(&(), narrow, &mut Painter::new(&mut screen, &palette));
+        assert!(textbox.scroll > 0);
+        textbox.set_focused(false);
+        textbox.render(&(), narrow, &mut Painter::new(&mut screen, &palette));
         assert_eq!(textbox.scroll, 0);
     }
 

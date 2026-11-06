@@ -20,6 +20,7 @@ use rustuition::{
 use crate::{
     app::{
         fonts,
+        header::finished_edit,
         state::{AppState, NameEdit},
     },
     framework::{
@@ -116,8 +117,8 @@ pub struct Instrument {
     load: Button,
     // transpose, then finetune
     stepped: [Stepper; 2],
-    // hold and decay, shown but not edited yet
-    sunken: [Textbox; 2],
+    hold_decay: [Textbox; 2],
+    hold_decay_was_focused: [bool; 2],
     // the loop's start and length
     repeats: [Textbox; 2],
     types: [Button; 3],
@@ -152,7 +153,10 @@ impl Instrument {
                 Stepper::new(i8::MIN as i32, i8::MAX as i32),
                 Stepper::new(MIN_FINETUNE as i32, MAX_FINETUNE as i32),
             ],
-            sunken: std::array::from_fn(|_| Textbox::new()),
+            hold_decay: std::array::from_fn(|_| {
+                Textbox::new().padding(1).max_length(3).select_on_focus()
+            }),
+            hold_decay_was_focused: [false; 2],
             repeats: std::array::from_fn(|_| Textbox::new()),
             types: TYPES.map(|(label, _)| label_button(label)),
             volume: Button::new("00/00").font(fonts::INTERFACE),
@@ -215,7 +219,7 @@ impl Stepper {
     fn new(min: i32, max: i32) -> Self {
         let [w, h, thickness] = STEP_SIGN;
         return Self {
-            textbox: Textbox::new(),
+            textbox: Textbox::new().select_on_focus(),
             steps: [false, true]
                 .map(|plus| repeating(Button::new(IncDec::new(plus, w, h, thickness)))),
             min,
@@ -290,6 +294,28 @@ impl Gadget<AppState, Event> for Instrument {
         }
         let volume = active(state).map_or(0, |instrument| instrument.volume);
         self.update_volume(state, volume);
+        let hold_decay =
+            active(state).map_or([0, 0], |instrument| [instrument.hold, instrument.decay]);
+        for (index, (textbox, was_focused)) in self
+            .hold_decay
+            .iter_mut()
+            .zip(&mut self.hold_decay_was_focused)
+            .enumerate()
+        {
+            // read before the refresh below overwrites it
+            let typed =
+                finished_edit(textbox, was_focused).and_then(|text| text.trim().parse::<u8>().ok());
+            if let Some(value) = typed {
+                state.edit_active_instrument(|instrument| match index {
+                    0 => instrument.hold = value,
+                    _ => instrument.decay = value,
+                });
+            }
+            if !textbox.is_focused() {
+                let shown = typed.unwrap_or(hold_decay[index]);
+                textbox.set_text(shown.to_string());
+            }
+        }
 
         let instrument = active(state);
         if !self.name.is_focused() {
@@ -298,17 +324,6 @@ impl Gadget<AppState, Event> for Instrument {
         }
         let sample = instrument.and_then(OctamedicInstrument::sample);
         self.length.set_text(length_text(sample));
-        let [hold, decay] = &mut self.sunken;
-        hold.set_text(
-            instrument
-                .map_or(0, |instrument| instrument.hold)
-                .to_string(),
-        );
-        decay.set_text(
-            instrument
-                .map_or(0, |instrument| instrument.decay)
-                .to_string(),
-        );
         let (start, end) = sample.and_then(|sample| sample.repeat).unwrap_or((0, 0));
         let [repeat, repeat_length] = &mut self.repeats;
         repeat.set_text(start.to_string());
@@ -329,16 +344,20 @@ impl Gadget<AppState, Event> for Instrument {
     }
 
     fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
-        return self
-            .transport
-            .iter_mut()
-            .chain([&mut self.flush])
-            .any(|button| button.handle_event(state, event))
-            || self.name.handle_event(state, event)
+        // every text box sees every click, it's how one finds out it lost focus
+        let mut handled = self.name.handle_event(state, event);
+        for textbox in &mut self.hold_decay {
+            handled |= textbox.handle_event(state, event);
+        }
+        for stepper in &mut self.stepped {
+            handled |= stepper.handle_event(state, event);
+        }
+        return handled
             || self
-                .stepped
+                .transport
                 .iter_mut()
-                .any(|stepper| stepper.handle_event(state, event))
+                .chain([&mut self.flush])
+                .any(|button| button.handle_event(state, event))
             || self.volume_slider.handle_event(state, event);
     }
 
@@ -369,7 +388,7 @@ impl Gadget<AppState, Event> for Instrument {
                 step.render(state, step_rect.within(area), painter);
             }
         }
-        for (number, rect) in self.sunken.iter_mut().zip(SUNKEN_BOXES) {
+        for (number, rect) in self.hold_decay.iter_mut().zip(SUNKEN_BOXES) {
             render_sunken(number, state, rect.within(area), painter);
         }
         for (number, rect) in self.repeats.iter_mut().zip(REPEAT_BOXES) {
@@ -536,6 +555,42 @@ mod tests {
         }
         assert_eq!(active(&state).finetune, MIN_FINETUNE);
         assert_eq!(panel.stepped[1].textbox.text(), "-8");
+    }
+
+    #[test]
+    fn typing_hold_and_decay() {
+        let (mut panel, mut state) = panel();
+        for (index, typed) in [(0, "12"), (1, "3")] {
+            panel.hold_decay[index].set_focused(true);
+            update(&mut panel, &mut state);
+            panel.hold_decay[index].set_text(typed);
+            panel.hold_decay[index].set_focused(false);
+            update(&mut panel, &mut state);
+        }
+        assert_eq!((active(&state).hold, active(&state).decay), (12, 3));
+        assert_eq!(panel.hold_decay[0].text(), "12");
+        // doesn't fit a byte
+        panel.hold_decay[1].set_focused(true);
+        update(&mut panel, &mut state);
+        panel.hold_decay[1].set_text("300");
+        panel.hold_decay[1].set_focused(false);
+        update(&mut panel, &mut state);
+        assert_eq!(active(&state).decay, 3);
+        assert_eq!(panel.hold_decay[1].text(), "3");
+    }
+
+    #[test]
+    fn typing_three_digits_of_hold() {
+        let (mut panel, mut state) = panel();
+        // the 0 that's there is selected, so typing replaces it
+        click(&mut panel, &mut state, SUNKEN_BOXES[0]);
+        for character in "127".chars() {
+            panel.handle_event(&mut state, &Event::text(character));
+            update(&mut panel, &mut state);
+        }
+        click(&mut panel, &mut state, NAME);
+        assert_eq!(active(&state).hold, 127);
+        assert_eq!(panel.hold_decay[0].text(), "127");
     }
 
     #[test]
