@@ -1475,16 +1475,6 @@ mod tests {
 
     // channel 0's volume after each tick, 0 while DMA's off
     fn volume_per_tick(
-        hold: u8,
-        decay: u8,
-        ticks_per_line: u8,
-        cells: &[(usize, Cell)],
-        ticks: usize,
-    ) -> Vec<u8> {
-        return volume_per_tick_in(false, hold, decay, ticks_per_line, cells, ticks);
-    }
-
-    fn volume_per_tick_in(
         volumes_hex: bool,
         hold: u8,
         decay: u8,
@@ -1561,7 +1551,7 @@ mod tests {
     #[test]
     fn hold_cuts_note() {
         // the manual's example
-        let heard = volume_per_tick(2, 0, 6, &[(0, Cell::Note), (1, Cell::Note)], 9);
+        let heard = volume_per_tick(false, 2, 0, 6, &[(0, Cell::Note), (1, Cell::Note)], 9);
         assert_eq!(
             heard,
             [
@@ -1580,13 +1570,13 @@ mod tests {
 
     #[test]
     fn no_hold_plays_on() {
-        let heard = volume_per_tick(0, 3, 6, &[(0, Cell::Note)], 12);
+        let heard = volume_per_tick(false, 0, 3, 6, &[(0, Cell::Note)], 12);
         assert!(heard.iter().all(|&volume| volume == FULL_VOLUME));
     }
 
     #[test]
     fn decay_fades_each_tick() {
-        let heard = volume_per_tick(2, 16, 6, &[(0, Cell::Note)], 8);
+        let heard = volume_per_tick(false, 2, 16, 6, &[(0, Cell::Note)], 8);
         assert_eq!(heard, [FULL_VOLUME, FULL_VOLUME, 48, 32, 16, 0, 0, 0]);
     }
 
@@ -1598,7 +1588,7 @@ mod tests {
             (1, Cell::HoldSymbol),
             (2, Cell::HoldSymbol),
         ];
-        let heard = volume_per_tick(4, 0, 6, &cells, 20);
+        let heard = volume_per_tick(false, 4, 0, 6, &cells, 20);
         assert!(heard[..16].iter().all(|&volume| volume == FULL_VOLUME));
         assert!(heard[16..].iter().all(|&volume| volume == 0));
     }
@@ -1607,6 +1597,7 @@ mod tests {
     fn note_without_instrument_keeps_hold() {
         // still cut 8 ticks after line 0's note
         let heard = volume_per_tick(
+            false,
             8,
             0,
             6,
@@ -1616,6 +1607,7 @@ mod tests {
         assert_eq!(&heard[6..], [FULL_VOLUME, FULL_VOLUME, 0, 0]);
         // silent once decayed, like MED
         let heard = volume_per_tick(
+            false,
             1,
             0,
             6,
@@ -1629,54 +1621,57 @@ mod tests {
     fn hold_symbol_resets_volume() {
         // -|- after the decay brings the volume back for good
         let cells = [(0, Cell::Note), (2, Cell::HoldSymbol)];
-        let heard = volume_per_tick(1, 32, 6, &cells, 18);
+        let heard = volume_per_tick(false, 1, 32, 6, &cells, 18);
         assert_eq!(&heard[..4], [FULL_VOLUME, 32, 0, 0]);
         assert!(heard[12..].iter().all(|&volume| volume == FULL_VOLUME));
     }
 
     #[test]
-    fn set_volume_is_decimal_by_default() {
+    fn set_volume_decimal() {
         let cells = [(0, Cell::Note), (0, Cell::SetVolume(0x20))];
-        assert_eq!(volume_per_tick(0, 0, 2, &cells, 2), [20, 20]);
+        assert_eq!(volume_per_tick(false, 0, 0, 2, &cells, 2), [20, 20]);
         // and never above 64
         let cells = [(0, Cell::Note), (0, Cell::SetVolume(0x99))];
-        assert_eq!(volume_per_tick(0, 0, 2, &cells, 1), [FULL_VOLUME]);
+        assert_eq!(volume_per_tick(false, 0, 0, 2, &cells, 1), [FULL_VOLUME]);
     }
 
     #[test]
-    fn set_volume_in_hex() {
+    fn set_volume_hex() {
         let cells = [(0, Cell::Note), (0, Cell::SetVolume(0x20))];
-        assert_eq!(volume_per_tick_in(true, 0, 0, 2, &cells, 1), [32]);
+        assert_eq!(volume_per_tick(true, 0, 0, 2, &cells, 1), [32]);
     }
 
     #[test]
-    fn set_volume_changes_a_playing_note() {
+    fn set_volume_on_playing_note() {
         let cells = [(0, Cell::Note), (1, Cell::SetVolume(0x10))];
         assert_eq!(
-            volume_per_tick(0, 0, 2, &cells, 4),
+            volume_per_tick(false, 0, 0, 2, &cells, 4),
             [FULL_VOLUME, FULL_VOLUME, 10, 10]
         );
     }
 
     #[test]
-    fn set_volume_lasts_until_a_numbered_note() {
+    fn set_volume_until_numbered_note() {
         let cells = [
             (0, Cell::Note),
             (0, Cell::SetVolume(0x10)),
             (1, Cell::NoteWithoutInstrument),
             (2, Cell::Note),
         ];
-        assert_eq!(volume_per_tick(0, 0, 1, &cells, 3), [10, 10, FULL_VOLUME]);
+        assert_eq!(
+            volume_per_tick(false, 0, 0, 1, &cells, 3),
+            [10, 10, FULL_VOLUME]
+        );
     }
 
     #[test]
-    fn decay_fades_from_the_set_volume() {
+    fn decay_from_set_volume() {
         let cells = [(0, Cell::Note), (0, Cell::SetVolume(0x40))];
-        assert_eq!(volume_per_tick(1, 16, 6, &cells, 4), [40, 24, 8, 0]);
+        assert_eq!(volume_per_tick(false, 1, 16, 6, &cells, 4), [40, 24, 8, 0]);
     }
 
     #[test]
-    fn a_hold_symbol_resets_the_set_volume() {
+    fn hold_symbol_resets_set_volume() {
         let cells = [
             (0, Cell::Note),
             (0, Cell::SetVolume(0x20)),
@@ -1684,6 +1679,9 @@ mod tests {
             (2, Cell::HoldSymbol),
             (2, Cell::SetVolume(0x10)),
         ];
-        assert_eq!(volume_per_tick(0, 0, 1, &cells, 3), [20, FULL_VOLUME, 10]);
+        assert_eq!(
+            volume_per_tick(false, 0, 0, 1, &cells, 3),
+            [20, FULL_VOLUME, 10]
+        );
     }
 }
