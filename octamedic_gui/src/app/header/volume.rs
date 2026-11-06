@@ -58,6 +58,7 @@ pub struct Volume {
     master_steps: [Button; STEPS.len()],
     // audio input settings, not there yet
     input: Button,
+    // opens the output dialog
     output: Button,
     // from the last render, for clicks
     track_boxes: [Rect; SONG_TRACKS],

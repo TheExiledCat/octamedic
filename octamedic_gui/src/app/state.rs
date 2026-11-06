@@ -190,7 +190,9 @@ pub struct AppState {
     pub mouse_mods: KeyMods,
     video: VideoStandard,
     // the engine's device's id, None for the default
-    output_device: Option<String>,
+    pub(super) output_device: Option<String>,
+    // the last try at opening it didn't work, so the engine is disconnected
+    audio_failed: bool,
     mono: bool,
     queued_sequence_index: Option<usize>,
     started: Option<PlayStart>,
@@ -257,6 +259,7 @@ impl AppState {
             mouse_mods: KeyMods::NONE,
             video: DEFAULT_VIDEO,
             output_device: None,
+            audio_failed: false,
             mono: false,
             queued_sequence_index: None,
             started: None,
@@ -481,26 +484,48 @@ impl AppState {
         return self.output_device.as_deref();
     }
 
+    pub fn audio_failed(&self) -> bool {
+        return self.audio_failed;
+    }
+
     /// Starts the engine again on `device`, or the default one with `None`, which stops playing.
-    /// If it can't, the old one keeps going.
+    /// If that can't be opened it goes back to the one before. The same device again only opens
+    /// if the last try failed.
     pub fn set_output_device(&mut self, device: Option<String>) {
-        if device == self.output_device {
+        if device == self.output_device && !self.audio_failed {
             return;
         }
-        match EngineHandle::spawn(self.video.clock(), device.as_deref()) {
-            Ok(engine) => {
-                self.stop();
-                self.engine = engine;
-                self.output_device = device;
-                self.send_all_to_engine();
-                for track in (0..SONG_TRACKS).filter(|&track| self.muted_tracks[track]) {
-                    self.engine.set_track_muted(track, true);
-                }
-                self.engine.set_mono(self.mono);
-                self.engine_active_instrument = None;
-            }
-            Err(error) => self.notify(format!("NO AUDIO: {error}")),
+        self.stop();
+        // closed first, the new one could be the same hardware
+        self.engine = EngineHandle::disconnected();
+        let previous = std::mem::replace(&mut self.output_device, device);
+        if !self.open_audio() && self.output_device != previous {
+            let notification = self.notification.take();
+            self.output_device = previous;
+            self.open_audio();
+            self.notification = notification;
         }
+    }
+
+    /// Starts the engine on the output device and sends it everything, or says why it can't.
+    pub fn open_audio(&mut self) -> bool {
+        let engine = match EngineHandle::spawn(self.video.clock(), self.output_device.as_deref()) {
+            Ok(engine) => engine,
+            Err(error) => {
+                self.audio_failed = true;
+                self.notify(format!("NO AUDIO: {error}"));
+                return false;
+            }
+        };
+        self.engine = engine;
+        self.audio_failed = false;
+        self.send_all_to_engine();
+        for track in (0..SONG_TRACKS).filter(|&track| self.muted_tracks[track]) {
+            self.engine.set_track_muted(track, true);
+        }
+        self.engine.set_mono(self.mono);
+        self.engine_active_instrument = None;
+        return true;
     }
 
     pub fn mono(&self) -> bool {

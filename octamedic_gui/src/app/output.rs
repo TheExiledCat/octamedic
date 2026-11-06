@@ -36,12 +36,15 @@ fn output_dialog(state: &AppState, devices: Vec<OutputDevice>) -> Dialog {
     let device = dialog.add_field(Dropdown::new("Device:", &names).chosen(chosen));
     let mono = dialog.add_field(Checkbox::new("Mix to mono").checked(state.mono()));
     return dialog.on_submit(move |state, result| {
-        let id = result
-            .get(device)
-            .checked_sub(1)
-            .and_then(|index| devices.get(index))
-            .map(|device| device.id.clone());
-        state.set_output_device(id);
+        let picked = *result.get(device);
+        // left alone, a device that's missing from the list stays
+        if picked != chosen || state.audio_failed() {
+            let id = picked
+                .checked_sub(1)
+                .and_then(|index| devices.get(index))
+                .map(|device| device.id.clone());
+            state.set_output_device(id);
+        }
         state.set_mono(*result.get(mono));
     });
 }
@@ -88,6 +91,15 @@ mod tests {
         assert_eq!(short.chars().count(), MAX_NAME_CHARS);
         assert!(short.ends_with(CUT));
         assert_eq!(shortened("Speakers"), "Speakers");
+    }
+
+    #[test]
+    fn a_missing_device_stays_when_only_mono_changes() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        state.output_device = Some("unplugged".to_owned());
+        let mut dialog = output_dialog(&state, devices());
+        submit(&mut dialog, &mut state);
+        assert_eq!(state.output_device(), Some("unplugged"));
     }
 
     #[test]
