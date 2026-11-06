@@ -10,7 +10,7 @@ use crate::{
     framework::{
         event::Event,
         widgets::{
-            Button, Textbox,
+            self, Button, Textbox,
             audio_view::{MAX_LEVEL, MeterLevel},
         },
     },
@@ -88,11 +88,7 @@ pub struct Footer {
 
 impl Footer {
     pub fn new() -> Self {
-        let name_box = || {
-            Textbox::new()
-                .pens(Pen::BACKGROUND, Pen::SHINE, Pen::FILL, pens::RED)
-                .padding(1)
-        };
+        let name_box = || widgets::textbox().padding(1);
         let block_name = name_box().on_update(|state, name| state.set_block_name(name));
         let song_name = name_box().on_update(|state, name| state.set_song_name(name));
         return Self {

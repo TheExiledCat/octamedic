@@ -121,7 +121,8 @@ isn't copied.
 An instrument's HLD: is how many ticks each note plays, and DEC: how fast it fades after that: the
 decay comes off the note's volume (0 to 64) every tick, and a decay of 0 drops it to nothing at
 once. The channel isn't switched off, it just plays on at volume 0. Instruments with a hold of 0
-ignore all of this.
+ignore all of this. Both go from 0 to 99, the two digits OctaMED's boxes take, and bigger values in
+a module or synth sound load as 99.
 
 A hold symbol, `-|-`, is a cell with an instrument but no note (Enter in the editor). It keeps a
 note going: while the *next* line has one, the hold doesn't count down. So hold 4 then two `-|-`

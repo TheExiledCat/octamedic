@@ -10,7 +10,9 @@ adds on top, in `src/framework/`, and how OctaMED's screens in `src/app/` are pu
   ggez. It implements `PointerEvent`, so rustuition's gadgets take it as is.
 - `framework/widgets/mod.rs`: `Button` and `Slider` aliases with `AppState` and `Event` filled in.
   Use these rather than rustuition's, so handlers know they get an `AppState`. App gadgets
-  implement `Gadget<AppState, Event>`.
+  implement `Gadget<AppState, Event>`. Make text boxes with `widgets::textbox()`, which draws the
+  cursor and selection in OctaMED's pink with the text over them mixed in, rather than
+  `Textbox::new()`.
 - `framework/widgets/symbols.rs`: OctaMED's picture button contents (`blocks`, `MusicSymbol`,
   `stacked_text`), and `audio_view.rs` the scopes and VU meters.
 - `app/fonts.rs`: OctaMED's own fonts, redrawn by hand in `assets/fonts/` since the originals
@@ -86,8 +88,9 @@ does the same for `MainMode`. To add one: write the gadget, add a field for it, 
 `panel` or `screen`.
 
 FILES, PLAY, VOL and MISC's palette work. INSTR (`header/instrument.rs`) shows the active instrument
-and edits its name, transpose, finetune and volume (`AppState::edit_active_instrument`); its arrows
-go to the first, previous, next and last instrument and FLUSH empties it: no sample, no name, and
+and edits its name, transpose, finetune, volume, hold and decay (`AppState::edit_active_instrument`,
+hold and decay take two digits, 0 to 99); its arrows go to the first, previous and next instrument
+and the last one with a sound (instrument 1 if none has one), and FLUSH empties it: no sample, no name, and
 every value 0, volume included. The rest of it is ghosted. The rest of MISC and the SLIST screen
 (`main/song_list.rs`) are laid out like OctaMED with their buttons ghosted, ready to be hooked up.
 `main/list_scroller.rs` is the slider with arrows that the FILES and SLIST lists share.

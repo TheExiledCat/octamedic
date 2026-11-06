@@ -7,10 +7,10 @@ use rustuition::{
 };
 
 use crate::{
-    app::{fonts, header::finished_edit, pens, state::AppState},
+    app::{fonts, header::finished_edit, state::AppState},
     framework::{
         event::Event,
-        widgets::{Button, Textbox, ToggleGroup},
+        widgets::{self, Button, Textbox, ToggleGroup},
     },
 };
 
@@ -122,9 +122,8 @@ impl Block {
         let label = |words: Words| Button::new(placed(fonts::LABEL, words));
         let narrow = |words: Words| Button::new(placed(fonts::NARROW_LABEL, words));
         let number_box = |padding| {
-            Textbox::new()
+            widgets::textbox()
                 .font(fonts::INTERFACE)
-                .pens(Pen::BACKGROUND, Pen::SHINE, Pen::FILL, pens::RED)
                 .padding(padding)
                 .select_on_focus()
         };

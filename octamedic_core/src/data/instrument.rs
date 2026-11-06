@@ -15,6 +15,9 @@ pub const MAX_INSTRUMENT_VOLUME: u8 = MAX_VOLUME;
 pub const MIN_FINETUNE: i8 = -8;
 pub const MAX_FINETUNE: i8 = 7;
 
+// two digits on octamed's instrument panel
+pub const MAX_HOLD_DECAY: u8 = 99;
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct InstrumentId(pub u8);
 

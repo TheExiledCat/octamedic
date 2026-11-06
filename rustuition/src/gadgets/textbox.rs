@@ -41,6 +41,7 @@ pub struct Textbox<S, E = MouseEvent> {
     text_pen: Pen,
     cursor_pen: Pen,
     selection_pen: Pen,
+    mix_pens: bool,
     on_update: Option<Rc<dyn TextHandler<S>>>,
     enabled: bool,
     // from the last render
@@ -68,6 +69,7 @@ impl<S, E> Textbox<S, E> {
             text_pen: Pen::SHINE,
             cursor_pen: Pen::FILL,
             selection_pen: Pen::SHADOW,
+            mix_pens: false,
             on_update: None,
             enabled: true,
             area: Rect::default(),
@@ -106,6 +108,21 @@ impl<S, E> Textbox<S, E> {
         self.cursor_pen = cursor;
         self.selection_pen = selection;
         return self;
+    }
+
+    /// Draws the text over the cursor and the selection in their pen and the text pen combined
+    /// bit by bit, the way it shows when they're on bitplanes of their own.
+    pub fn mix_pens(mut self) -> Self {
+        self.mix_pens = true;
+        return self;
+    }
+
+    // the pen for text on `under`, `unmixed` when the pens aren't mixed
+    fn over(&self, under: Pen, unmixed: Pen) -> Pen {
+        if self.mix_pens {
+            return Pen(self.text_pen.0 | under.0);
+        }
+        return unmixed;
     }
 
     /// Sets the space between the frame and the text, across.
@@ -473,11 +490,11 @@ impl<S, E: PointerEvent + TextEvent> Gadget<S, E> for Textbox<S, E> {
                 let selected = selection.is_some_and(|(start, end)| (start..end).contains(&index));
                 let pen = if cursor == Some(index) {
                     painter.fill(cell, self.cursor_pen);
-                    self.fill
+                    self.over(self.cursor_pen, self.fill)
+                } else if selected {
+                    painter.fill(cell, self.selection_pen);
+                    self.over(self.selection_pen, self.text_pen)
                 } else {
-                    if selected {
-                        painter.fill(cell, self.selection_pen);
-                    }
                     self.text_pen
                 };
                 painter.text_in_font(x, y, &c.to_string(), pen, self.font);
@@ -796,6 +813,15 @@ mod tests {
         textbox.set_focused(false);
         textbox.render(&(), narrow, &mut Painter::new(&mut screen, &palette));
         assert_eq!(textbox.scroll, 0);
+    }
+
+    #[test]
+    fn mixed_pens() {
+        let plain = textbox("a").pens(Pen::BACKGROUND, Pen::SHINE, Pen(4), Pen(4));
+        assert_eq!(plain.over(Pen(4), Pen::BACKGROUND), Pen::BACKGROUND);
+        // white is pen 1 and red pen 4, so white text on red shows in pen 5
+        let mixed = plain.mix_pens();
+        assert_eq!(mixed.over(Pen(4), Pen::BACKGROUND), Pen(5));
     }
 
     struct FakeEvent(TextInput);

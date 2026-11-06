@@ -13,7 +13,7 @@ use crate::{
     app::{fonts, pens, state::AppState},
     framework::{
         event::{Event, MouseButton},
-        widgets::{Button, Textbox},
+        widgets::{self, Button, Textbox},
     },
 };
 
@@ -217,9 +217,8 @@ fn routing_button(label: &'static str) -> Button {
 }
 
 fn volume_box() -> Textbox {
-    return Textbox::new()
+    return widgets::textbox()
         .font(fonts::INTERFACE)
-        .pens(Pen::BACKGROUND, Pen::SHINE, Pen::FILL, pens::RED)
         .padding(1)
         .max_length(2)
         .select_on_focus();

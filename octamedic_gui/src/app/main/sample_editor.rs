@@ -28,7 +28,7 @@ use crate::{
     framework::{
         event::{Event, MouseButton},
         keymap::{Action, Key, KeyActions, Keymap},
-        widgets::{Button, Textbox, symbols::picture},
+        widgets::{self, Button, Textbox, symbols::picture},
     },
 };
 
@@ -497,9 +497,8 @@ impl SampleEditor {
             .into_iter()
             .enumerate()
             .map(|(index, (text, rect))| {
-                let mut textbox = Textbox::new()
+                let mut textbox = widgets::textbox()
                     .font(fonts::INTERFACE)
-                    .pens(Pen::BACKGROUND, Pen::SHINE, Pen::FILL, pens::RED)
                     .padding(1)
                     .max_length(RANGE_DIGITS);
                 textbox.set_text(text);

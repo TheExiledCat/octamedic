@@ -1,6 +1,12 @@
-use rustuition::gadgets::{button, dialog, slider, stepped_slider, textbox};
+use rustuition::{
+    gadgets::{button, dialog, slider, stepped_slider, textbox},
+    palette::Pen,
+};
 
-use crate::{app::state::AppState, framework::event::Event};
+use crate::{
+    app::{pens, state::AppState},
+    framework::event::Event,
+};
 
 pub mod audio_view;
 pub mod symbols;
@@ -15,3 +21,11 @@ pub type DialogFields<'a> = dialog::DialogFields<'a, AppState, Event>;
 pub type Slider = slider::Slider<AppState, Event>;
 pub type SteppedSlider = stepped_slider::SteppedSlider<AppState, Event>;
 pub type Textbox = textbox::Textbox<AppState, Event>;
+
+/// A text box the way OctaMED draws them: the cursor and selection in pink, and the text over
+/// them in pink and white mixed, which is blush.
+pub fn textbox() -> Textbox {
+    return Textbox::new()
+        .pens(Pen::BACKGROUND, Pen::SHINE, pens::PINK, pens::PINK)
+        .mix_pens();
+}

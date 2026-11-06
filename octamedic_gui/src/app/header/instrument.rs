@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use mmd::mmd::module::INSTRUMENT_NAME_LENGTH;
 use octamedic_core::data::instrument::{
-    InstrumentKind, MAX_FINETUNE, MAX_INSTRUMENT_VOLUME, MIN_FINETUNE, OctamedicInstrument,
-    OctamedicSample,
+    InstrumentKind, MAX_FINETUNE, MAX_HOLD_DECAY, MAX_INSTRUMENT_VOLUME, MIN_FINETUNE,
+    OctamedicInstrument, OctamedicSample,
 };
 use octamedic_util::base32;
 use rustuition::{
@@ -26,7 +26,7 @@ use crate::{
     framework::{
         event::Event,
         widgets::{
-            Button, SteppedSlider, Textbox,
+            self, Button, SteppedSlider, Textbox,
             symbols::{draw_rows, picture},
         },
     },
@@ -129,7 +129,8 @@ pub struct Instrument {
 impl Instrument {
     pub fn new() -> Self {
         let [w, h] = TRANSPORT_ARROW;
-        // first, previous, next and last instrument, then one nobody's worked out yet
+        // first, previous and next instrument, the last one with a sound, then one nobody's
+        // worked out yet
         let transport = [
             Button::new(Triangle::new(Left, w, h).with_bar().bar_gap(BAR_GAP)),
             repeating(Button::new(Triangle::new(Left, w, h))),
@@ -137,7 +138,7 @@ impl Instrument {
             Button::new(Triangle::new(Right, w, h).with_bar().bar_gap(BAR_GAP)),
             unhooked(Button::new(picture(RANGE_PICTURE))),
         ];
-        let name = Textbox::new()
+        let name = widgets::textbox()
             .max_length(INSTRUMENT_NAME_LENGTH - 1)
             .on_update(|state: &mut AppState, name| {
                 state.edit_active_instrument(|instrument| instrument.name = name.to_owned());
@@ -154,10 +155,13 @@ impl Instrument {
                 Stepper::new(MIN_FINETUNE as i32, MAX_FINETUNE as i32),
             ],
             hold_decay: std::array::from_fn(|_| {
-                Textbox::new().padding(1).max_length(3).select_on_focus()
+                widgets::textbox()
+                    .padding(1)
+                    .max_length(2)
+                    .select_on_focus()
             }),
             hold_decay_was_focused: [false; 2],
-            repeats: std::array::from_fn(|_| Textbox::new()),
+            repeats: std::array::from_fn(|_| widgets::textbox()),
             types: TYPES.map(|(label, _)| label_button(label)),
             volume: Button::new("00/00").font(fonts::INTERFACE),
             volume_slider: SteppedSlider::new(
@@ -185,7 +189,7 @@ impl Instrument {
             state.next_instrument();
         }
         if last.clicked().is_some() {
-            state.set_instrument(u8::MAX);
+            state.last_filled_instrument();
         }
     }
 
@@ -219,7 +223,7 @@ impl Stepper {
     fn new(min: i32, max: i32) -> Self {
         let [w, h, thickness] = STEP_SIGN;
         return Self {
-            textbox: Textbox::new().select_on_focus(),
+            textbox: widgets::textbox().select_on_focus(),
             steps: [false, true]
                 .map(|plus| repeating(Button::new(IncDec::new(plus, w, h, thickness)))),
             min,
@@ -303,8 +307,9 @@ impl Gadget<AppState, Event> for Instrument {
             .enumerate()
         {
             // read before the refresh below overwrites it
-            let typed =
-                finished_edit(textbox, was_focused).and_then(|text| text.trim().parse::<u8>().ok());
+            let typed = finished_edit(textbox, was_focused)
+                .and_then(|text| text.trim().parse::<u8>().ok())
+                .filter(|value| *value <= MAX_HOLD_DECAY);
             if let Some(value) = typed {
                 state.edit_active_instrument(|instrument| match index {
                     0 => instrument.hold = value,
@@ -569,10 +574,10 @@ mod tests {
         }
         assert_eq!((active(&state).hold, active(&state).decay), (12, 3));
         assert_eq!(panel.hold_decay[0].text(), "12");
-        // doesn't fit a byte
+        // octamed's boxes only go to 99
         panel.hold_decay[1].set_focused(true);
         update(&mut panel, &mut state);
-        panel.hold_decay[1].set_text("300");
+        panel.hold_decay[1].set_text("100");
         panel.hold_decay[1].set_focused(false);
         update(&mut panel, &mut state);
         assert_eq!(active(&state).decay, 3);
@@ -580,17 +585,17 @@ mod tests {
     }
 
     #[test]
-    fn hold_takes_three_digits() {
+    fn hold_takes_two_digits() {
         let (mut panel, mut state) = panel();
         // the 0 that's there is selected, so typing replaces it
         click(&mut panel, &mut state, SUNKEN_BOXES[0]);
-        for character in "127".chars() {
+        for character in "991".chars() {
             panel.handle_event(&mut state, &Event::text(character));
             update(&mut panel, &mut state);
         }
         click(&mut panel, &mut state, NAME);
-        assert_eq!(active(&state).hold, 127);
-        assert_eq!(panel.hold_decay[0].text(), "127");
+        assert_eq!(active(&state).hold, 99);
+        assert_eq!(panel.hold_decay[0].text(), "99");
     }
 
     #[test]
@@ -612,10 +617,16 @@ mod tests {
         let [_, _, next, last, _] = TRANSPORT;
         click(&mut panel, &mut state, next);
         assert_eq!(state.active_instrument.0, 2);
+        // only bass in 1 has a sound
         click(&mut panel, &mut state, last);
-        assert_eq!(state.active_instrument.0, 63);
+        assert_eq!(state.active_instrument.0, 1);
+        let bass = active(&state);
+        state.replace_instrument(InstrumentId(5), bass);
+        state.replace_instrument(InstrumentId(9), OctamedicInstrument::new("no sound"));
+        click(&mut panel, &mut state, last);
+        assert_eq!(state.active_instrument.0, 5);
         click(&mut panel, &mut state, TRANSPORT[1]);
-        assert_eq!(state.active_instrument.0, 62);
+        assert_eq!(state.active_instrument.0, 4);
         click(&mut panel, &mut state, TRANSPORT[0]);
         assert_eq!(state.active_instrument.0, 1);
         let mut settings = active(&state);
