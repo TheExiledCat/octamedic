@@ -2,7 +2,6 @@ use std::{array, path::PathBuf};
 
 use mmd::mmd::{conversion::ToModule, writer::OctamedMMDWriter};
 use octamedic_core::{data::instrument::InstrumentKind, engine::record::Recorder, export};
-
 use rustuition::{
     font::Font,
     gadget::Gadget,
