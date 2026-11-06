@@ -587,7 +587,7 @@ mod tests {
     }
 
     #[test]
-    fn select_on_focus_selects_everything_and_typing_replaces_it() {
+    fn typing_replaces_selected_on_focus() {
         let mut textbox = textbox("64").select_on_focus();
         let down = MouseEvent::Down {
             pos: Point::new(char_x(0), 5),
@@ -774,7 +774,7 @@ mod tests {
     }
 
     #[test]
-    fn a_full_box_doesnt_scroll_for_the_cursor_after_it() {
+    fn full_box_doesnt_scroll() {
         let mut full = textbox("abcde");
         full.set_focused(true);
         full.cursor = full.len();
@@ -783,7 +783,7 @@ mod tests {
     }
 
     #[test]
-    fn shows_the_start_once_unfocused() {
+    fn unfocused_shows_start() {
         let mut textbox = textbox("a fairly long song name");
         textbox.set_focused(true);
         textbox.cursor = textbox.len();

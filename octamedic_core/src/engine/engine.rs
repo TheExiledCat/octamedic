@@ -364,11 +364,11 @@ impl OctamedicEngine {
         }
         // todo effects
         for track in 0..MAX_TRACKS {
-            self.hold_and_decay(track);
+            self.update_hold(track);
         }
     }
 
-    fn hold_and_decay(&mut self, track: usize) {
+    fn update_hold(&mut self, track: usize) {
         let hold = &mut self.holds[track];
         let Some(left) = hold.ticks_left else {
             return;
@@ -380,9 +380,9 @@ impl OctamedicEngine {
             if *volume == 0 {
                 hold.ticks_left = None;
             }
-            let volume = self.scaled_volume(track, self.note_volumes[track]);
+            let volume = self.mixed_volume(track, self.note_volumes[track]);
             self.write(track, PaulaWrite::Volume(volume));
-        } else if !hold.sustained {
+        } else if !hold.paused {
             hold.ticks_left = Some(left - 1);
         }
     }
@@ -464,7 +464,7 @@ impl OctamedicEngine {
             } else if let Some(id) = instrument {
                 self.hold_symbol(track, id);
             }
-            self.holds[track].sustained = self.next_line_holds(track);
+            self.holds[track].paused = self.next_line_has_hold_symbol(track);
         }
     }
 
@@ -475,12 +475,12 @@ impl OctamedicEngine {
             return;
         };
         self.note_volumes[track] = default_volume;
-        let volume = self.scaled_volume(track, default_volume);
+        let volume = self.mixed_volume(track, default_volume);
         self.write(track, PaulaWrite::Volume(volume));
     }
 
     // -|- on the next line pauses the hold on this one. Like OctaMED, not across blocks
-    fn next_line_holds(&self, track: usize) -> bool {
+    fn next_line_has_hold_symbol(&self, track: usize) -> bool {
         if self.holds[track].ticks_left.is_none_or(|left| left == 0) {
             return false;
         }
@@ -498,7 +498,7 @@ impl OctamedicEngine {
             .and_then(Option::as_ref);
     }
 
-    fn scaled_volume(&self, track: usize, volume: u8) -> u8 {
+    fn mixed_volume(&self, track: usize, volume: u8) -> u8 {
         let max = MAX_INSTRUMENT_VOLUME as u32;
         let volume = volume as u32 * self.track_volumes[track] as u32 / max
             * self.master_volume as u32
@@ -534,7 +534,7 @@ impl OctamedicEngine {
             self.holds[track] = hold;
             self.note_volumes[track] = default_volume;
         }
-        let volume = self.scaled_volume(track, self.note_volumes[track]);
+        let volume = self.mixed_volume(track, self.note_volumes[track]);
         if !self.is_muted(track) {
             let instrument = instrument_id.map_or(0, |id| id.0);
             self.status
@@ -671,7 +671,7 @@ struct Hold {
     ticks_left: Option<u32>,
     decay: u8,
     // the next line has a -|-
-    sustained: bool,
+    paused: bool,
 }
 
 impl Hold {
@@ -679,7 +679,7 @@ impl Hold {
         return Self {
             ticks_left: (hold > 0).then_some(hold as u32),
             decay,
-            sustained: false,
+            paused: false,
         };
     }
 }
@@ -1423,7 +1423,7 @@ mod tests {
     #[derive(Clone, Copy)]
     enum Cell {
         Note,
-        NoInstrument,
+        NoteWithoutInstrument,
         HoldSymbol,
     }
 
@@ -1453,7 +1453,7 @@ mod tests {
                     track.note.value = 13;
                     track.instrument_id = InstrumentId(1);
                 }
-                Cell::NoInstrument => track.note.value = 13,
+                Cell::NoteWithoutInstrument => track.note.value = 13,
                 Cell::HoldSymbol => track.instrument_id = InstrumentId(1),
             }
         }
@@ -1492,29 +1492,42 @@ mod tests {
         return heard;
     }
 
-    const FULL: u8 = MAX_INSTRUMENT_VOLUME;
+    const FULL_VOLUME: u8 = MAX_INSTRUMENT_VOLUME;
 
     #[test]
-    fn hold_cuts_the_note_after_its_ticks() {
+    fn hold_cuts_note() {
         // the manual's example
         let heard = volume_per_tick(2, 0, 6, &[(0, Cell::Note), (1, Cell::Note)], 9);
-        assert_eq!(heard, [FULL, FULL, 0, 0, 0, 0, FULL, FULL, 0]);
+        assert_eq!(
+            heard,
+            [
+                FULL_VOLUME,
+                FULL_VOLUME,
+                0,
+                0,
+                0,
+                0,
+                FULL_VOLUME,
+                FULL_VOLUME,
+                0
+            ]
+        );
     }
 
     #[test]
     fn no_hold_plays_on() {
         let heard = volume_per_tick(0, 3, 6, &[(0, Cell::Note)], 12);
-        assert!(heard.iter().all(|&volume| volume == FULL));
+        assert!(heard.iter().all(|&volume| volume == FULL_VOLUME));
     }
 
     #[test]
-    fn decay_fades_by_its_value_each_tick() {
+    fn decay_fades_each_tick() {
         let heard = volume_per_tick(2, 16, 6, &[(0, Cell::Note)], 8);
-        assert_eq!(heard, [FULL, FULL, 48, 32, 16, 0, 0, 0]);
+        assert_eq!(heard, [FULL_VOLUME, FULL_VOLUME, 48, 32, 16, 0, 0, 0]);
     }
 
     #[test]
-    fn hold_symbols_keep_the_note_going() {
+    fn hold_symbols_extend_hold() {
         // the manual's 08 example, 6 + 6 + 4 ticks
         let cells = [
             (0, Cell::Note),
@@ -1522,26 +1535,38 @@ mod tests {
             (2, Cell::HoldSymbol),
         ];
         let heard = volume_per_tick(4, 0, 6, &cells, 20);
-        assert!(heard[..16].iter().all(|&volume| volume == FULL));
+        assert!(heard[..16].iter().all(|&volume| volume == FULL_VOLUME));
         assert!(heard[16..].iter().all(|&volume| volume == 0));
     }
 
     #[test]
-    fn a_note_without_an_instrument_number_keeps_the_hold_going() {
+    fn note_without_instrument_keeps_hold() {
         // still cut 8 ticks after line 0's note
-        let heard = volume_per_tick(8, 0, 6, &[(0, Cell::Note), (1, Cell::NoInstrument)], 10);
-        assert_eq!(&heard[6..], [FULL, FULL, 0, 0]);
+        let heard = volume_per_tick(
+            8,
+            0,
+            6,
+            &[(0, Cell::Note), (1, Cell::NoteWithoutInstrument)],
+            10,
+        );
+        assert_eq!(&heard[6..], [FULL_VOLUME, FULL_VOLUME, 0, 0]);
         // silent once decayed, like MED
-        let heard = volume_per_tick(1, 0, 6, &[(0, Cell::Note), (1, Cell::NoInstrument)], 8);
+        let heard = volume_per_tick(
+            1,
+            0,
+            6,
+            &[(0, Cell::Note), (1, Cell::NoteWithoutInstrument)],
+            8,
+        );
         assert_eq!(&heard[6..], [0, 0]);
     }
 
     #[test]
-    fn a_hold_symbol_puts_the_volume_back() {
+    fn hold_symbol_resets_volume() {
         // -|- after the decay brings the volume back for good
         let cells = [(0, Cell::Note), (2, Cell::HoldSymbol)];
         let heard = volume_per_tick(1, 32, 6, &cells, 18);
-        assert_eq!(&heard[..4], [FULL, 32, 0, 0]);
-        assert!(heard[12..].iter().all(|&volume| volume == FULL));
+        assert_eq!(&heard[..4], [FULL_VOLUME, 32, 0, 0]);
+        assert!(heard[12..].iter().all(|&volume| volume == FULL_VOLUME));
     }
 }

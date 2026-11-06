@@ -580,7 +580,7 @@ mod tests {
     }
 
     #[test]
-    fn typing_three_digits_of_hold() {
+    fn hold_takes_three_digits() {
         let (mut panel, mut state) = panel();
         // the 0 that's there is selected, so typing replaces it
         click(&mut panel, &mut state, SUNKEN_BOXES[0]);
