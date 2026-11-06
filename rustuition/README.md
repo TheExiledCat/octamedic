@@ -239,8 +239,10 @@ impl TextEvent for Event {
 }
 ```
 
-Give text boxes your events before other gadgets, so typing doesn't reach them and the box sees
-the click that unfocuses it.
+Give text boxes your events before other gadgets, so typing doesn't reach them, and give every
+text box every click (`|` rather than `||`), so a box sees the click on another one that unfocuses
+it. When the cursor is past the last char and there's no room left in the box, it's drawn on the
+last char.
 
 Any `Button`, `Textbox` or `Slider` can be disabled with `set_enabled(false)`. It's drawn as usual
 and then ghosted with `Painter::ghost`, a dot every fourth pixel and two along on every other line,

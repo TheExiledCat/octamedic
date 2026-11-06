@@ -155,6 +155,18 @@ impl MainView {
         widgets.extend(self.screens.screen(mode));
         return widgets;
     }
+
+    // every panel sees a click, so a text box in one finds out a click in another took its
+    // focus. anything else stops at the first that takes it
+    fn pass_to_widgets(&mut self, state: &mut AppState, event: &Event) -> bool {
+        let mut widgets = self.widgets(state.main_mode()).into_iter();
+        if matches!(event, Event::MouseDown { .. }) {
+            return widgets.fold(false, |taken, widget| {
+                widget.handle_event(state, event) | taken
+            });
+        }
+        return widgets.any(|widget| widget.handle_event(state, event));
+    }
 }
 
 impl Gadget<AppState, Event> for MainView {
@@ -170,10 +182,7 @@ impl Gadget<AppState, Event> for MainView {
             || self.copyright.handle_event(state, event)
             || self.dispatch(state, event)
             || caps_lock_keypad(state, event)
-            || self
-                .widgets(state.main_mode())
-                .into_iter()
-                .any(|widget| widget.handle_event(state, event));
+            || self.pass_to_widgets(state, event);
         let right_click = matches!(
             event,
             Event::MouseDown {

@@ -397,6 +397,21 @@ impl<S, E> Textbox<S, E> {
     }
 
     // keeps the cursor inside the box
+    // past the last char with no room left for it, the cursor sits on the last char, like
+    // OctaMED's
+    fn shown_cursor(&self, width: i32) -> usize {
+        let len = self.len();
+        if self.cursor < len || len == 0 {
+            return self.cursor;
+        }
+        let shown = self.text.chars().skip(self.scroll);
+        let text_width: i32 = shown.map(|c| self.font.advance(c)).sum();
+        if text_width + self.font.advance(' ') <= width {
+            return len;
+        }
+        return len - 1;
+    }
+
     fn scroll_to_cursor(&mut self, width: i32) {
         self.scroll = self.scroll.min(self.cursor);
         let chars = self.chars();
@@ -480,7 +495,7 @@ impl<S, E: PointerEvent + TextEvent> Gadget<S, E> for Textbox<S, E> {
         // a row lower when it can't be centred exactly, a font's bottom row is room for descenders
         let y = inner.y + ((inner.h - self.font.height() + 1) / 2).max(0);
         let selection = self.selection().filter(|_| self.focused);
-        let cursor = (self.focused && selection.is_none()).then_some(self.cursor);
+        let cursor = (self.focused && selection.is_none()).then(|| self.shown_cursor(inner.w));
         painter.clipped(inner, |painter| {
             let mut x = inner.x;
             let shown = self.text.chars().chain([' ']).enumerate().skip(self.scroll);
@@ -813,6 +828,19 @@ mod tests {
         textbox.set_focused(false);
         textbox.render(&(), narrow, &mut Painter::new(&mut screen, &palette));
         assert_eq!(textbox.scroll, 0);
+    }
+
+    #[test]
+    fn end_cursor_on_the_last_char_when_full() {
+        let mut textbox = textbox("99");
+        textbox.cursor = 2;
+        let char_width = Font::TOPAZ.advance('9');
+        // room for a third cell
+        assert_eq!(textbox.shown_cursor(3 * char_width), 2);
+        assert_eq!(textbox.shown_cursor(2 * char_width), 1);
+        // inside the text it stays put
+        textbox.cursor = 0;
+        assert_eq!(textbox.shown_cursor(2 * char_width), 0);
     }
 
     #[test]

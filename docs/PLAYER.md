@@ -72,7 +72,8 @@ slides and arpeggios, later.
 
 `OctamedicEngine::process` fills each buffer the callback asks for. It works out how many output
 frames a tick is (`sample rate x tick seconds`), renders up to the next tick, runs it, and so on.
-The leftover fraction of a frame carries over, so the tempo doesn't drift.
+The leftover fraction of a frame carries over, so the tempo doesn't drift. Ticks go on while the
+song is stopped, they just don't play rows, so notes played from the keyboard hold and decay too.
 
 On a row's first tick each track with a note triggers it. A track with only an instrument number
 remembers it for its next note, like the original.
@@ -86,6 +87,10 @@ differently.
 
 Volume is the instrument's volume scaled by track volume and song master volume (each out of 64).
 The listener's output volume comes after that and isn't part of the song.
+
+Previews (the sample import dialog's and the sample editor's) play on a channel of their own past
+the tracks, in the middle of the stereo picture, so they never touch a track's hold, volume or
+instrument.
 
 Muting a track (one of the song's 16) drops its `PaulaWrite`s before they reach the renderer, and
 cuts whatever it was playing. Everything else carries on as normal, so it picks up with the right

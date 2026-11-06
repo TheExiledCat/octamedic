@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use mmd::mmd::module::INSTRUMENT_NAME_LENGTH;
 use octamedic_core::data::instrument::{
-    InstrumentKind, MAX_FINETUNE, MAX_HOLD_DECAY, MAX_INSTRUMENT_VOLUME, MIN_FINETUNE,
-    OctamedicInstrument, OctamedicSample,
+    InstrumentId, InstrumentKind, MAX_FINETUNE, MAX_HOLD_DECAY, MAX_INSTRUMENT_VOLUME,
+    MIN_FINETUNE, OctamedicInstrument, OctamedicSample,
 };
 use octamedic_util::base32;
 use rustuition::{
@@ -108,6 +108,8 @@ const LOAD_TEXT: [i32; 2] = [31, 2];
 const LOAD_ARROWS_Y: i32 = 1;
 
 pub struct Instrument {
+    // the one the boxes were last filled from
+    shown: InstrumentId,
     number: Button,
     name: Textbox,
     length: Button,
@@ -142,6 +144,7 @@ impl Instrument {
                 state.edit_active_instrument(|instrument| instrument.name = name.to_owned());
             });
         return Self {
+            shown: InstrumentId(1),
             number: Button::new("01").font(fonts::INTERFACE),
             name,
             length: Button::new("-").align(Align::Right),
@@ -164,6 +167,13 @@ impl Instrument {
                 VOLUME_ARROW_WIDTH,
             ),
         };
+    }
+
+    fn unfocus_boxes(&mut self) {
+        let steppers = self.stepped.iter_mut().map(|stepper| &mut stepper.textbox);
+        for textbox in steppers.chain([&mut self.name]).chain(&mut self.hold_decay) {
+            textbox.set_focused(false);
+        }
     }
 
     fn update_transport(&mut self, state: &mut AppState) {
@@ -290,6 +300,12 @@ impl Gadget<AppState, Event> for Instrument {
     fn update(&mut self, state: &mut AppState) {
         self.update_transport(state);
         self.update_flush(state);
+        // a box still being typed in would keep the last instrument's value, and what's typed
+        // next would go into this one
+        if self.shown != state.active_instrument {
+            self.shown = state.active_instrument;
+            self.unfocus_boxes();
+        }
         if let Some(edit) = state.name_edit_request.take() {
             if edit == NameEdit::Clear {
                 self.name.set_text("");
@@ -446,11 +462,7 @@ fn load(area: ContentArea, pen: Pen, painter: &mut Painter) {
 #[cfg(test)]
 mod tests {
     use octamedic_core::{
-        data::{
-            instrument::{InstrumentId, SampleOctaves},
-            project::OctamedicProject,
-            song::SongId,
-        },
+        data::{instrument::SampleOctaves, project::OctamedicProject, song::SongId},
         engine::handle::EngineHandle,
     };
     use rustuition::{rect::Point, target::Framebuffer};
@@ -578,6 +590,22 @@ mod tests {
         click(&mut panel, &mut state, NAME);
         assert_eq!(active(&state).decay, 3);
         assert_eq!(panel.hold_decay[1].text(), "3");
+    }
+
+    #[test]
+    fn changing_instrument_lets_go_of_the_boxes() {
+        let (mut panel, mut state) = panel();
+        click(&mut panel, &mut state, SUNKEN_BOXES[0]);
+        panel.handle_event(&mut state, &Event::text('7'));
+        update(&mut panel, &mut state);
+        state.next_instrument();
+        update(&mut panel, &mut state);
+        assert!(!panel.hold_decay[0].is_focused());
+        assert_eq!(panel.hold_decay[0].text(), "0");
+        // typing now doesn't land in instrument 2, which stays empty
+        panel.handle_event(&mut state, &Event::text('5'));
+        update(&mut panel, &mut state);
+        assert!(state.song().instrument(InstrumentId(2)).is_none());
     }
 
     #[test]

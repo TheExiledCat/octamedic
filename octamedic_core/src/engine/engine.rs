@@ -24,6 +24,9 @@ use crate::{
 
 const MAX_NOTE: u8 = 0x7F;
 
+// a channel past the tracks for previews and the sample editor, so they leave the song's alone
+const PREVIEW_CHANNEL: usize = MAX_TRACKS;
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(u8)]
 pub enum PlayMode {
@@ -67,12 +70,16 @@ pub struct OctamedicEngine {
     mode: PlayMode,
     position: Position,
     queued_sequence_index: Option<usize>,
+    // the song's place, None while stopped
     clock: Option<Clock>,
+    // ticks go on while stopped, so notes played from the keyboard still hold and decay. keep
+    // the fraction or the tempo drifts
+    frames_until_tick: f64,
     renderer: Box<dyn Renderer>,
     // last instrument per track, for notes with no instrument number
     track_instruments: [Option<InstrumentId>; MAX_TRACKS],
-    // the instrument each track's voice was last started with, None for a preview
-    voices: [Option<InstrumentId>; MAX_TRACKS],
+    // the instrument each channel's voice was last started with, None for a preview
+    voices: [Option<InstrumentId>; MAX_TRACKS + 1],
     // before track and master volume
     note_volumes: [u8; MAX_TRACKS],
     holds: [Hold; MAX_TRACKS],
@@ -87,7 +94,8 @@ impl OctamedicEngine {
         machine: AmigaClock,
     ) -> Self {
         let scopes = status.scopes().clone();
-        let renderer = PaulaRenderer::new(sample_rate, machine, MAX_TRACKS, scopes);
+        let renderer = PaulaRenderer::new(sample_rate, machine, MAX_TRACKS + 1, scopes)
+            .centre_channel(PREVIEW_CHANNEL);
         let mut engine = Self::with_renderer(commands, status, sample_rate, Box::new(renderer));
         engine.machine = machine;
         return engine;
@@ -121,9 +129,10 @@ impl OctamedicEngine {
             },
             queued_sequence_index: None,
             clock: None,
+            frames_until_tick: 0.0,
             renderer,
             track_instruments: [None; MAX_TRACKS],
-            voices: [None; MAX_TRACKS],
+            voices: [None; MAX_TRACKS + 1],
             note_volumes: [0; MAX_TRACKS],
             holds: [Hold::default(); MAX_TRACKS],
             active_instrument: None,
@@ -139,22 +148,16 @@ impl OctamedicEngine {
         let frame_count = out.len() / channels;
         let mut frame = 0;
         while frame < frame_count {
-            let frames_until_tick = self.clock.as_ref().map(|clock| clock.frames_until_tick);
-            let frames = match frames_until_tick {
-                Some(due) if due <= 0.0 => {
-                    self.tick();
-                    continue;
-                }
-                Some(due) => (due.ceil() as usize).min(frame_count - frame),
-                None => frame_count - frame,
-            };
+            if self.frames_until_tick <= 0.0 {
+                self.tick();
+                continue;
+            }
+            let frames = (self.frames_until_tick.ceil() as usize).min(frame_count - frame);
             self.renderer.render(
                 &mut out[frame * channels..(frame + frames) * channels],
                 channels,
             );
-            if let Some(clock) = &mut self.clock {
-                clock.frames_until_tick -= frames as f64;
-            }
+            self.frames_until_tick -= frames as f64;
             frame += frames;
         }
         let gain = self.output_volume as f32 / MAX_INSTRUMENT_VOLUME as f32;
@@ -165,9 +168,9 @@ impl OctamedicEngine {
 
     fn publish_sample_position(&self) {
         let position = self.active_instrument.and_then(|active| {
-            return (0..MAX_TRACKS)
-                .filter(|&track| self.voices[track] == Some(active))
-                .find_map(|track| self.renderer.sample_position(track));
+            return (0..=PREVIEW_CHANNEL)
+                .filter(|&channel| self.voices[channel] == Some(active))
+                .find_map(|channel| self.renderer.sample_position(channel));
         });
         self.status.set_sample_position(position);
     }
@@ -216,11 +219,10 @@ impl OctamedicEngine {
             EngineCommand::ReleaseNote { track } => self.release(track),
             EngineCommand::Preview(Some((sample, note))) => {
                 let played = sample_note(note.value, 0, 0, sample.octaves);
-                self.trigger(0, sample, played, MAX_INSTRUMENT_VOLUME);
-                self.voices[0] = None;
-                self.holds[0] = Hold::default();
+                self.trigger(PREVIEW_CHANNEL, sample, played, MAX_INSTRUMENT_VOLUME);
+                self.voices[PREVIEW_CHANNEL] = None;
             }
-            EngineCommand::Preview(None) => self.release(0),
+            EngineCommand::Preview(None) => self.release(PREVIEW_CHANNEL),
             EngineCommand::SetActiveInstrument(instrument) => {
                 self.active_instrument = Some(instrument)
             }
@@ -301,10 +303,8 @@ impl OctamedicEngine {
         self.track_instruments = [None; MAX_TRACKS];
         self.note_volumes = [0; MAX_TRACKS];
         self.queued_sequence_index = None;
-        self.clock = Some(Clock {
-            tick: 0,
-            frames_until_tick: 0.0,
-        });
+        self.clock = Some(Clock { tick: 0 });
+        self.frames_until_tick = 0.0;
         self.mode = mode;
         self.status.set_play_mode(mode);
         self.publish_position();
@@ -339,7 +339,14 @@ impl OctamedicEngine {
     }
 
     fn tick(&mut self) {
-        let frames_per_tick = self.frames_per_tick();
+        self.frames_until_tick += self.frames_per_tick();
+        self.song_tick();
+        for track in 0..MAX_TRACKS {
+            self.update_hold(track);
+        }
+    }
+
+    fn song_tick(&mut self) {
         let ticks_per_line = self.ticks_per_line();
         // advance at the start of the next tick, not the end of this one, or the last row of a
         // song loses its last tick
@@ -356,16 +363,12 @@ impl OctamedicEngine {
         if clock.tick >= ticks_per_line {
             clock.tick = 0;
         }
-        clock.frames_until_tick += frames_per_tick;
         let tick = clock.tick;
         clock.tick += 1;
         if tick == 0 {
             self.play_row();
         }
         // todo effects
-        for track in 0..MAX_TRACKS {
-            self.update_hold(track);
-        }
     }
 
     fn update_hold(&mut self, track: usize) {
@@ -592,10 +595,8 @@ impl OctamedicEngine {
     // the range is in bytes of the whole sample, so the note only picks the period, never an
     // octave copy
     fn play_sample(&mut self, instrument: InstrumentId, range: Range<usize>, note: OctamedicNote) {
-        let Some(sample) = instrument
-            .index()
-            .and_then(|index| self.instruments.get(index))
-            .and_then(Option::as_ref)
+        let Some(sample) = self
+            .instrument(instrument)
             .and_then(|instrument| instrument.sample().cloned())
         else {
             return;
@@ -622,10 +623,9 @@ impl OctamedicEngine {
             },
         ];
         for write in writes {
-            self.write(0, write);
+            self.write(PREVIEW_CHANNEL, write);
         }
-        self.voices[0] = Some(instrument);
-        self.holds[0] = Hold::default();
+        self.voices[PREVIEW_CHANNEL] = Some(instrument);
     }
 
     fn release(&mut self, track: usize) {
@@ -646,8 +646,8 @@ impl OctamedicEngine {
     }
 
     fn release_all(&mut self) {
-        for track in 0..MAX_TRACKS {
-            self.release(track);
+        for channel in 0..=PREVIEW_CHANNEL {
+            self.release(channel);
         }
     }
 }
@@ -661,8 +661,6 @@ struct Position {
 
 struct Clock {
     tick: u32,
-    // keep the fraction or the tempo drifts
-    frames_until_tick: f64,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -931,13 +929,8 @@ mod tests {
             commands.send(command).unwrap();
         }
         run(&mut engine, 1);
-        let writes = recorder.writes.lock().unwrap();
-        let channel_0: Vec<&PaulaWrite> = writes
-            .iter()
-            .filter(|(channel, _)| *channel == 0)
-            .map(|(_, write)| write)
-            .collect();
-        let played: Vec<(usize, usize)> = channel_0
+        let preview = channel_writes(&recorder, PREVIEW_CHANNEL);
+        let played: Vec<(usize, usize)> = preview
             .iter()
             .filter_map(|write| match write {
                 PaulaWrite::Sample {
@@ -949,14 +942,16 @@ mod tests {
             })
             .collect();
         assert_eq!(played, [(1, 2), (2, 2)]);
-        assert!(channel_0.contains(&&PaulaWrite::Period(note_period(13, 0, 0))));
+        assert!(preview.contains(&PaulaWrite::Period(note_period(13, 0, 0))));
         // no loop: silence takes over at the end
         let silence = PaulaWrite::Sample {
             sample: SILENCE.clone(),
             start: 0,
             len: SILENCE.data.len(),
         };
-        assert_eq!(channel_0.last(), Some(&&silence));
+        assert_eq!(preview.last(), Some(&silence));
+        // the song's tracks aren't touched
+        assert!(channel_writes(&recorder, 0).is_empty());
     }
 
     #[test]
@@ -1021,14 +1016,10 @@ mod tests {
             .unwrap();
         commands.send(EngineCommand::Preview(None)).unwrap();
         run(&mut engine, 1);
-        let writes = recorder.writes.lock().unwrap();
-        let channel_0: Vec<&PaulaWrite> = writes
-            .iter()
-            .filter(|(channel, _)| *channel == 0)
-            .map(|(_, write)| write)
-            .collect();
-        assert!(channel_0.contains(&&PaulaWrite::Period(note_period(13, 0, 0))));
-        assert_eq!(channel_0.last(), Some(&&PaulaWrite::DmaOff));
+        let preview = channel_writes(&recorder, PREVIEW_CHANNEL);
+        assert!(preview.contains(&PaulaWrite::Period(note_period(13, 0, 0))));
+        assert_eq!(preview.last(), Some(&PaulaWrite::DmaOff));
+        assert!(channel_writes(&recorder, 0).is_empty());
     }
 
     #[test]
@@ -1214,6 +1205,25 @@ mod tests {
             .filter(|(written, _)| *written == channel)
             .map(|(_, write)| write.clone())
             .collect();
+    }
+
+    #[test]
+    fn keyboard_notes_hold_while_stopped() {
+        let (mut engine, commands, recorder) = recording_engine();
+        let mut held = instrument();
+        held.hold = 2;
+        commands
+            .send(EngineCommand::SetInstrument {
+                id: InstrumentId(1),
+                instrument: Some(held),
+            })
+            .unwrap();
+        play_note(&commands, 0);
+        // a few ticks, nothing playing
+        let ticks = 4.0 * engine.frames_per_tick();
+        run(&mut engine, ticks as usize);
+        let writes = channel_writes(&recorder, 0);
+        assert_eq!(writes.last(), Some(&PaulaWrite::Volume(0)));
     }
 
     #[test]

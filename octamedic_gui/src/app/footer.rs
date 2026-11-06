@@ -154,9 +154,10 @@ impl Footer {
 
 impl Gadget<AppState, Event> for Footer {
     fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
-        return self.block_name.handle_event(state, event)
-            || self.song_name.handle_event(state, event)
-            || self.mode.handle_event(state, event);
+        // both see every click, it's how a text box finds out it lost focus
+        let handled =
+            self.block_name.handle_event(state, event) | self.song_name.handle_event(state, event);
+        return handled || self.mode.handle_event(state, event);
     }
 
     fn update(&mut self, state: &mut AppState) {
