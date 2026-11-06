@@ -31,6 +31,10 @@ On WSL, the CLI and GUI folders each have two scripts that pass their arguments 
 `run-windows.sh` builds and runs the Windows build (native audio), and `run-x11.sh` runs it in WSL
 over X11, because under WSLg's Wayland the window closes straight away.
 
+On Windows the GUI doesn't open a console, even from `cargo run`, so nothing it prints shows up.
+Errors from starting up go in the debug console (Ctrl+`), and a panic, or an error that stops the
+window opening, goes in `crash.log` in the config folder (`%LOCALAPPDATA%\octamedic`).
+
 On a Mac, `octamedic_gui/macos/bundle.sh` turns a release build into `OctaMEDIC.app`, the same
 way the release workflow does. How to run it is at the top of the script.
 

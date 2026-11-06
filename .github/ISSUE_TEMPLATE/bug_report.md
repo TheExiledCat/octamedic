@@ -12,7 +12,8 @@ What you expected instead:
 
 OS, `rustc --version`, and CLI or GUI:
 
-Output or panic message:
+Output or panic message (if the GUI crashed, `crash.log` in the config folder: `%LOCALAPPDATA%\octamedic`
+on Windows, `~/.config/octamedic` on Linux, `~/Library/Application Support/octamedic` on macOS):
 
 ```
 paste here
