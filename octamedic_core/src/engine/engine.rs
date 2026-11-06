@@ -20,7 +20,7 @@ use crate::{
         note::OctamedicNote,
         pattern::{MAX_TRACKS, OctamedicPattern, OctamedicPatternTrack, PatternId},
         tempo::OctamedicTempo,
-        volume::set_volume_value,
+        volume::volume_from_argument,
     },
 };
 
@@ -386,15 +386,14 @@ impl OctamedicEngine {
             return;
         };
         if left == 0 {
-            let volume = &mut self.note_volumes[track];
-            let step = if hold.decay == 0 { *volume } else { hold.decay };
-            *volume = volume.saturating_sub(step);
-            if *volume == 0 {
+            let volume = self.note_volumes[track];
+            let step = if hold.decay == 0 { volume } else { hold.decay };
+            let volume = volume.saturating_sub(step);
+            if volume == 0 {
                 hold.ticks_left = None;
                 hold.ended = true;
             }
-            let volume = self.mixed_volume(track, self.note_volumes[track]);
-            self.write(track, PaulaWrite::Volume(volume));
+            self.set_note_volume(track, volume);
         } else if !hold.paused {
             hold.ticks_left = Some(left - 1);
         }
@@ -488,21 +487,22 @@ impl OctamedicEngine {
     }
 
     // after the line's note, so they act on it
-    #[allow(clippy::single_match)]
     fn apply_effects(&mut self, track: usize, cell: OctamedicPatternTrack) {
-        match cell.command_id.0 {
-            SET_VOLUME => self.set_volume(track, cell.command_value),
-            _ => {}
+        if cell.command_id.0 == SET_VOLUME {
+            self.set_volume(track, cell.command_value);
         }
     }
 
-    // kept until the track's next note with an instrument number or -|-, or stop. once a hold
+    // lasts until the track's next note with an instrument number or -|-, or stop. once a hold
     // has run out the note's over, so it does nothing
     fn set_volume(&mut self, track: usize, argument: u8) {
-        if self.holds[track].ended {
-            return;
+        if !self.holds[track].ended {
+            self.set_note_volume(track, volume_from_argument(argument, self.volumes_hex));
         }
-        let volume = set_volume_value(argument, self.volumes_hex);
+    }
+
+    // before track and master volume
+    fn set_note_volume(&mut self, track: usize, volume: u8) {
         self.note_volumes[track] = volume;
         let volume = self.mixed_volume(track, volume);
         self.write(track, PaulaWrite::Volume(volume));
@@ -516,9 +516,7 @@ impl OctamedicEngine {
         };
         // brings a decayed note back
         self.holds[track].ended = false;
-        self.note_volumes[track] = default_volume;
-        let volume = self.mixed_volume(track, default_volume);
-        self.write(track, PaulaWrite::Volume(volume));
+        self.set_note_volume(track, default_volume);
     }
 
     // -|- on the next line pauses the hold on this one. Like OctaMED, not across blocks

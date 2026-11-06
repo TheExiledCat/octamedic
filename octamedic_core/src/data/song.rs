@@ -7,7 +7,7 @@ use crate::data::{
     instrument::{InstrumentId, MAX_INSTRUMENTS, OctamedicInstrument},
     pattern::{OctamedicPattern, PatternId},
     tempo::OctamedicTempo,
-    volume::{MAX_VOLUME, OctamedicVolume, set_volume_argument, set_volume_value},
+    volume::{MAX_VOLUME, OctamedicVolume, volume_argument, volume_from_argument},
 };
 
 #[derive(Clone, Copy)]
@@ -82,12 +82,12 @@ impl OctamedicSong {
     pub fn convert_volume_commands(&mut self, hex: bool) -> Vec<PatternId> {
         let mut changed = Vec::new();
         for (index, pattern) in self.patterns.iter_mut().enumerate() {
-            let has_set_volume = pattern
+            let has_volume_commands = pattern
                 .lines
                 .iter()
                 .flat_map(|line| &line.tracks)
                 .any(|cell| cell.command_id.0 == SET_VOLUME);
-            if !has_set_volume {
+            if !has_volume_commands {
                 continue;
             }
             let cells = Arc::make_mut(pattern)
@@ -96,8 +96,8 @@ impl OctamedicSong {
                 .flat_map(|line| &mut line.tracks)
                 .filter(|cell| cell.command_id.0 == SET_VOLUME);
             for cell in cells {
-                let volume = set_volume_value(cell.command_value, !hex);
-                cell.command_value = set_volume_argument(volume, hex);
+                let volume = volume_from_argument(cell.command_value, !hex);
+                cell.command_value = volume_argument(volume, hex);
             }
             changed.push(PatternId(index as u8));
         }
@@ -283,9 +283,9 @@ mod tests {
         let cell = &mut song.ensure_pattern(PatternId(0)).lines[0].tracks[0];
         cell.command_id = CommandId(SET_VOLUME);
         cell.command_value = 0x40;
-        let other = &mut song.ensure_pattern(PatternId(0)).lines[1].tracks[0];
-        other.command_id = CommandId(0x0F);
-        other.command_value = 0x40;
+        let tempo = &mut song.ensure_pattern(PatternId(0)).lines[1].tracks[0];
+        tempo.command_id = CommandId(0x0F);
+        tempo.command_value = 0x40;
         // decimal 40 is hex 28, and only volume commands change. block 1 has none
         assert_eq!(song.convert_volume_commands(true), [PatternId(0)]);
         let lines = &song.patterns[0].lines;

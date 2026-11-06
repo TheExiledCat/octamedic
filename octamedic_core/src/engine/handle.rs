@@ -53,7 +53,7 @@ pub enum EngineCommand {
     SetTempo(OctamedicTempo),
     SetMachine(AmigaClock),
     SetFilter(bool),
-    /// Whether 0C's argument is hex rather than two decimal digits.
+    /// Whether volume commands are read as hex rather than two decimal digits.
     SetVolumesHex(bool),
     SetTrackVolume {
         track: usize,

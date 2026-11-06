@@ -158,8 +158,8 @@ starts the track again.
 
 Clicking HEX or DEC only changes how volume commands are read, so a song's volume commands play
 differently. With Shift held, every volume command in the song is rewritten as well so it plays the
-same as before (decimal 40 becomes hex 28), like OctaMED. `set_volume_value` and `set_volume_argument` in `data/volume.rs` go between
-the two.
+same as before (decimal 40 becomes hex 28), like OctaMED. `volume_from_argument` and
+`volume_argument` in `data/volume.rs` go between the two.
 
 ## Not done yet
 

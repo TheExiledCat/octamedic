@@ -9,7 +9,7 @@ use crate::data::{
     instrument::InstrumentId,
     note::OctamedicNote,
     track_count::TrackCount,
-    volume::{set_volume_argument, set_volume_value},
+    volume::{volume_argument, volume_from_argument},
 };
 
 pub const DEFAULT_LINES: usize = 64;
@@ -127,17 +127,17 @@ impl OctamedicPattern {
         let (Some(start), Some(end)) = (start, end) else {
             return false;
         };
-        let volume = |index: usize| {
+        let volume_at = |index: usize| {
             let argument = self.lines[index].tracks[track].command_value;
-            return set_volume_value(argument, hex) as f32;
+            return volume_from_argument(argument, hex) as f32;
         };
-        let (from, to) = (volume(start), volume(end));
-        let steps = (end - start) as f32;
-        for index in start + 1..end {
-            let volume = from + (to - from) * (index - start) as f32 / steps;
-            let cell = &mut self.lines[index].tracks[track];
+        let (from, to) = (volume_at(start), volume_at(end));
+        let distance = (end - start) as f32;
+        for (step, line) in self.lines[start + 1..end].iter_mut().enumerate() {
+            let volume = from + (to - from) * (step + 1) as f32 / distance;
+            let cell = &mut line.tracks[track];
             cell.command_id = CommandId(SET_VOLUME);
-            cell.command_value = set_volume_argument(volume.round() as u8, hex);
+            cell.command_value = volume_argument(volume.round() as u8, hex);
         }
         return true;
     }
