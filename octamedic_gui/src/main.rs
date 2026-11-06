@@ -17,6 +17,8 @@ use crate::app::{DEFAULT_VIDEO, app::App, files, icon, screen};
 mod app;
 mod crash_log;
 mod framework;
+#[cfg(target_os = "macos")]
+mod macos;
 
 // just the file's name in the error, a whole path doesn't fit in the notification bar
 fn load_project() -> Result<OctamedicProject, String> {
@@ -72,6 +74,8 @@ fn run(project: OctamedicProject, errors: &[String]) -> GameResult<Infallible> {
         // vsync queues frames and the pointer ends up trailing the mouse, so App paces itself
         .window_setup(WindowSetup::default().title("OctaMEDIC").vsync(false))
         .build()?;
+    #[cfg(target_os = "macos")]
+    macos::ask_before_quitting();
     open_window(&mut ctx, mode)?;
     let app = App::new(&mut ctx, project, errors.to_vec())?;
     icon::set_window_icons(ctx.gfx.window())?;

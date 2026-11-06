@@ -22,6 +22,8 @@ use rustuition::{
     target::{BatchedCanvas, Framebuffer, RenderTarget, Rgba},
 };
 
+#[cfg(target_os = "macos")]
+use crate::macos;
 use crate::{
     app::{
         DEFAULT_VIDEO, main_view::MainView, prompt, screen, state::AppState,
@@ -141,6 +143,16 @@ impl App {
         }
     }
 
+    // Cmd+Q and the Dock's Quit go to the app delegate, not here, and it holds them back while
+    // there are unsaved changes
+    #[cfg(target_os = "macos")]
+    fn ask_about_menu_quit(&mut self) {
+        if macos::take_quit_request() {
+            self.state.confirm_if_unsaved(AppState::request_exit);
+        }
+        macos::set_unsaved(!self.state.is_saved());
+    }
+
     fn follow_video(&mut self, ctx: &Context) {
         if self.state.video() == self.video {
             return;
@@ -240,6 +252,8 @@ impl EventHandler for App {
         self.dialogs.update(&mut self.state);
         self.follow_video(ctx);
         self.keep_window_shape(ctx);
+        #[cfg(target_os = "macos")]
+        self.ask_about_menu_quit();
         if self.state.exit_requested {
             ctx.request_quit();
         }
