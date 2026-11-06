@@ -13,7 +13,9 @@ adds on top, in `src/framework/`, and how OctaMED's screens in `src/app/` are pu
   lines, capped at one line per event since ggez doesn't separate wheel and trackpad deltas.
 - `framework/widgets/mod.rs`: `Button` and `Slider` aliases with `AppState` and `Event` filled in.
   Use these rather than rustuition's, so handlers know they get an `AppState`. App gadgets
-  implement `Gadget<AppState, Event>`.
+  implement `Gadget<AppState, Event>`. Make text boxes with `widgets::textbox()`, which draws the
+  cursor and selection in OctaMED's pink with the text over them mixed in, rather than
+  `Textbox::new()`.
 - `framework/widgets/symbols.rs`: OctaMED's picture button contents (`blocks`, `MusicSymbol`,
   `stacked_text`), and `audio_view.rs` the scopes and VU meters.
 - `app/fonts.rs`: OctaMED's own fonts, redrawn by hand in `assets/fonts/` since the originals
@@ -53,13 +55,15 @@ Implement `KeyActions` (`keymap`, `perform`, `describe`) on the gadget and call
 `MainView` (`app/main_view.rs`) is the whole screen and handles global keys like Ctrl+Q, and last of
 all Space (stop) and Shift+Space (continue the song), so a text field gets them first. The
 keyboard's note keys work the same way: any screen plays them on the cursor's track, unless a text
-field or the block editor took them first. The other play keys are OctaMED's: Amiga+P and
-Shift+Alt+Space play the song, Amiga+Space the block, Alt+Space continues the block. The Amiga key
-is right Alt, where it was on the real keyboard next to right Ctrl; the Windows key (Cmd on a Mac)
-counts too. `App` tells the two Alts apart itself (`keymap::amiga_mods`), since the modifiers don't,
-and shortcuts use `Key::amiga`. Ctrl and the keypad edit the play sequence like OctaMED's: 7 and 1
-go to the top and end, 8 and 2 move up and down, 4 and 6 change the block number, 5 inserts the
-current block, 0 inserts block 0 and . deletes. Inside it: `TitleBar` (timer, title, author),
+field or the block editor took them first. Every panel sees every mouse click, and within a panel
+every text box does (`|` rather than `||`), so a box finds out when a click on another one takes its
+focus; anything else stops at the first that takes it. The other play keys are OctaMED's: Amiga+P
+and Shift+Alt+Space play the song, Amiga+Space the block, Alt+Space continues the block. The Amiga
+key is right Alt, where it was on the real keyboard next to right Ctrl; the Windows key (Cmd on a
+Mac) counts too. `App` tells the two Alts apart itself (`keymap::amiga_mods`), since the modifiers
+don't, and shortcuts use `Key::amiga`. Ctrl and the keypad edit the play sequence like OctaMED's: 7
+and 1 go to the top and end, 8 and 2 move up and down, 4 and 6 change the block number, 5 inserts
+the current block, 0 inserts block 0 and . deletes. Inside it: `TitleBar` (timer, title, author),
 `CopyrightBar` (the screen title over the title bar, toggled by a right click nothing else takes,
 its gadget quits), `Header` (`app/header/mod.rs`), `ModeButtons`, `StatusBar` (song position, block,
 instrument, song), the `BlockEditor` (`app/main/block_editor.rs`, with track numbers and the block's
@@ -80,6 +84,14 @@ Ctrl+F11 opens the screen filters (`app/screen_filters.rs`), a list of rustuitio
 order they run. While any is on, the screen and the pointer are painted into a `Framebuffer`
 instead of straight onto the GPU, filtered, and uploaded as the screen image.
 
+The VOL page's OUTPUT button opens the output dialog (`app/output.rs`): which sound device plays
+(cpal's output devices, or the default) and whether it's mixed to mono. OK on another device has
+`AppState::set_output_device` close the engine and start it again on that one with
+`AppState::open_audio`, which sends it the song, mutes and mono; that stops playing. If the new
+device can't be opened it goes back to the old one, and the notification bar says why. If the
+engine has no device at all (it couldn't open one at startup, say), OK tries again even on the same
+device. Neither setting is saved between runs yet.
+
 The mode buttons set two modes: `HeaderMode` (which panel the header shows) and `MainMode` (what
 fills the screen below). Each button's `ModeBinding` in `app/mode/buttons.rs` says which. Header
 panels are in `app/header/`, one file each (`misc.rs` is MISC), and `HeaderPanels::panel` maps
@@ -88,14 +100,19 @@ updates and events while it's showing. Main screens are in `app/main/` and `Main
 does the same for `MainMode`. To add one: write the gadget, add a field for it, return it from
 `panel` or `screen`.
 
-FILES, PLAY, VOL and MISC's palette work. INSTR (`header/instrument.rs`) shows the active instrument
-and edits its name, transpose, finetune and volume (`AppState::edit_active_instrument`); its arrows
-go to the first, previous, next and last instrument and FLUSH empties it: no sample, no name, and
-every value 0, volume included. The rest of it is ghosted. The rest of MISC and the SLIST screen
-(`main/song_list.rs`) are laid out like OctaMED with their buttons ghosted, ready to be hooked up.
-`main/list_scroller.rs` is the slider with arrows that the FILES and SLIST lists share. The wheel
-scrolls it too, with the pointer over the list or the slider, through its own `WheelLines`, so
-whoever draws the list sets its `list_area` as well as `lines_that_fit`.
+FILES, PLAY, VOL and MISC's palette work. PLAY's HEX and DEC say how volume commands are read, and
+with Shift held they also rewrite the song's volume commands so they play the same
+(`AppState::convert_volumes_hex`). INSTR (`header/instrument.rs`) shows the active instrument and
+edits its name, transpose, finetune, volume, hold and decay (`AppState::edit_active_instrument`,
+hold and decay take two digits, 0 to 99); its arrows go to the first, previous and next instrument
+and the last one with a sound (instrument 1 if none has one), and FLUSH empties it: no sample, no
+name, and every value 0, volume included. Changing the active instrument lets go of any of its boxes
+being typed in, so what's typed next can't land in the new instrument. The rest of it is ghosted.
+The rest of MISC and the SLIST screen (`main/song_list.rs`) are laid out like OctaMED with their
+buttons ghosted, ready to be hooked up. `main/list_scroller.rs` is the slider with arrows that the
+FILES and SLIST lists share. The wheel scrolls it too, with the pointer over the list or the
+slider, through its own `WheelLines`, so whoever draws the list sets its `list_area` as well as
+`lines_that_fit`.
 
 The sample editor (`main/sample_editor.rs`) is laid out like OctaMED's SMPED. BUFFSIZE is the whole
 sample's length and the number at the waveform's top right the length in view. `WaveView`
@@ -162,6 +179,12 @@ Backspace takes the cell out of its track, the rest of the track moving up into 
 Shift+Backspace opens an empty one, pushing the rest down; the block keeps its length
 (`OctamedicPattern::pull_track_up` and `push_track_down`). Alt+Backspace and Shift+Alt+Backspace are
 the BLOCK panel's DEL.TRK and INS.TRK, and like the buttons don't need edit mode.
+
+Amiga+O is OctaMED's SLIDE: VOL. With the cursor between two volume commands in a track (or on one
+of them), it fills the lines between with volume commands going evenly from the first's volume to
+the second's, rounded, read as hex or decimal like VOL says (`OctamedicPattern::slide_volume`). The
+VOL button belongs to the RANGE page's SLIDE: 1 | 2 | VOL panel, which isn't built yet, so for now
+it's just the key; the button only needs to call `AppState::slide_volume`.
 
 Enter or A in the note column puts in a hold: no note, just the selected instrument, shown as `-|-`
 like any cell with an instrument and no note. It keeps a note held past its instrument's hold length

@@ -5,7 +5,11 @@ use mmd::{
 };
 
 use crate::data::{
-    command::CommandId, instrument::InstrumentId, note::OctamedicNote, track_count::TrackCount,
+    command::{CommandId, SET_VOLUME},
+    instrument::InstrumentId,
+    note::OctamedicNote,
+    track_count::TrackCount,
+    volume::{volume_argument, volume_from_argument},
 };
 
 pub const DEFAULT_LINES: usize = 64;
@@ -102,6 +106,40 @@ impl OctamedicPattern {
         }
         let last = self.lines.len() - 1;
         self.lines[last].tracks[track] = OctamedicPatternTrack::new();
+    }
+
+    /// The VOL slide: fills the lines between the volume commands around `line` in `track` with
+    /// volume commands going evenly from the first's volume to the second's, rounded. `line` can
+    /// be on either of them too. Returns whether there were two to slide between.
+    pub fn slide_volume(&mut self, line: usize, track: usize, hex: bool) -> bool {
+        if line >= self.lines.len() || track >= self.track_count() {
+            return false;
+        }
+        let sets_volume =
+            |index: &usize| self.lines[*index].tracks[track].command_id.0 == SET_VOLUME;
+        let mut start = (0..=line).rev().find(sets_volume);
+        let mut end = (line + 1..self.lines.len()).find(sets_volume);
+        // on the last one, slide up to it
+        if end.is_none() && start == Some(line) {
+            end = start;
+            start = (0..line).rev().find(sets_volume);
+        }
+        let (Some(start), Some(end)) = (start, end) else {
+            return false;
+        };
+        let volume_at = |index: usize| {
+            let argument = self.lines[index].tracks[track].command_value;
+            return volume_from_argument(argument, hex) as f32;
+        };
+        let (from, to) = (volume_at(start), volume_at(end));
+        let distance = (end - start) as f32;
+        for (step, line) in self.lines[start + 1..end].iter_mut().enumerate() {
+            let volume = from + (to - from) * (step + 1) as f32 / distance;
+            let cell = &mut line.tracks[track];
+            cell.command_id = CommandId(SET_VOLUME);
+            cell.command_value = volume_argument(volume.round() as u8, hex);
+        }
+        return true;
     }
 
     /// Puts an empty cell in `track` at `line`: the cells below it in that track move down one and
@@ -535,5 +573,42 @@ mod tests {
         pattern.join(&other);
         assert_eq!(pattern.track_count(), 3);
         assert_eq!(pattern.line_count(), 2);
+    }
+
+    #[test]
+    fn volume_slide() {
+        // the manual's example, in decimal
+        let mut pattern = numbered(16, 2);
+        let mut set_volume = |line: usize, argument: u8| {
+            let cell = &mut pattern.lines[line].tracks[0];
+            cell.command_id = CommandId(SET_VOLUME);
+            cell.command_value = argument;
+        };
+        set_volume(9, 0x50);
+        set_volume(14, 0x34);
+        let arguments = |pattern: &OctamedicPattern| -> Vec<u8> {
+            return (9..=14)
+                .map(|line| pattern.lines[line].tracks[0].command_value)
+                .collect();
+        };
+        let mut slid = pattern.clone();
+        assert!(slid.slide_volume(11, 0, false));
+        assert_eq!(arguments(&slid), [0x50, 0x47, 0x44, 0x40, 0x37, 0x34]);
+        // notes stay, and the cursor can be on either end
+        assert_eq!(slid.lines[11].tracks[0].note.value, 12);
+        for line in [9, 14] {
+            let mut on_an_end = pattern.clone();
+            assert!(on_an_end.slide_volume(line, 0, false));
+            assert_eq!(arguments(&on_an_end), arguments(&slid));
+        }
+        // in hex, 64 down to 32
+        let mut hex = pattern.clone();
+        hex.lines[9].tracks[0].command_value = 0x40;
+        hex.lines[14].tracks[0].command_value = 0x20;
+        assert!(hex.slide_volume(11, 0, true));
+        assert_eq!(arguments(&hex), [0x40, 0x3A, 0x33, 0x2D, 0x26, 0x20]);
+        // nothing to slide between
+        assert!(!pattern.clone().slide_volume(11, 1, false));
+        assert!(!pattern.clone().slide_volume(15, 0, false));
     }
 }

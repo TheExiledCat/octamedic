@@ -124,6 +124,8 @@ pub enum EditorAction {
     CutBlock,
     CopyBlock,
     PasteBlock,
+    // SLIDE: VOL
+    VolumeSlide,
 }
 
 impl Action for EditorAction {
@@ -200,7 +202,8 @@ impl BlockEditor {
                 Key::new(KeyCode::V, AMIGA | KeyMods::SHIFT),
                 PasteBlock,
                 "Paste block",
-            );
+            )
+            .bind(Key::amiga(KeyCode::O), VolumeSlide, "Volume slide");
         return Self {
             keys,
             first_track: 0,
@@ -466,6 +469,7 @@ impl KeyActions for BlockEditor {
             CutBlock => state.cut_block(),
             CopyBlock => state.copy_block(),
             PasteBlock => state.paste_block(),
+            VolumeSlide => state.slide_volume(),
         }
     }
 
@@ -505,6 +509,7 @@ impl KeyActions for BlockEditor {
             CutBlock => "Cut the block into the block buffer",
             CopyBlock => "Copy the block into the block buffer",
             PasteBlock => "Replace the block with the block buffer",
+            VolumeSlide => "Slide the volume between the volume commands around the cursor",
         };
     }
 }
@@ -882,7 +887,9 @@ mod tests {
     use ggez::input::keyboard::KeyMods;
     use octamedic_core::{
         data::{
-            command::CommandId, instrument::InstrumentId, note::OctamedicNote,
+            command::{CommandId, SET_VOLUME},
+            instrument::InstrumentId,
+            note::OctamedicNote,
             project::OctamedicProject,
         },
         engine::handle::EngineHandle,
@@ -1426,5 +1433,22 @@ mod tests {
         press(&mut editor, &mut state, KeyCode::Back, KeyMods::ALT);
         assert_eq!(cell_at(&state, 0, 0), filled(1));
         assert_eq!(state.active_pattern().unwrap().track_count(), 4);
+    }
+
+    #[test]
+    fn amiga_o_slides_the_volume() {
+        let (mut editor, mut state) = (BlockEditor::new(), state());
+        for (line, argument) in [(0, 0x60), (4, 0x20)] {
+            let cell = &mut state.active_pattern_mut().unwrap().lines[line].tracks[0];
+            cell.command_id = CommandId(SET_VOLUME);
+            cell.command_value = argument;
+        }
+        state.cursor.line = 2;
+        press(&mut editor, &mut state, KeyCode::O, AMIGA);
+        // decimal 60 down to 20 over 4 lines
+        let arguments: Vec<u8> = (0..=4)
+            .map(|line| cell_at(&state, line, 0).command_value)
+            .collect();
+        assert_eq!(arguments, [0x60, 0x50, 0x40, 0x30, 0x20]);
     }
 }

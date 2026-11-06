@@ -8,7 +8,7 @@ use mmd::{mmd::module::SONG_TRACKS, utility::note::SEMITONES_PER_OCTAVE};
 use octamedic_core::{
     amiga::clock::VideoStandard,
     data::{
-        instrument::{InstrumentId, MAX_INSTRUMENTS, OctamedicInstrument},
+        instrument::{InstrumentId, InstrumentKind, MAX_INSTRUMENTS, OctamedicInstrument},
         note::OctamedicNote,
         palette::{OctamedColorPalette, PALETTE_SIZE},
         pattern::{MAX_PATTERNS, OctamedicPattern, OctamedicPatternTrack, PatternId},
@@ -189,6 +189,11 @@ pub struct AppState {
     // the modifier keys down at the last mouse event, Amiga included
     pub mouse_mods: KeyMods,
     video: VideoStandard,
+    // the engine's device's id, None for the default. set_output_device changes it
+    pub output_device: Option<String>,
+    // the last try at opening it didn't work, so the engine is disconnected
+    audio_failed: bool,
+    mono: bool,
     queued_sequence_index: Option<usize>,
     started: Option<PlayStart>,
     muted_tracks: [bool; SONG_TRACKS],
@@ -253,6 +258,9 @@ impl AppState {
             displays_off: false,
             mouse_mods: KeyMods::NONE,
             video: DEFAULT_VIDEO,
+            output_device: None,
+            audio_failed: false,
+            mono: false,
             queued_sequence_index: None,
             started: None,
             muted_tracks: [false; SONG_TRACKS],
@@ -472,6 +480,59 @@ impl AppState {
         self.engine.set_machine(video.clock());
     }
 
+    pub fn audio_failed(&self) -> bool {
+        return self.audio_failed;
+    }
+
+    /// Starts the engine again on `device`, or the default one with `None`, which stops playing.
+    /// If that can't be opened it goes back to the one before. The same device again only opens
+    /// if the last try failed.
+    pub fn set_output_device(&mut self, device: Option<String>) {
+        if device == self.output_device && !self.audio_failed {
+            return;
+        }
+        self.stop();
+        // closed first, the new one could be the same hardware
+        self.engine = EngineHandle::disconnected();
+        let previous = std::mem::replace(&mut self.output_device, device);
+        if !self.open_audio() && self.output_device != previous {
+            let notification = self.notification.take();
+            self.output_device = previous;
+            self.open_audio();
+            self.notification = notification;
+        }
+    }
+
+    /// Starts the engine on the output device and sends it everything, or says why it can't.
+    pub fn open_audio(&mut self) -> bool {
+        let engine = match EngineHandle::spawn(self.video.clock(), self.output_device.as_deref()) {
+            Ok(engine) => engine,
+            Err(error) => {
+                self.audio_failed = true;
+                self.notify(format!("NO AUDIO: {error}"));
+                return false;
+            }
+        };
+        self.engine = engine;
+        self.audio_failed = false;
+        self.send_all_to_engine();
+        for track in (0..SONG_TRACKS).filter(|&track| self.muted_tracks[track]) {
+            self.engine.set_track_muted(track, true);
+        }
+        self.engine.set_mono(self.mono);
+        self.engine_active_instrument = None;
+        return true;
+    }
+
+    pub fn mono(&self) -> bool {
+        return self.mono;
+    }
+
+    pub fn set_mono(&mut self, mono: bool) {
+        self.mono = mono;
+        self.engine.set_mono(mono);
+    }
+
     pub fn active_meters(&self) -> Meters {
         if self.displays_off {
             return Meters {
@@ -543,6 +604,15 @@ impl AppState {
     pub fn set_instrument(&mut self, instrument: u8) -> InstrumentId {
         self.active_instrument.0 = instrument.clamp(1, MAX_INSTRUMENT);
         return self.active_instrument;
+    }
+
+    /// Makes the last instrument with a sound active, or the first when none has one.
+    pub fn last_filled_instrument(&mut self) -> InstrumentId {
+        let last = self.song().instruments.iter().rposition(|slot| {
+            slot.as_ref()
+                .is_some_and(|instrument| !matches!(instrument.kind, InstrumentKind::Empty))
+        });
+        return self.set_instrument(last.map_or(1, |index| index as u8 + 1));
     }
 
     pub fn next_instrument(&mut self) -> InstrumentId {
@@ -696,7 +766,19 @@ impl AppState {
     pub fn set_volumes_hex(&mut self, hex: bool) {
         if self.song().flags.volumes_hex != hex {
             self.song_mut().flags.volumes_hex = hex;
+            self.engine.set_volumes_hex(hex);
         }
+    }
+
+    /// Like `set_volumes_hex`, rewriting every volume command in the song so it still plays the
+    /// same. What Shift-click on HEX or DEC does.
+    pub fn convert_volumes_hex(&mut self, hex: bool) {
+        if self.song().flags.volumes_hex == hex {
+            return;
+        }
+        let changed = self.song_mut().convert_volume_commands(hex);
+        self.changed_patterns.extend(changed);
+        self.set_volumes_hex(hex);
     }
 
     pub fn set_filter(&mut self, on: bool) {
@@ -973,6 +1055,19 @@ impl AppState {
         }
         self.song_mut().remove_pattern(index + 1);
         self.send_all_to_engine();
+    }
+
+    /// SLIDE: VOL, volume commands going evenly between the ones around the cursor in its track.
+    pub fn slide_volume(&mut self) {
+        let EditCursor { line, track, .. } = self.cursor;
+        let hex = self.song().flags.volumes_hex;
+        let id = self.active_pattern;
+        let Some(pattern) = self.song_mut().get_pattern_mut(id) else {
+            return;
+        };
+        if pattern.slide_volume(line, track, hex) {
+            self.changed_patterns.insert(id);
+        }
     }
 
     pub fn cut_track(&mut self) {

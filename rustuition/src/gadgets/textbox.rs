@@ -33,6 +33,7 @@ pub struct Textbox<S, E = MouseEvent> {
     // first char shown, when the text is wider than the box
     scroll: usize,
     max_length: Option<usize>,
+    select_on_focus: bool,
     font: Font,
     border: i32,
     padding: i32,
@@ -40,6 +41,7 @@ pub struct Textbox<S, E = MouseEvent> {
     text_pen: Pen,
     cursor_pen: Pen,
     selection_pen: Pen,
+    mix_pens: bool,
     on_update: Option<Rc<dyn TextHandler<S>>>,
     enabled: bool,
     // from the last render
@@ -59,6 +61,7 @@ impl<S, E> Textbox<S, E> {
             last_click: None,
             scroll: 0,
             max_length: None,
+            select_on_focus: false,
             font: Font::TOPAZ,
             border: 1,
             padding: 2,
@@ -66,6 +69,7 @@ impl<S, E> Textbox<S, E> {
             text_pen: Pen::SHINE,
             cursor_pen: Pen::FILL,
             selection_pen: Pen::SHADOW,
+            mix_pens: false,
             on_update: None,
             enabled: true,
             area: Rect::default(),
@@ -85,6 +89,12 @@ impl<S, E> Textbox<S, E> {
         return self;
     }
 
+    /// Selects the whole text when a click focuses it, so typing replaces it. For number boxes.
+    pub fn select_on_focus(mut self) -> Self {
+        self.select_on_focus = true;
+        return self;
+    }
+
     /// Sets the font.
     pub fn font(mut self, font: Font) -> Self {
         self.font = font;
@@ -98,6 +108,21 @@ impl<S, E> Textbox<S, E> {
         self.cursor_pen = cursor;
         self.selection_pen = selection;
         return self;
+    }
+
+    /// Draws the text over the cursor and the selection in their pen and the text pen combined
+    /// bit by bit, the way it shows when they're on bitplanes of their own.
+    pub fn mix_pens(mut self) -> Self {
+        self.mix_pens = true;
+        return self;
+    }
+
+    // the pen for text on `under`, `unmixed` when the pens aren't mixed
+    fn over(&self, under: Pen, unmixed: Pen) -> Pen {
+        if self.mix_pens {
+            return Pen(self.text_pen.0 | under.0);
+        }
+        return unmixed;
     }
 
     /// Sets the space between the frame and the text, across.
@@ -340,6 +365,13 @@ impl<S, E> Textbox<S, E> {
         let double = self.last_click.is_some_and(|(at, clicked)| {
             clicked == index && now.duration_since(at) <= DOUBLE_CLICK
         });
+        if self.select_on_focus && !self.focused {
+            self.focused = true;
+            self.anchor = Some(0);
+            self.cursor = self.len();
+            self.last_click = None;
+            return;
+        }
         self.focused = true;
         if double {
             self.last_click = None;
@@ -365,17 +397,28 @@ impl<S, E> Textbox<S, E> {
     }
 
     // keeps the cursor inside the box
+    // past the last char with no room left for it, the cursor sits on the last char, like
+    // OctaMED's
+    fn shown_cursor(&self, width: i32) -> usize {
+        let len = self.len();
+        if self.cursor < len || len == 0 {
+            return self.cursor;
+        }
+        let shown = self.text.chars().skip(self.scroll);
+        let text_width: i32 = shown.map(|c| self.font.advance(c)).sum();
+        if text_width + self.font.advance(' ') <= width {
+            return len;
+        }
+        return len - 1;
+    }
+
     fn scroll_to_cursor(&mut self, width: i32) {
         self.scroll = self.scroll.min(self.cursor);
         let chars = self.chars();
+        // the cursor after the last char gets no room, so only text wider than the box scrolls
         let cursor_end = |scroll: usize| -> i32 {
             let shown = chars.iter().skip(scroll).take(self.cursor + 1 - scroll);
-            let cursor_width = if self.cursor < chars.len() {
-                0
-            } else {
-                self.font.advance(' ')
-            };
-            shown.map(|&c| self.font.advance(c)).sum::<i32>() + cursor_width
+            shown.map(|&c| self.font.advance(c)).sum::<i32>()
         };
         while self.scroll < self.cursor && cursor_end(self.scroll) > width {
             self.scroll += 1;
@@ -443,11 +486,16 @@ impl<S, E: PointerEvent + TextEvent> Gadget<S, E> for Textbox<S, E> {
         painter.fill(area, self.fill);
         painter.frame(area, self.border);
         let inner = self.inner(area);
-        self.scroll_to_cursor(inner.w);
+        // scrolled for the cursor while typing, so a short text could stay half hidden after
+        if self.focused {
+            self.scroll_to_cursor(inner.w);
+        } else {
+            self.scroll = 0;
+        }
         // a row lower when it can't be centred exactly, a font's bottom row is room for descenders
         let y = inner.y + ((inner.h - self.font.height() + 1) / 2).max(0);
         let selection = self.selection().filter(|_| self.focused);
-        let cursor = (self.focused && selection.is_none()).then_some(self.cursor);
+        let cursor = (self.focused && selection.is_none()).then(|| self.shown_cursor(inner.w));
         painter.clipped(inner, |painter| {
             let mut x = inner.x;
             let shown = self.text.chars().chain([' ']).enumerate().skip(self.scroll);
@@ -457,11 +505,11 @@ impl<S, E: PointerEvent + TextEvent> Gadget<S, E> for Textbox<S, E> {
                 let selected = selection.is_some_and(|(start, end)| (start..end).contains(&index));
                 let pen = if cursor == Some(index) {
                     painter.fill(cell, self.cursor_pen);
-                    self.fill
+                    self.over(self.cursor_pen, self.fill)
+                } else if selected {
+                    painter.fill(cell, self.selection_pen);
+                    self.over(self.selection_pen, self.text_pen)
                 } else {
-                    if selected {
-                        painter.fill(cell, self.selection_pen);
-                    }
                     self.text_pen
                 };
                 painter.text_in_font(x, y, &c.to_string(), pen, self.font);
@@ -488,7 +536,11 @@ mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use super::*;
-    use crate::rect::Point;
+    use crate::{
+        palette::{Color, IntuitionColorPalette},
+        rect::Point,
+        target::Framebuffer,
+    };
 
     const AREA: Rect = Rect::new(0, 0, 100, 10);
 
@@ -564,6 +616,22 @@ mod tests {
         };
         textbox.handle_event(&mut (), &past_end);
         assert_eq!(textbox.cursor, 5);
+    }
+
+    #[test]
+    fn typing_replaces_selected_on_focus() {
+        let mut textbox = textbox("64").select_on_focus();
+        let down = MouseEvent::Down {
+            pos: Point::new(char_x(0), 5),
+            button: MouseButton::Left,
+        };
+        textbox.handle_event(&mut (), &down);
+        assert_eq!(textbox.selection(), Some((0, 2)));
+        typed(&mut textbox, &[TextInput::Char('9')]);
+        assert_eq!(textbox.text(), "9");
+        // once it's focused, a click places the cursor as usual
+        textbox.handle_event(&mut (), &down);
+        assert_eq!((textbox.cursor, textbox.selection()), (0, None));
     }
 
     #[test]
@@ -730,10 +798,58 @@ mod tests {
         textbox.set_focused(true);
         textbox.cursor = textbox.len();
         textbox.scroll_to_cursor(40);
-        assert_eq!(textbox.scroll, textbox.len() - 4);
+        assert_eq!(textbox.scroll, textbox.len() - 5);
+
         textbox.cursor = 0;
         textbox.scroll_to_cursor(40);
         assert_eq!(textbox.scroll, 0);
+    }
+
+    #[test]
+    fn full_box_doesnt_scroll() {
+        let mut full = textbox("abcde");
+        full.set_focused(true);
+        full.cursor = full.len();
+        full.scroll_to_cursor(40);
+        assert_eq!(full.scroll, 0);
+    }
+
+    #[test]
+    fn unfocused_shows_start() {
+        let mut textbox = textbox("a fairly long song name");
+        textbox.set_focused(true);
+        textbox.cursor = textbox.len();
+        let palette =
+            IntuitionColorPalette::new([Color(0x000), Color(0xFFF), Color(0x666), Color(0xAAA)]);
+        let mut screen = Framebuffer::new(AREA.w, AREA.h);
+        let narrow = Rect::new(0, 0, 40, 10);
+        textbox.render(&(), narrow, &mut Painter::new(&mut screen, &palette));
+        assert!(textbox.scroll > 0);
+        textbox.set_focused(false);
+        textbox.render(&(), narrow, &mut Painter::new(&mut screen, &palette));
+        assert_eq!(textbox.scroll, 0);
+    }
+
+    #[test]
+    fn end_cursor_on_the_last_char_when_full() {
+        let mut textbox = textbox("99");
+        textbox.cursor = 2;
+        let char_width = Font::TOPAZ.advance('9');
+        // room for a third cell
+        assert_eq!(textbox.shown_cursor(3 * char_width), 2);
+        assert_eq!(textbox.shown_cursor(2 * char_width), 1);
+        // inside the text it stays put
+        textbox.cursor = 0;
+        assert_eq!(textbox.shown_cursor(2 * char_width), 0);
+    }
+
+    #[test]
+    fn mixed_pens() {
+        let plain = textbox("a").pens(Pen::BACKGROUND, Pen::SHINE, Pen(4), Pen(4));
+        assert_eq!(plain.over(Pen(4), Pen::BACKGROUND), Pen::BACKGROUND);
+        // white is pen 1 and red pen 4, so white text on red shows in pen 5
+        let mixed = plain.mix_pens();
+        assert_eq!(mixed.over(Pen(4), Pen::BACKGROUND), Pen(5));
     }
 
     struct FakeEvent(TextInput);

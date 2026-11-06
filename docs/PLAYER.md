@@ -72,7 +72,8 @@ slides and arpeggios, later.
 
 `OctamedicEngine::process` fills each buffer the callback asks for. It works out how many output
 frames a tick is (`sample rate x tick seconds`), renders up to the next tick, runs it, and so on.
-The leftover fraction of a frame carries over, so the tempo doesn't drift.
+The leftover fraction of a frame carries over, so the tempo doesn't drift. Ticks go on while the
+song is stopped, they just don't play rows, so notes played from the keyboard hold and decay too.
 
 On a row's first tick each track with a note triggers it. A track with only an instrument number
 remembers it for its next note, like the original.
@@ -87,6 +88,10 @@ differently.
 Volume is the instrument's volume scaled by track volume and song master volume (each out of 64).
 The listener's output volume comes after that and isn't part of the song.
 
+Previews (the sample import dialog's and the sample editor's) play on a channel of their own past
+the tracks, in the middle of the stereo picture, so they never touch a track's hold, volume or
+instrument.
+
 Muting a track (one of the song's 16) drops its `PaulaWrite`s before they reach the renderer, and
 cuts whatever it was playing. Everything else carries on as normal, so it picks up with the right
 instrument when it's unmuted. Mutes aren't saved with the song.
@@ -100,7 +105,14 @@ engine.
 `PaulaRenderer` is the Paula one: DMA on starts the latched range, the latch is picked up when a
 range ends, DMA off silences the channel. The output runs at the sound card's rate, not Paula's,
 so each output frame is the average of the bytes played during it, weighted by how long each was
-held. You keep the held-byte sound without extra aliasing from the resampling.
+held. You keep the held-byte sound without extra aliasing from the resampling. In stereo the
+channels go left, right, right, left like Paula's (the tracks past 4 repeat that), and the preview
+channel goes in the middle (`PaulaRenderer::centre_channel`). With mono on (`EngineCommand::SetMono`)
+each frame's left and right become their average after rendering, the same as Paula's mono mix, so
+a track panned to one side comes out of both at half.
+
+`EngineHandle::spawn` opens the device with the id it's given (from `output_devices`), or the
+default one.
 
 The "LED" filter (`amiga/filter.rs`) goes over the whole mix. On the real thing it's a 2-pole
 Sallen-Key low-pass that the power LED bit switches; from the board's component values it comes out
@@ -116,17 +128,52 @@ play the octave copy and period the tables in [FILES.md](FILES.md) pick for each
 data. ExtSample (type 7) plays two octaves under the table. The 16-bit wrap on very long copies
 isn't copied.
 
+## Hold and decay
+
+An instrument's HLD: is how many ticks each note plays, and DEC: how fast it fades after that: the
+decay comes off the note's volume (0 to 64) every tick, and a decay of 0 drops it to nothing at
+once. The channel isn't switched off, it just plays on at volume 0. Instruments with a hold of 0
+ignore all of this. Both go from 0 to 99, the two digits OctaMED's boxes take, and bigger values in
+a module or synth sound load as 99.
+
+A hold symbol, `-|-`, is a cell with an instrument but no note (Enter in the editor). It keeps a
+note going: while the *next* line has one, the hold doesn't count down. So hold 4 then two `-|-`
+lines at 6 ticks a line is 6 + 6 + 4 ticks. Like the original, it doesn't look into the next block,
+and once the decay has started nothing can stop it. A hold symbol also puts the track's volume
+back to the instrument's, so one after a decayed note brings it back at full volume.
+
+Only a note with an instrument number starts a new hold and resets the volume. One without
+carries on with the track's hold and volume, so after a note has decayed away, a note with no
+instrument number is silent. That's what MED does.
+
+These details come from libxmp's MED player (`src/med_extras.c`), checked against the manual's
+examples.
+
+## Effects
+
+`apply_effects` runs on a line's first tick, after its note, and matches the command number to a
+function for that effect. Only 0C so far.
+
+0C sets the track's volume, read as hex or as two decimal digits depending on the song's VOL HEX/DEC
+setting, and capped at 64. It's the same volume decay fades, and like MED it lasts until the track's
+next note with an instrument number, a hold symbol, or stop. A 0C on a note's or a `-|-`'s line wins
+over the reset those do, and the footer's meters show the note at the volume it sets. Once a hold
+has run out the note is over, so a volume command after that does nothing until a note or `-|-`
+starts the track again.
+
+Clicking HEX or DEC only changes how volume commands are read, so a song's volume commands play
+differently. With Shift held, every volume command in the song is rewritten as well so it plays the
+same as before (decimal 40 becomes hex 28), like OctaMED. `volume_from_argument` and
+`volume_argument` in `data/volume.rs` go between the two.
+
 ## Not done yet
 
-- Effects (the command column). `tick` has a spot for them.
+- Effects other than 0C. Each gets a function, called from `apply_effects`.
 - 5 to 8 channel songs, where OctaMED mixes two tracks into each Paula channel in software. That
   will be its own renderer.
-- Stereo. Paula puts channels 0 and 3 left and 1 and 2 right; the renderer puts everything in the
-  middle.
 - The A500's fixed RC low-pass (about 4.4kHz, always on, unlike the LED filter).
 - Paula can't fetch faster than a period of about 124 allows, the renderer doesn't limit that.
 - MIDI and synth instruments.
-- Hold and decay. An instrument with a hold length plays each note for that many ticks and then
-  fades out by its decay. A line after the note with no note but the same instrument (shown as
-  `-|-`, entered with Enter) keeps the note held past its hold length. In the module it's just a
-  cell with note 0 and an instrument number. Instruments without a hold length ignore it.
+- Command 08, which sets hold and decay for one note (left digit decay, right digit hold).
+- A note on a line followed by a tone portamento (03) also keeps its hold going in OctaMED, once
+  commands exist.

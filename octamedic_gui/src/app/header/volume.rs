@@ -10,10 +10,10 @@ use rustuition::{
 };
 
 use crate::{
-    app::{fonts, pens, state::AppState},
+    app::{fonts, output::open_output_dialog, pens, state::AppState},
     framework::{
         event::{Event, MouseButton},
-        widgets::{Button, Textbox},
+        widgets::{self, Button, Textbox},
     },
 };
 
@@ -56,8 +56,9 @@ pub struct Volume {
     master_volume: Textbox,
     track_steps: [Button; STEPS.len()],
     master_steps: [Button; STEPS.len()],
-    // audio routing settings, not there yet
+    // audio input settings, not there yet
     input: Button,
+    // opens the output dialog
     output: Button,
     // from the last render, for clicks
     track_boxes: [Rect; SONG_TRACKS],
@@ -71,7 +72,7 @@ impl Volume {
             master_volume: volume_box(),
             track_steps: step_buttons(),
             master_steps: step_buttons(),
-            input: routing_button("INPUT"),
+            input: routing_button("INPUT").enabled(false),
             output: routing_button("OUTPUT"),
             track_boxes: [Rect::default(); SONG_TRACKS],
         };
@@ -99,6 +100,9 @@ impl Gadget<AppState, Event> for Volume {
                 state.set_master_volume(stepped(state.song().master_volume.get(), *step));
             }
         }
+        if self.output.clicked().is_some() {
+            open_output_dialog(state);
+        }
         let hex = state.song().flags.volumes_hex;
         if let Some(volume) = typed_volume(&self.track_volume, hex) {
             state.set_track_volume(track, volume);
@@ -117,6 +121,12 @@ impl Gadget<AppState, Event> for Volume {
     }
 
     fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
+        // both see every click, it's how a text box finds out it lost focus
+        if self.track_volume.handle_event(state, event)
+            | self.master_volume.handle_event(state, event)
+        {
+            return true;
+        }
         if let Event::MouseDown {
             pos,
             button: MouseButton::Left,
@@ -127,13 +137,12 @@ impl Gadget<AppState, Event> for Volume {
                 return true;
             }
         }
-        return self.track_volume.handle_event(state, event)
-            || self.master_volume.handle_event(state, event)
-            || self
-                .track_steps
-                .iter_mut()
-                .chain(&mut self.master_steps)
-                .any(|button| button.handle_event(state, event));
+        return self
+            .track_steps
+            .iter_mut()
+            .chain(&mut self.master_steps)
+            .chain([&mut self.output])
+            .any(|button| button.handle_event(state, event));
     }
 
     fn render(&mut self, state: &AppState, area: Rect, painter: &mut Painter) {
@@ -213,15 +222,15 @@ impl Gadget<AppState, Event> for Volume {
 }
 
 fn routing_button(label: &'static str) -> Button {
-    return Button::new(label).font(fonts::LABEL).enabled(false);
+    return Button::new(label).font(fonts::LABEL);
 }
 
 fn volume_box() -> Textbox {
-    return Textbox::new()
+    return widgets::textbox()
         .font(fonts::INTERFACE)
-        .pens(Pen::BACKGROUND, Pen::SHINE, Pen::FILL, pens::RED)
         .padding(1)
-        .max_length(2);
+        .max_length(2)
+        .select_on_focus();
 }
 
 fn step_buttons() -> [Button; STEPS.len()] {
@@ -308,9 +317,9 @@ mod tests {
     }
 
     #[test]
-    fn routing_buttons_are_placeholders() {
+    fn routing_buttons_fit() {
         let (volume, _) = panel();
-        assert!(!volume.input.is_enabled() && !volume.output.is_enabled());
+        assert!(!volume.input.is_enabled());
         for rect in [INPUT, OUTPUT] {
             assert!(rect.x > DIVIDER.right() && rect.right() <= AREA.right());
             assert!(rect.bottom() <= AREA.bottom());
@@ -319,6 +328,13 @@ mod tests {
 
     fn centre(rect: Rect) -> Point {
         return Point::new(rect.x + rect.w / 2, rect.y + rect.h / 2);
+    }
+
+    #[test]
+    fn output_opens_its_dialog() {
+        let (mut volume, mut state) = panel();
+        click(&mut volume, &mut state, centre(OUTPUT));
+        assert_eq!(state.take_pending_dialogs().len(), 1);
     }
 
     #[test]

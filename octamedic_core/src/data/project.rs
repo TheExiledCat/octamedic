@@ -21,8 +21,8 @@ use mmd::{
 
 use crate::data::{
     instrument::{
-        InstrumentKind, MAX_FINETUNE, MAX_INSTRUMENT_VOLUME, MAX_INSTRUMENTS, MIN_FINETUNE,
-        OctamedicInstrument, OctamedicSample, OctamedicSynth, SampleOctaves,
+        InstrumentKind, MAX_FINETUNE, MAX_HOLD_DECAY, MAX_INSTRUMENT_VOLUME, MAX_INSTRUMENTS,
+        MIN_FINETUNE, OctamedicInstrument, OctamedicSample, OctamedicSynth, SampleOctaves,
     },
     notation::OctamedicNotation,
     palette::OctamedColorPalette,
@@ -137,8 +137,8 @@ impl FromModule for OctamedicProject {
             instrument.midi.preset = info.midi_preset.0;
             if let Some(extension) = extensions.and_then(|e| e.get(index)) {
                 instrument.finetune = extension.fine_tune.0.clamp(MIN_FINETUNE, MAX_FINETUNE);
-                instrument.hold = extension.hold.0;
-                instrument.decay = extension.decay.0;
+                instrument.hold = extension.hold.0.min(MAX_HOLD_DECAY);
+                instrument.decay = extension.decay.0.min(MAX_HOLD_DECAY);
                 instrument.midi.suppress_note_off = extension.supress_midi_off.0 != 0;
             }
             instrument.kind = instrument_kind(module, index, header, info);
