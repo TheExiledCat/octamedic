@@ -210,6 +210,29 @@ impl OctamedicSample {
         };
     }
 
+    pub fn with_loop(&self, repeat: Option<(usize, usize)>) -> Self {
+        return Self {
+            data: self.data.clone(),
+            repeat,
+            ..*self
+        };
+    }
+
+    /// How far a loop can reach: it's in the shortest octave copy, which for a plain sample is
+    /// all of it.
+    pub fn loop_limit(&self) -> usize {
+        return self.octave_copy(0).data.end;
+    }
+
+    /// The nearest silent sample past `from`, towards the end or the start.
+    pub fn zero_from(&self, from: usize, forward: bool) -> Option<usize> {
+        let silent = |&index: &usize| self.data.get(index) == Some(&0);
+        if forward {
+            return (from + 1..self.data.len()).find(silent);
+        }
+        return (0..from.min(self.data.len())).rev().find(silent);
+    }
+
     pub fn with_value(&self, index: usize, value: i8) -> Self {
         let mut data = self.data.clone();
         data[index] = value;
@@ -452,5 +475,26 @@ mod tests {
             octaves: SampleOctaves::One,
         };
         assert_eq!(plain.octave_copy(0).data, 0..5);
+    }
+
+    #[test]
+    fn finding_zeros() {
+        let mut sample = ramp();
+        sample.data[2] = 0;
+        sample.data[7] = 0;
+        assert_eq!(sample.zero_from(4, true), Some(7));
+        assert_eq!(sample.zero_from(4, false), Some(2));
+        assert_eq!(sample.zero_from(7, true), None);
+        assert_eq!(sample.zero_from(2, false), None);
+    }
+
+    #[test]
+    fn a_loop_stays_in_the_shortest_copy() {
+        let mut sample = ramp();
+        assert_eq!(sample.loop_limit(), 10);
+        sample.data = vec![0; 21];
+        sample.octaves = SampleOctaves::Three;
+        assert_eq!(sample.loop_limit(), 3);
+        assert_eq!(sample.with_loop(None).repeat, None);
     }
 }

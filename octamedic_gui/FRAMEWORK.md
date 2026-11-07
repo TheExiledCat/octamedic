@@ -133,6 +133,14 @@ The copy buffer is `state.copy_buffer`: COPY puts the range in it, CUT does that
 does, PASTE puts it in at the range's start, S>CBUFF copies the whole sample and CBUFF>S swaps the
 sample for it. MIX mixes the buffer in from the range's start, only as far as the range goes if
 there is one, and REV turns the range round. BUFFSIZE takes a new length after Enter, with a prompt to clear or keep the sample.
+
+LOOP ON switches the sample's loop (`OctamedicSample::repeat`) on and off. Turned on it's the
+whole sample, or what it was when it was last turned off; a multi-octave sample's loop stays in its
+shortest copy (`loop_limit`). While it's on, the loop's ends show as OctaMED's sprite markers: a
+blue line with a flag, the start's flag to its left and the end's to its right, the selected one's
+filled yellow. S and E pick which end the arrows move: < and > by 2 bytes, <0 and 0> to the next
+silent sample. Dragging a marker's flag or line moves it and selects it. A loop is kept at least
+4 bytes long, as MMD stores it in words and takes a one word loop for none.
 The rest of the buttons are ghosted.
 
 Change project data through `AppState` methods like `enter_note` and `edit_track`, not directly.

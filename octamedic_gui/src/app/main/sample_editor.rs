@@ -13,11 +13,12 @@ use rustuition::{
     gadget::Gadget,
     gadgets::button::{ContentArea, Triangle},
     painter::{Painter, Pen},
-    rect::Rect,
+    rect::{Point, Rect},
     shape::{
         Direction::{self, Down, Left, Right, Up},
         Sides,
     },
+    target::Rgba,
 };
 
 use crate::{
@@ -111,8 +112,21 @@ const PLAY_DISPLAY: &str = "PLAY DISPLAY";
 const PLAY_RANGE: &str = "PLAY RANGE";
 // C-2, what the PITCH box shows until it's hooked up
 const PLAY_NOTE: OctamedicNote = OctamedicNote { value: 13 };
-// S is on: the loop's start is what the arrows move
-const SELECTED: &str = "S";
+const LOOP_ON: &str = "LOOP ON";
+// which of the loop's ends the arrows move
+const LOOP_START: &str = "S";
+const LOOP_END: &str = "E";
+// MMD keeps a loop in words and takes a one word loop for none
+const MIN_LOOP: usize = 4;
+const LOOP_STEP: usize = 2;
+// the loop markers are sprites with colours of their own: a line down the waveform with a flag
+// at the top, the start's to its left and the end's to its right, filled yellow on the selected
+// one
+const MARKER_BLUE: Rgba = Rgba::rgb(0x66, 0x66, 0xFF);
+const MARKER_YELLOW: Rgba = Rgba::rgb(0xFF, 0xFF, 0x00);
+const MARKER_LINE_WIDTH: i32 = 2;
+const MARKER_FLAG: [i32; 2] = [16, 8];
+const MARKER_FLAG_BORDER: [i32; 2] = [2, 1];
 const ZOOM_IN: &str = "ZOOM IN";
 const ZOOM_OUT: &str = "ZOOM OUT";
 const SHOW_ALL: &str = "SHOW ALL";
@@ -167,9 +181,9 @@ const BUTTONS: [(&str, Rect); 32] = [
     (RANGE_ALL, on_row(3, 134, 64)),
     ("FILT", on_row(3, 198, 30)),
     ("BOOST", on_row(3, 228, 42)),
-    ("LOOP ON", on_row(3, 342, 68)),
-    (SELECTED, on_row(3, 410, 16)),
-    ("E", on_row(3, 426, 14)),
+    (LOOP_ON, on_row(3, 342, 68)),
+    (LOOP_START, on_row(3, 410, 16)),
+    (LOOP_END, on_row(3, 426, 14)),
 
     (CUT, on_row(4, 6, 64)),
     (COPY, on_row(4, 70, 64)),
@@ -202,6 +216,9 @@ const HOOKED_UP: &[&str] = &[
     PLAY_RANGE,
     CLEAR_CLIPBOARD,
     CHANGE_VOLUME,
+    LOOP_ON,
+    LOOP_START,
+    LOOP_END,
 ];
 
 const LOOP_ARROWS: [Rect; 2] = [on_row(3, 440, 14), on_row(3, 454, 14)];
@@ -505,6 +522,49 @@ pub struct SampleEditor {
     // Enter was pressed in BUFFSIZE, rather than it being left some other way
     buffer_size_entered: bool,
     mouse: WaveformMouse,
+    selected_loop_end: LoopEnd,
+    // what LOOP ON last turned off, to put back when it's turned on again
+    turned_off_loop: Option<(usize, usize)>,
+    dragged_loop_end: Option<LoopEnd>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LoopEnd {
+    Start,
+    End,
+}
+
+// `which` end of the loop taken to `at`, keeping it at least MIN_LOOP long and inside `limit`
+fn moved_loop(
+    (start, end): (usize, usize),
+    which: LoopEnd,
+    at: usize,
+    limit: usize,
+) -> (usize, usize) {
+    return match which {
+        LoopEnd::Start => (at.min(end.saturating_sub(MIN_LOOP)), end),
+        LoopEnd::End => (start, at.max(start + MIN_LOOP).min(limit)),
+    };
+}
+
+fn move_loop_end(state: &mut AppState, which: LoopEnd, at: usize) {
+    let Some(sample) = active_sample(state) else {
+        return;
+    };
+    let Some(repeat) = sample.repeat else {
+        return;
+    };
+    let moved = moved_loop(repeat, which, at, sample.loop_limit());
+    if moved != repeat {
+        edit_sample(state, |sample| sample.with_loop(Some(moved)));
+    }
+}
+
+fn loop_end_at(repeat: (usize, usize), which: LoopEnd) -> usize {
+    return match which {
+        LoopEnd::Start => repeat.0,
+        LoopEnd::End => repeat.1,
+    };
 }
 
 impl SampleEditor {
@@ -531,10 +591,9 @@ impl SampleEditor {
             .map(|rect| (Button::new("C-2").font(fonts::INTERFACE), rect))
             .collect();
         let labelled = BUTTONS.into_iter().map(|(label, rect)| {
-            let mut button = Button::new(label)
+            let button = Button::new(label)
                 .font(label_font(label, rect.w))
                 .enabled(HOOKED_UP.contains(&label));
-            button.set_toggled(label == SELECTED);
             return (button, rect);
         });
         let loop_arrows = LOOP_ARROWS
@@ -551,8 +610,7 @@ impl SampleEditor {
             .map(|(rect, direction)| (Button::new(octave_label(direction)), rect));
         let pictures = loop_arrows
             .chain(to_zero)
-            .chain(octaves)
-            .map(|(button, rect)| (button.enabled(false), rect));
+            .chain(octaves.map(|(button, rect)| (button.enabled(false), rect)));
         let buttons = labelled.chain(pictures).collect();
         let keys = Keymap::new("sample editor")
             .bind(
@@ -579,6 +637,9 @@ impl SampleEditor {
             buffer_size_entered: false,
             mouse: WaveformMouse::default(),
             free_hand: false,
+            selected_loop_end: LoopEnd::Start,
+            turned_off_loop: None,
+            dragged_loop_end: None,
         };
     }
 }
@@ -611,6 +672,11 @@ impl SampleEditor {
     fn clicked(&mut self, label: &str) -> bool {
         return self.button(label).clicked().is_some();
     }
+
+    // the picture buttons come after the labelled ones: the loop arrows, then to zero
+    fn picture_clicked(&mut self, index: usize) -> bool {
+        return self.buttons[BUTTONS.len() + index].0.clicked().is_some();
+    }
 }
 
 impl SampleEditor {
@@ -631,9 +697,15 @@ impl SampleEditor {
         return self.view.sample_at(column, WAVEFORM.w);
     }
 
-    fn press_waveform(&mut self, button: MouseButton, sample_length: usize) {
+    fn press_waveform(&mut self, state: &AppState, button: MouseButton, sample_length: usize) {
         let pos = self.mouse.press_pos();
         let index = self.sample_at(pos.x);
+        if button == MouseButton::Left && !self.free_hand {
+            self.dragged_loop_end = self.marker_at(state, pos);
+            if let Some(which) = self.dragged_loop_end {
+                self.selected_loop_end = which;
+            }
+        }
         if button != MouseButton::Right || sample_length == 0 {
             return;
         }
@@ -643,6 +715,114 @@ impl SampleEditor {
             Some(index)
         };
     }
+    // a marker's flag or line under `pos`, the selected one first where they overlap
+    fn marker_at(&self, state: &AppState, pos: Point) -> Option<LoopEnd> {
+        let repeat = active_sample(state)?.repeat?;
+        let selected = self.selected_loop_end;
+        let other = match selected {
+            LoopEnd::Start => LoopEnd::End,
+            LoopEnd::End => LoopEnd::Start,
+        };
+        return [selected, other].into_iter().find(|&which| {
+            let [flag, line] = self.marker_rects(loop_end_at(repeat, which), which);
+            let at = |rect: Rect| rect.contains(pos);
+            return at(flag) || at(line);
+        });
+    }
+
+    // a marker's flag and line, in waveform columns and rows
+    fn marker_rects(&self, at: usize, which: LoopEnd) -> [Rect; 2] {
+        // a loop to the end of the sample would have it just past the waveform
+        let column = self
+            .view
+            .column_of(at, WAVEFORM.w)
+            .min(WAVEFORM.w - MARKER_LINE_WIDTH);
+        let [width, height] = MARKER_FLAG;
+        let line = Rect::new(column, 0, MARKER_LINE_WIDTH, WAVEFORM.h);
+        let flag_x = match which {
+            LoopEnd::Start => column + MARKER_LINE_WIDTH - width,
+            LoopEnd::End => column,
+        };
+        return [Rect::new(flag_x, 0, width, height), line];
+    }
+
+    fn edit_loop(&mut self, state: &mut AppState) {
+        if self.clicked(LOOP_START) {
+            self.selected_loop_end = LoopEnd::Start;
+        }
+        if self.clicked(LOOP_END) {
+            self.selected_loop_end = LoopEnd::End;
+        }
+        let sample = active_sample(state);
+        let repeat = sample.and_then(|sample| sample.repeat);
+        let limit = sample.map_or(0, |sample| sample.loop_limit());
+        let which = self.selected_loop_end;
+        let selected = repeat.map(|repeat| loop_end_at(repeat, which));
+        let moves = [
+            selected.map(|at| at.saturating_sub(LOOP_STEP)),
+            selected.map(|at| at + LOOP_STEP),
+            selected.and_then(|at| sample?.zero_from(at, false)),
+            selected.and_then(|at| sample?.zero_from(at, true)),
+        ];
+        if self.clicked(LOOP_ON) {
+            match repeat {
+                Some(repeat) => {
+                    self.turned_off_loop = Some(repeat);
+                    edit_sample(state, |sample| sample.with_loop(None));
+                }
+                None if limit >= MIN_LOOP => {
+                    let back = self.turned_off_loop.filter(|&(_, end)| end <= limit);
+                    let repeat = back.unwrap_or((0, limit));
+                    edit_sample(state, |sample| sample.with_loop(Some(repeat)));
+                }
+                None => {}
+            }
+        }
+        for (index, to) in moves.into_iter().enumerate() {
+            if self.picture_clicked(index)
+                && let Some(to) = to
+            {
+                move_loop_end(state, which, to);
+            }
+        }
+        if let Some(dragged) = self.dragged_loop_end {
+            let at = self.sample_at(self.mouse.pos().x);
+            move_loop_end(state, dragged, at);
+            if self.mouse.held().is_none() {
+                self.dragged_loop_end = None;
+            }
+        }
+        let looping = active_sample(state).is_some_and(|sample| sample.repeat.is_some());
+        self.button(LOOP_ON).set_toggled(looping);
+        self.button(LOOP_START).set_toggled(which == LoopEnd::Start);
+        self.button(LOOP_END).set_toggled(which == LoopEnd::End);
+    }
+
+    fn render_markers(&self, state: &AppState, waveform: Rect, painter: &mut Painter) {
+        let Some(repeat) = active_sample(state).and_then(|sample| sample.repeat) else {
+            return;
+        };
+        let visible = self.view.visible();
+        painter.clipped(waveform, |painter| {
+            for which in [LoopEnd::Start, LoopEnd::End] {
+                let at = loop_end_at(repeat, which);
+                if !(visible.start..=visible.end).contains(&at) {
+                    continue;
+                }
+                let [flag, line] = self
+                    .marker_rects(at, which)
+                    .map(|rect| rect.within(waveform));
+                painter.fill_color(flag, MARKER_BLUE);
+                painter.fill_color(line, MARKER_BLUE);
+                if which == self.selected_loop_end {
+                    let [x, y] = MARKER_FLAG_BORDER;
+                    let inside = Rect::new(flag.x + x, flag.y + y, flag.w - 2 * x, flag.h - 2 * y);
+                    painter.fill_color(inside, MARKER_YELLOW);
+                }
+            }
+        });
+    }
+
     // only the sample under the mouse each frame, so a fast drag leaves gaps like OctaMED's
     fn draw_waveform(&mut self, state: &mut AppState) {
         if let Some(button) = self.mouse.held()
@@ -769,6 +949,8 @@ impl Gadget<AppState, Event> for SampleEditor {
             self.view = WaveView::default();
             self.set_range(0..0);
             self.range_anchor = None;
+            self.turned_off_loop = None;
+            self.dragged_loop_end = None;
         }
         // the sample can have been changed elsewhere since, by BUFFSIZE's prompt or a load
         self.keep_range_inside(sample_length(state));
@@ -777,8 +959,9 @@ impl Gadget<AppState, Event> for SampleEditor {
         let length = sample_length(state);
         self.view.follow(length);
         if let Some(button) = self.mouse.take_press() {
-            self.press_waveform(button, length);
+            self.press_waveform(state, button, length);
         }
+        self.edit_loop(state);
         self.mouse.take_release();
         self.drag_range();
         self.draw_waveform(state);
@@ -893,6 +1076,7 @@ impl Gadget<AppState, Event> for SampleEditor {
                 Sides::NONE,
             );
         }
+        self.render_markers(state, waveform, painter);
         if sample_length(state) == 0 {
             let [x, y] = NO_SAMPLE_POSITION;
             painter.text(waveform.x + x, waveform.y + y, NO_SAMPLE, Pen::SHINE);
@@ -1603,5 +1787,122 @@ mod tests {
         let mut editor = SampleEditor::new();
         editor.update(&mut state);
         assert_eq!(editor.boxes[0].0.text(), "22040");
+    }
+
+    fn with_loop(state: &mut AppState, data: Vec<i8>, repeat: Option<(usize, usize)>) {
+        let mut instrument = OctamedicInstrument::new("sample");
+        instrument.kind = InstrumentKind::Sample(Arc::new(OctamedicSample {
+            data,
+            repeat,
+            octaves: SampleOctaves::One,
+        }));
+        let active = state.active_instrument;
+        state.song_mut().set_instrument(active, Some(instrument));
+    }
+
+    fn drawn_editor(state: &mut AppState) -> (SampleEditor, Framebuffer) {
+        let mut editor = SampleEditor::new();
+        editor.update(state);
+        let mut screen = Framebuffer::new(AREA.w, AREA.h);
+        editor.render(state, AREA, &mut Painter::new(&mut screen, &state.palette));
+        return (editor, screen);
+    }
+
+    // the loop arrows, then to zero
+    fn click_picture(editor: &mut SampleEditor, state: &mut AppState, index: usize) {
+        let area = editor.buttons[BUTTONS.len() + index].0.area();
+        let pos = Point::new(area.x + area.w / 2, area.y + area.h / 2);
+        let button = MouseButton::Left;
+        editor.handle_event(state, &Event::MouseDown { pos, button });
+        editor.handle_event(state, &Event::MouseUp { pos, button });
+        editor.update(state);
+    }
+
+    fn repeat(state: &AppState) -> Option<(usize, usize)> {
+        return active_sample(state).unwrap().repeat;
+    }
+
+    #[test]
+    fn loop_on_turns_it_on_and_off() {
+        let mut state = state();
+        with_sample(&mut state, 1000);
+        let (mut editor, _) = drawn_editor(&mut state);
+        click(&mut editor, &mut state, LOOP_ON);
+        assert_eq!(repeat(&state), Some((0, 1000)));
+        assert!(editor.button(LOOP_ON).is_toggled());
+        click(&mut editor, &mut state, LOOP_END);
+        click_picture(&mut editor, &mut state, 0);
+        assert_eq!(repeat(&state), Some((0, 998)));
+        click(&mut editor, &mut state, LOOP_ON);
+        assert_eq!(repeat(&state), None);
+        click(&mut editor, &mut state, LOOP_ON);
+        assert_eq!(repeat(&state), Some((0, 998)));
+    }
+
+    #[test]
+    fn loop_ends_stay_apart_and_inside() {
+        assert_eq!(moved_loop((10, 20), LoopEnd::Start, 30, 100), (16, 20));
+        assert_eq!(moved_loop((10, 20), LoopEnd::End, 5, 100), (10, 14));
+        assert_eq!(moved_loop((10, 20), LoopEnd::End, 200, 100), (10, 100));
+    }
+
+    #[test]
+    fn to_zero_finds_silence() {
+        let mut state = state();
+        let mut data = vec![1; 1000];
+        data[300] = 0;
+        data[700] = 0;
+        with_loop(&mut state, data, Some((0, 1000)));
+        let (mut editor, _) = drawn_editor(&mut state);
+        click_picture(&mut editor, &mut state, 3);
+        assert_eq!(repeat(&state), Some((300, 1000)));
+        click(&mut editor, &mut state, LOOP_END);
+        click_picture(&mut editor, &mut state, 2);
+        assert_eq!(repeat(&state), Some((300, 700)));
+    }
+
+    #[test]
+    fn dragging_a_marker() {
+        let mut state = state();
+        with_loop(&mut state, vec![0; 1000], Some((200, 600)));
+        let (mut editor, _) = drawn_editor(&mut state);
+        let waveform = WAVEFORM.within(AREA);
+        let at = |column: i32| Point::new(waveform.x + column, waveform.y + 3);
+        let button = MouseButton::Left;
+        // the end's flag is to the right of its line, at sample 600's column
+        editor.handle_event(
+            &mut state,
+            &Event::MouseDown {
+                pos: at(390),
+                button,
+            },
+        );
+        editor.handle_event(&mut state, &Event::MouseMove { pos: at(512) });
+        editor.handle_event(
+            &mut state,
+            &Event::MouseUp {
+                pos: at(512),
+                button,
+            },
+        );
+        editor.update(&mut state);
+        assert_eq!(repeat(&state), Some((200, 800)));
+        assert!(editor.button(LOOP_END).is_toggled());
+    }
+
+    #[test]
+    fn the_selected_flag_is_yellow() {
+        let mut state = state();
+        with_loop(&mut state, vec![0; 1000], Some((200, 600)));
+        let (_, screen) = drawn_editor(&mut state);
+        let waveform = WAVEFORM.within(AREA);
+        let pixel = |column: i32| {
+            let [r, g, b] =
+                screen.pixels()[((waveform.y + 4) * AREA.w + waveform.x + column) as usize];
+            return Rgba::rgb(r, g, b);
+        };
+        // the start's flag left of column 128, the end's right of 384
+        assert_eq!(pixel(120), MARKER_YELLOW);
+        assert_eq!(pixel(392), MARKER_BLUE);
     }
 }
