@@ -1847,7 +1847,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&folder);
     }
 
+    // cpal's WASAPI backend crashes with an access violation when no audio endpoint service
+    // is running (e.g. in headless Windows CI)
     #[test]
+    #[cfg(not(windows))]
     fn open_audio_falls_back_when_saved_device_fails() {
         let mut state = state();
         state.config_mut().output.device = Some("non-existent-device-12345".to_owned());
