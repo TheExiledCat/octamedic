@@ -2095,7 +2095,7 @@ mod tests {
     }
 
     #[test]
-    fn range_buffer_goes_with_del_buff() {
+    fn the_range_buffer_goes_with_del_buff() {
         let mut state = state();
         state.select_block_range();
         state.copy_range();

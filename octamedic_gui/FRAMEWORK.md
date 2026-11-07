@@ -234,7 +234,7 @@ gets smaller. Its cells are filled red, which turns the text over them rose, lik
 bitplanes. A
 right click anywhere else still switches the displays off. The RANGE panel (`header/range.rs`)
 works on it: SELECT TRACK and SELECT BLOCK make the cursor's track or the whole block the range,
-CUT and COPY put it in `AppState::range_buffer` (its own, apart from the track and block buffers;
+CUT and COPY put it in `Clipboard::range` (its own, apart from the track and block buffers;
 DEL BUFF clears all three), PASTE puts the buffer in from the cursor right and down, over what's
 there, and PASTE SELECT does the same from the first track picked with SELECT: 0 to F rather than
 the cursor's (SET picks them all, CLR none; picking more than one is for the transpose panel, which
