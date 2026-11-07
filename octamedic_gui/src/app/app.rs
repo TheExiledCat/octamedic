@@ -390,10 +390,13 @@ impl EventHandler for App {
         return Ok(());
     }
 
-    fn key_up_event(&mut self, _ctx: &mut Context, input: KeyInput) -> GameResult {
+    fn key_up_event(&mut self, ctx: &mut Context, input: KeyInput) -> GameResult {
         if let Some(key) = input.keycode {
             self.key_repeat.released(key);
             self.track_alt(key, false);
+            if !holding_other_keys(ctx, key) {
+                self.state.end_chord();
+            }
         }
         return Ok(());
     }
@@ -414,6 +417,28 @@ impl EventHandler for App {
         });
         return Ok(());
     }
+}
+
+fn holding_other_keys(ctx: &Context, released: KeyCode) -> bool {
+    return ctx
+        .keyboard
+        .pressed_keys()
+        .iter()
+        .any(|&key| key != released && !is_modifier(key));
+}
+
+fn is_modifier(key: KeyCode) -> bool {
+    return matches!(
+        key,
+        KeyCode::LShift
+            | KeyCode::RShift
+            | KeyCode::LControl
+            | KeyCode::RControl
+            | KeyCode::LAlt
+            | KeyCode::RAlt
+            | KeyCode::LWin
+            | KeyCode::RWin
+    );
 }
 
 // every quit ends up here: QUIT and Ctrl+Q once they've asked about unsaved changes, and the

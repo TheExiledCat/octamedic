@@ -161,6 +161,12 @@ impl Gadget<AppState, Event> for MainView {
         }
         // any screen plays the keyboard's notes, unless a text field or the block editor took them
         if let Some(key) = typed_key(event).filter(|_| !taken) {
+            if state.chord_mode && is_repeat(event) {
+                return state.key_to_note(key).is_some();
+            }
+            if state.chord_mode {
+                return state.play_chord_key(key);
+            }
             return state.play_key(state.cursor.track, key).is_some();
         }
         return taken;
@@ -213,6 +219,10 @@ fn typed_key(event: &Event) -> Option<char> {
         return None;
     }
     return Some(character);
+}
+
+fn is_repeat(event: &Event) -> bool {
+    return matches!(event, Event::Text { repeat: true, .. });
 }
 
 // what's held with a typed space, if it's not a shortcut
