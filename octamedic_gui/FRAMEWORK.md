@@ -133,6 +133,27 @@ The copy buffer is `state.copy_buffer`: COPY puts the range in it, CUT does that
 does, PASTE puts it in at the range's start, S>CBUFF copies the whole sample and CBUFF>S swaps the
 sample for it. MIX mixes the buffer in from the range's start, only as far as the range goes if
 there is one, and REV turns the range round. BUFFSIZE takes a new length after Enter, with a prompt to clear or keep the sample.
+
+LOOP ON switches the sample's loop (`OctamedicSample::repeat`) on and off. Turned on it's the
+whole sample, or what it was when it was last turned off if the sample hasn't changed since; a
+multi-octave sample's loop stays in its
+shortest copy (`loop_limit`). While it's on, the loop's ends show as OctaMED's sprite markers: a
+blue line with a flag, the start's flag to its left and the end's to its right, the selected one's
+filled yellow. S and E pick which end the arrows move: < and > by 2 bytes, <0 and 0> to the next
+silent sample on an even byte. Dragging a marker's flag or line moves it as far as the mouse goes
+and selects it, and only shown markers can be grabbed. MMD stores a loop in words, takes a one word
+loop for none and its length has to fit a word, so every loop goes through
+`instrument::word_loop`: even ends, 4 bytes to 128K long.
+
+PITCH is the period the sample sounds right at and DEST the one CHANGE RATE moves it to; the
+boxes next to them show its note, or --- if it isn't one of the table's (`period::period_note`),
+and clicking one then pressing a note key sets its period to that note's. CHANGE RATE resamples
+the sample so that played at PITCH it sounds like DEST did (`OctamedicSample::resampled`, the loop
+stretched with it), and OCT ▲ and OCT ▼ halve and double it. Anything that would come out longer
+than BUFFSIZE's 131072 is turned down. Shortening averages the samples each
+new one covers and lengthening draws the ones between on a line, so both smooth the sound like
+OctaMED's; up and down an octave a few times comes back noticeably duller.
+PLAY DISPLAY and PLAY RANGE play at the note nearest PITCH.
 The rest of the buttons are ghosted.
 
 Change project data through `AppState` methods like `enter_note` and `edit_track`, not directly.
@@ -160,6 +181,14 @@ with `state.open_prompt(prompt)`. Until a key's pressed it gets every event and 
 the first key that isn't a modifier closes it and goes to its closure with the state.
 `Prompt::yes_no` is the usual "(Y/N)" question. `state.notify(text)` shows a message in the same
 bar for a few seconds. The bar is the title bar's height and covers it.
+
+A shortcut for something the status bar shows goes in the status bar's keymap
+(`app/status_bar.rs`), and since the status bar is on every screen, so are they: F1 to F5 for the
+octaves, Esc for edit mode (E), ~ for SP, Shift+Up/Down and Alt+Up/Down for the previous, next,
+first and last block, the instrument keys, and Ctrl and the keypad (or the keypad with Caps Lock
+on) for the play sequence. The header comes before the screen below it, so a screen with text boxes
+sets `AppState::typing` in its update while one has the keyboard, and the status bar leaves keys
+alone then (the sample editor's boxes do).
 
 The status bar's box next to E shows the keyboard's two octaves, the bottom row's and the top
 row's, in hex like OctaMED: 12 up to 9A. Clicking it goes up (right click down) and loops round;
@@ -205,7 +234,7 @@ gets smaller. Its cells are filled red, which turns the text over them rose, lik
 bitplanes. A
 right click anywhere else still switches the displays off. The RANGE panel (`header/range.rs`)
 works on it: SELECT TRACK and SELECT BLOCK make the cursor's track or the whole block the range,
-CUT and COPY put it in `AppState::range_buffer` (its own, apart from the track and block buffers;
+CUT and COPY put it in `Clipboard::range` (its own, apart from the track and block buffers;
 DEL BUFF clears all three), PASTE puts the buffer in from the cursor right and down, over what's
 there, and PASTE SELECT does the same from the first track picked with SELECT: 0 to F rather than
 the cursor's (SET picks them all, CLR none; picking more than one is for the transpose panel, which

@@ -191,6 +191,21 @@ fn extra_low_period(index: i8, finetune: i8) -> u16 {
     return first_octave * times;
 }
 
+/// The note, 1 for C-1 to 36 for B-3, whose period without finetune is `period`.
+pub fn period_note(period: u16) -> Option<u8> {
+    let index = table(0)
+        .iter()
+        .position(|&note_period| note_period == period)?;
+    return Some(index as u8 + 1);
+}
+
+/// The note whose period without finetune is closest to `period`.
+pub fn nearest_period_note(period: u16) -> u8 {
+    let table = table(0);
+    let nearest = (0..table.len()).min_by_key(|&index| table[index].abs_diff(period));
+    return nearest.map_or(1, |index| index as u8 + 1);
+}
+
 // from C-1, after the transpose, octaves up until it's not negative and one down past D-6
 fn note_index(note: u8, transpose: i8) -> i8 {
     // i8 on purpose, the player does this in a byte and wraps
@@ -365,5 +380,15 @@ mod tests {
                 period: 428
             }
         );
+    }
+
+    #[test]
+    fn notes_from_periods() {
+        assert_eq!(period_note(428), Some(13));
+        assert_eq!(period_note(285), Some(20));
+        assert_eq!(period_note(430), None);
+        assert_eq!(nearest_period_note(430), 13);
+        assert_eq!(nearest_period_note(4000), 1);
+        assert_eq!(nearest_period_note(1), 36);
     }
 }

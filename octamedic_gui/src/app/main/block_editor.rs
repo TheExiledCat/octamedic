@@ -11,7 +11,7 @@ use octamedic_core::{
         track_count::TrackCount,
     },
 };
-use octamedic_util::{base32, primitives::Flip};
+use octamedic_util::base32;
 use rustuition::{
     clickable::{Click, Clickable},
     event::MouseButton,
@@ -90,10 +90,6 @@ pub enum EditorAction {
     Down,
     Left,
     Right,
-    FirstBlock,
-    LastBlock,
-    PreviousBlock,
-    NextBlock,
     FirstLine,
     SecondQuarter,
     Middle,
@@ -103,12 +99,9 @@ pub enum EditorAction {
     TrackRight,
     ScreenLeft,
     ScreenRight,
-    ToggleEdit,
     // no note, just the instrument, which keeps a held note going
     Hold,
     Highlight,
-    // the bottom row of note keys; the top row plays the octave above
-    Octave(u8),
     // the note and instrument, or the command digit under the cursor
     DeleteNote,
     DeleteCell,
@@ -129,11 +122,7 @@ pub enum EditorAction {
     VolumeSlide,
 }
 
-impl Action for EditorAction {
-    fn repeats(self) -> bool {
-        return self != EditorAction::ToggleEdit;
-    }
-}
+impl Action for EditorAction {}
 
 pub struct BlockEditor {
     keys: Keymap<EditorAction>,
@@ -155,10 +144,6 @@ impl BlockEditor {
             .bind(Key::plain(KeyCode::Down), Down, "Down")
             .bind(Key::plain(KeyCode::Left), Left, "Left")
             .bind(Key::plain(KeyCode::Right), Right, "Right")
-            .bind(Key::alt(KeyCode::Up), FirstBlock, "First block")
-            .bind(Key::alt(KeyCode::Down), LastBlock, "Last block")
-            .bind(Key::shift(KeyCode::Up), PreviousBlock, "Prev block")
-            .bind(Key::shift(KeyCode::Down), NextBlock, "Next block")
             .bind(Key::plain(KeyCode::F6), FirstLine, "First line")
             .bind(Key::plain(KeyCode::F7), SecondQuarter, "2nd quarter")
             .bind(Key::plain(KeyCode::F8), Middle, "Middle")
@@ -168,15 +153,9 @@ impl BlockEditor {
             .bind(Key::alt(KeyCode::Right), TrackRight, "Track right")
             .bind(Key::ctrl(KeyCode::Left), ScreenLeft, "Screen left")
             .bind(Key::ctrl(KeyCode::Right), ScreenRight, "Screen right")
-            .bind(Key::plain(KeyCode::Escape), ToggleEdit, "Edit")
             .bind(Key::plain(KeyCode::Return), Hold, "Hold")
             .bind(Key::plain(KeyCode::NumpadEnter), Hold, "Hold")
             .bind(Key::plain(KeyCode::Tab), Highlight, "Highlight")
-            .bind(Key::plain(KeyCode::F1), Octave(1), "Octave 1")
-            .bind(Key::plain(KeyCode::F2), Octave(2), "Octave 2")
-            .bind(Key::plain(KeyCode::F3), Octave(3), "Octave 3")
-            .bind(Key::plain(KeyCode::F4), Octave(4), "Octave 4")
-            .bind(Key::plain(KeyCode::F5), Octave(5), "Octave 5")
             .bind(Key::plain(KeyCode::Delete), DeleteNote, "Del note")
             .bind(Key::shift(KeyCode::Delete), DeleteCell, "Del note+cmd")
             .bind(Key::plain(KeyCode::Back), DeleteSpace, "Del space")
@@ -520,7 +499,6 @@ impl KeyActions for BlockEditor {
         let (lines, tracks) = state.active_pattern().map_or((0, 0), |pattern| {
             (pattern.line_count(), pattern.track_count())
         });
-        let block = state.active_pattern.0 as usize;
         let screen = self.visible_tracks as isize;
         let step = state.line_step() as isize;
         let cursor = &mut state.cursor;
@@ -538,14 +516,8 @@ impl KeyActions for BlockEditor {
             TrackRight => cursor.move_tracks(1, tracks),
             ScreenLeft => cursor.move_tracks_clamped(-screen, tracks),
             ScreenRight => cursor.move_tracks_clamped(screen, tracks),
-            ToggleEdit => cursor.edit_mode.flip(),
             Hold => enter_hold(state),
             Highlight => state.toggle_highlight(state.cursor.line),
-            FirstBlock => state.select_block(0),
-            LastBlock => state.select_block(usize::MAX),
-            PreviousBlock => state.select_block(block.saturating_sub(1)),
-            NextBlock => state.select_block(block + 1),
-            Octave(octave) => state.set_octave(octave),
             DeleteNote => delete(state, false),
             DeleteCell => delete(state, true),
             DeleteSpace | InsertSpace => {
@@ -584,10 +556,6 @@ impl KeyActions for BlockEditor {
             Down => "Down one line",
             Left => "Left one space",
             Right => "Right one space",
-            FirstBlock => "Go to the first block",
-            LastBlock => "Go to the last block",
-            PreviousBlock => "Go to the previous block",
-            NextBlock => "Go to the next block",
             FirstLine => "Go to the first line of the block",
             SecondQuarter => "Go to the second quarter of the block",
             Middle => "Go to the middle of the block",
@@ -597,10 +565,8 @@ impl KeyActions for BlockEditor {
             TrackRight => "One track right",
             ScreenLeft => "One screen left",
             ScreenRight => "One screen right",
-            ToggleEdit => "Switch edit mode on or off",
             Hold => "Enter a hold: no note, just the instrument",
             Highlight => "Highlight the line, or take its highlight off",
-            Octave(_) => "Play notes from this octave up",
             DeleteNote => "Delete the note, or the digit under the cursor",
             DeleteCell => "Delete the note and its command",
             DeleteSpace => "Delete the note and close the gap in its track",
@@ -913,7 +879,7 @@ fn type_digit(
     return Some(cell);
 }
 
-fn note_text(note: u8) -> String {
+pub fn note_text(note: u8) -> String {
     if note == 0 {
         return "---".to_string();
     }
@@ -1171,22 +1137,6 @@ mod tests {
     }
 
     #[test]
-    fn fkeys_octave() {
-        let (mut editor, mut state) = (BlockEditor::new(), state());
-        let keys = [
-            KeyCode::F1,
-            KeyCode::F2,
-            KeyCode::F3,
-            KeyCode::F4,
-            KeyCode::F5,
-        ];
-        for (octave, key) in (1..).zip(keys) {
-            press(&mut editor, &mut state, key, KeyMods::NONE);
-            assert_eq!(state.current_octave, octave, "{key:?}");
-        }
-    }
-
-    #[test]
     fn spacing_moves_by_the_line_add() {
         let (mut editor, mut state) = (BlockEditor::new(), state());
         state.line_add = 4;
@@ -1380,33 +1330,6 @@ mod tests {
         editor.visible_tracks = 4;
         press(&mut editor, &mut state, KeyCode::Right, KeyMods::CTRL);
         assert_eq!(state.cursor.track, 3);
-    }
-
-    #[test]
-    fn esc_toggles_edit() {
-        let (mut editor, mut state) = (BlockEditor::new(), state());
-        press(&mut editor, &mut state, KeyCode::Escape, KeyMods::NONE);
-        assert!(state.cursor.edit_mode);
-        press(&mut editor, &mut state, KeyCode::Escape, KeyMods::NONE);
-        assert!(!state.cursor.edit_mode);
-    }
-
-    #[test]
-    fn block_keys_clamp() {
-        let (mut editor, mut state) = (BlockEditor::new(), state());
-        state.next_pattern();
-        state.next_pattern();
-        state.select_block(0);
-        press(&mut editor, &mut state, KeyCode::Up, KeyMods::SHIFT);
-        assert_eq!(state.active_pattern.0, 0);
-        press(&mut editor, &mut state, KeyCode::Down, KeyMods::SHIFT);
-        assert_eq!(state.active_pattern.0, 1);
-        press(&mut editor, &mut state, KeyCode::Down, KeyMods::ALT);
-        assert_eq!(state.active_pattern.0, 2);
-        press(&mut editor, &mut state, KeyCode::Down, KeyMods::SHIFT);
-        assert_eq!(state.active_pattern.0, 2);
-        press(&mut editor, &mut state, KeyCode::Up, KeyMods::ALT);
-        assert_eq!(state.active_pattern.0, 0);
     }
 
     #[test]

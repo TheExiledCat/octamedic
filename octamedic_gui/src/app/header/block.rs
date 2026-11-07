@@ -316,7 +316,7 @@ impl Gadget<AppState, Event> for Block {
             (&mut self.copy_block, AppState::copy_block),
             (&mut self.paste_block, AppState::paste_block),
             (&mut self.swap_block, AppState::swap_block),
-            (&mut self.del_buff, AppState::delete_buffer),
+            (&mut self.del_buff, AppState::clear_pattern_clipboard),
         ];
         for (button, action) in clipboard {
             if button.clicked().is_some() {
@@ -685,7 +685,7 @@ mod tests {
             5
         );
         click(&mut block, &mut state, DEL_BUFF);
-        assert!(state.track_buffer.is_none());
+        assert!(state.clipboard.track.is_none());
     }
 
     #[test]

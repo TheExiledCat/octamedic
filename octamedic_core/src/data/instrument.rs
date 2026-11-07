@@ -18,6 +18,19 @@ pub const MAX_FINETUNE: i8 = 7;
 // two digits on octamed's instrument panel
 pub const MAX_HOLD_DECAY: u8 = 99;
 
+/// MMD keeps a loop in words, so its ends are on even bytes, it takes a one word loop for none
+/// and its length has to fit a word.
+pub const MIN_LOOP: usize = 4;
+pub const MAX_LOOP: usize = 2 * u16::MAX as usize;
+
+/// `start..end` as a loop MMD can keep: on whole words, at least MIN_LOOP and at most MAX_LOOP
+/// long. None if it can't be.
+pub fn word_loop(start: usize, end: usize) -> Option<(usize, usize)> {
+    let (start, end) = (start & !1, end & !1);
+    let end = end.min(start + MAX_LOOP);
+    return (end >= start + MIN_LOOP).then_some((start, end));
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct InstrumentId(pub u8);
 
@@ -132,6 +145,19 @@ impl OctamedicSample {
         return Self { data, ..*self };
     }
 
+    /// A copy with `range`'s volume faded linearly from `from` percent at its first sample to `to`
+    /// percent at its last, clipping at the limits.
+    pub fn with_volume_changed(&self, range: Range<usize>, from: u32, to: u32) -> Self {
+        let mut data = self.data.clone();
+        let steps = range.len().saturating_sub(1).max(1) as f64;
+        for (step, sample) in data[range].iter_mut().enumerate() {
+            let percent = from as f64 + (to as f64 - from as f64) * step as f64 / steps;
+            let scaled = (*sample as f64 * percent / 100.0).round();
+            *sample = scaled.clamp(i8::MIN as f64, i8::MAX as f64) as i8;
+        }
+        return Self { data, ..*self };
+    }
+
     /// A copy with `other` mixed in from sample `at`, each sample halfway between the two so it
     /// can't clip. It's made longer if `other` runs past the end.
     pub fn mixed(&self, at: usize, other: &[i8]) -> Self {
@@ -195,6 +221,71 @@ impl OctamedicSample {
             data: start..end,
             repeat,
         };
+    }
+
+    /// Played at period `to`, sounds like it did at `from`: shorter for a smaller period, longer
+    /// for a bigger one, and the loop stretches with it. Shortened, each new sample is the average
+    /// of the old ones it covers; lengthened, the ones between are on a line from one old sample
+    /// to the next. Both smooth the sound like OctaMED's do.
+    pub fn resampled(&self, from: u16, to: u16) -> Self {
+        let (from, to) = (from.max(1) as usize, to.max(1) as usize);
+        let length = self.data.len() * to / from;
+        let data = (0..length)
+            .map(|index| match to < from {
+                true => self.averaged(index * from / to..(index + 1) * from / to),
+                false => self.between(index * from, to),
+            })
+            .collect();
+        let repeat = self
+            .repeat
+            .and_then(|(start, end)| word_loop(start * to / from, end * to / from));
+        return Self {
+            data,
+            repeat,
+            ..*self
+        };
+    }
+
+    fn averaged(&self, range: Range<usize>) -> i8 {
+        let range = range.start..range.end.max(range.start + 1).min(self.data.len());
+        let sum: i32 = self.data[range.clone()]
+            .iter()
+            .map(|&value| value as i32)
+            .sum();
+        return (sum as f32 / range.len() as f32).round() as i8;
+    }
+
+    // the value `position / steps` samples in, on a line between the samples either side
+    fn between(&self, position: usize, steps: usize) -> i8 {
+        let (index, part) = (position / steps, position % steps);
+        let here = self.data[index] as i32;
+        let next = self.data.get(index + 1).map_or(here, |&next| next as i32);
+        let value = here as f32 + (next - here) as f32 * part as f32 / steps as f32;
+        return value.round() as i8;
+    }
+
+    pub fn with_loop(&self, repeat: Option<(usize, usize)>) -> Self {
+        return Self {
+            data: self.data.clone(),
+            repeat,
+            ..*self
+        };
+    }
+
+    /// How far a loop can reach: it's in the shortest octave copy, which for a plain sample is
+    /// all of it.
+    pub fn loop_limit(&self) -> usize {
+        return self.octave_copy(0).data.end;
+    }
+
+    /// The nearest silent sample past `from` on an even byte, where a loop can start or end,
+    /// towards the end or the start.
+    pub fn zero_from(&self, from: usize, forward: bool) -> Option<usize> {
+        let silent = |&index: &usize| index % 2 == 0 && self.data.get(index) == Some(&0);
+        if forward {
+            return (from + 1..self.data.len()).find(silent);
+        }
+        return (0..from.min(self.data.len())).rev().find(silent);
     }
 
     pub fn with_value(&self, index: usize, value: i8) -> Self {
@@ -351,6 +442,25 @@ mod tests {
     }
 
     #[test]
+    fn changing_volume_fades_across_the_range() {
+        let sample = OctamedicSample {
+            data: vec![100; 5],
+            repeat: None,
+            octaves: SampleOctaves::One,
+        };
+        let faded = sample.with_volume_changed(1..4, 100, 0);
+        assert_eq!(faded.data, [100, 100, 50, 0, 100]);
+        let louder = sample.with_volume_changed(0..5, 200, 200);
+        assert_eq!(louder.data, [127; 5]);
+        let negative = OctamedicSample {
+            data: vec![-100],
+            ..sample
+        };
+        assert_eq!(negative.with_volume_changed(0..1, 50, 0).data, [-50]);
+        assert_eq!(negative.with_volume_changed(0..1, 300, 0).data, [-128]);
+    }
+
+    #[test]
     fn resizing_pads_or_cuts() {
         let longer = ramp().resized(12);
         assert_eq!(longer.data[8..], [9, 10, 0, 0]);
@@ -420,5 +530,57 @@ mod tests {
             octaves: SampleOctaves::One,
         };
         assert_eq!(plain.octave_copy(0).data, 0..5);
+    }
+
+    #[test]
+    fn finding_zeros() {
+        let mut sample = ramp();
+        sample.data[2] = 0;
+        sample.data[7] = 0;
+        sample.data[8] = 0;
+        // 7's odd, so a loop can't end there
+        assert_eq!(sample.zero_from(4, true), Some(8));
+        assert_eq!(sample.zero_from(4, false), Some(2));
+        assert_eq!(sample.zero_from(8, true), None);
+        assert_eq!(sample.zero_from(2, false), None);
+    }
+
+    #[test]
+    fn a_loop_stays_in_the_shortest_copy() {
+        let mut sample = ramp();
+        assert_eq!(sample.loop_limit(), 10);
+        sample.data = vec![0; 21];
+        sample.octaves = SampleOctaves::Three;
+        assert_eq!(sample.loop_limit(), 3);
+        assert_eq!(sample.with_loop(None).repeat, None);
+    }
+
+    #[test]
+    fn resampling() {
+        // up an octave, each pair averaged
+        let looped = OctamedicSample {
+            repeat: Some((2, 10)),
+            ..ramp()
+        };
+        let higher = looped.resampled(2, 1);
+        assert_eq!(higher.data, [2, 4, 6, 8, 10]);
+        assert_eq!(higher.repeat, Some((0, 4)));
+        // and back down, the gaps filled in on a line
+        let lower = higher.resampled(1, 2);
+        assert_eq!(lower.data, [2, 3, 4, 5, 6, 7, 8, 9, 10, 10]);
+        assert_eq!(lower.repeat, Some((0, 8)));
+        // up a fifth, C-2's 428 to G-2's 285
+        assert_eq!(ramp().resampled(428, 285).data.len(), 6);
+    }
+
+    #[test]
+    fn loops_mmd_can_keep() {
+        assert_eq!(word_loop(3, 11), Some((2, 10)));
+        assert_eq!(word_loop(2, 5), None);
+        assert_eq!(word_loop(0, 200_000), Some((0, MAX_LOOP)));
+        // up two octaves a 4 byte loop is too short to keep
+        let mut sample = ramp();
+        sample.repeat = Some((4, 8));
+        assert_eq!(sample.resampled(4, 1).repeat, None);
     }
 }

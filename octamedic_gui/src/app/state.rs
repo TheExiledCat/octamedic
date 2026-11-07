@@ -25,6 +25,7 @@ use rustuition::palette::{Color, IntuitionColorPalette};
 use crate::{
     app::{
         block_range::{BlockRange, Cell},
+        clipboard::Clipboard,
         config::Config,
         cursor::EditCursor,
         files::browser::Browser,
@@ -170,21 +171,15 @@ pub struct AppState {
     pub recording: bool,
     pub exit_requested: bool,
     pub notification: Option<String>,
-    // TRK: and BLK:'s buffers. A copied track is kept as a block one track wide. Both survive
-    // loading another song, so you can copy between songs.
-    pub track_buffer: Option<OctamedicPattern>,
-    pub block_buffer: Option<OctamedicPattern>,
+    pub clipboard: Clipboard,
     // the RANGE panel's range, shown and used only while its block is the active one. It knows
     // its block by number, so it's dropped when blocks move
     pub range: Option<BlockRange>,
-    pub range_buffer: Option<OctamedicPattern>,
     // the RANGE panel's SELECT: 0 to F. PASTE SELECT goes to the first, the transpose panel will
     // use them all
     pub selected_tracks: [bool; SELECTABLE_TRACKS],
     // shown instead of the notification, and holding everything up until it's answered
     pub prompt: Option<Prompt>,
-    // the sample editor's clipboard, CBUFF
-    pub copy_buffer: Vec<i8>,
     pub instrument_save_type: InstrumentSaveType,
     pub mod_format: ModFormat,
     pub save_format: SaveFormat,
@@ -200,6 +195,9 @@ pub struct AppState {
     pub displays_off: bool,
     // the modifier keys down at the last mouse event, Amiga included
     pub mouse_mods: KeyMods,
+    // a text box on the screen below the header has the keyboard, so the status bar's keys, which
+    // come first, leave it alone. set again by the screen each update
+    pub typing: bool,
     // the application config, saved between runs
     config: Config,
     // true when config has been modified, flushed by save_config in update
@@ -269,13 +267,10 @@ impl AppState {
             recording: false,
             exit_requested: false,
             notification: None,
-            track_buffer: None,
-            block_buffer: None,
+            clipboard: Clipboard::default(),
             range: None,
-            range_buffer: None,
             selected_tracks: [true; SELECTABLE_TRACKS],
             prompt: None,
-            copy_buffer: Vec::new(),
             instrument_save_type: InstrumentSaveType::default(),
             mod_format: ModFormat::default(),
             save_format: SaveFormat::default(),
@@ -287,6 +282,7 @@ impl AppState {
             pending_dialogs: Vec::new(),
             displays_off: false,
             mouse_mods: KeyMods::NONE,
+            typing: false,
             config,
             config_changed: false,
             config_path,
@@ -1216,12 +1212,12 @@ impl AppState {
     pub fn copy_track(&mut self) {
         let track = self.cursor.track;
         if let Some(pattern) = self.active_pattern() {
-            self.track_buffer = Some(pattern.copy_track(track));
+            self.clipboard.track = Some(pattern.copy_track(track));
         }
     }
 
     pub fn paste_track(&mut self) {
-        let Some(buffer) = self.track_buffer.take() else {
+        let Some(buffer) = self.clipboard.track.take() else {
             self.notify("Track buffer is empty");
             return;
         };
@@ -1229,11 +1225,11 @@ impl AppState {
         if let Some(pattern) = self.active_pattern_mut() {
             pattern.paste_track(track, &buffer);
         }
-        self.track_buffer = Some(buffer);
+        self.clipboard.track = Some(buffer);
     }
 
     pub fn swap_track(&mut self) {
-        if self.track_buffer.is_none() {
+        if self.clipboard.track.is_none() {
             self.notify("Track buffer is empty");
             return;
         }
@@ -1244,7 +1240,11 @@ impl AppState {
         else {
             return;
         };
-        let buffer = self.track_buffer.replace(current).expect("checked above");
+        let buffer = self
+            .clipboard
+            .track
+            .replace(current)
+            .expect("checked above");
         if let Some(pattern) = self.active_pattern_mut() {
             pattern.paste_track(track, &buffer);
         }
@@ -1261,13 +1261,13 @@ impl AppState {
         if let Some(pattern) = self.active_pattern() {
             let mut copy = pattern.clone();
             copy.name.clear();
-            self.block_buffer = Some(copy);
+            self.clipboard.block = Some(copy);
         }
     }
 
     // the block takes the copied one's size too, so pasting into a new block makes an exact copy
     pub fn paste_block(&mut self) {
-        let Some(buffer) = self.block_buffer.as_ref() else {
+        let Some(buffer) = self.clipboard.block.as_ref() else {
             self.notify("Block buffer is empty");
             return;
         };
@@ -1279,21 +1279,19 @@ impl AppState {
     }
 
     pub fn swap_block(&mut self) {
-        let Some(mut buffer) = self.block_buffer.take() else {
+        let Some(mut buffer) = self.clipboard.block.take() else {
             self.notify("Block buffer is empty");
             return;
         };
         if let Some(pattern) = self.active_pattern_mut() {
             std::mem::swap(&mut pattern.lines, &mut buffer.lines);
         }
-        self.block_buffer = Some(buffer);
+        self.clipboard.block = Some(buffer);
         self.clamp_cursor_to_active_pattern();
     }
 
-    pub fn delete_buffer(&mut self) {
-        self.track_buffer = None;
-        self.block_buffer = None;
-        self.range_buffer = None;
+    pub fn clear_pattern_clipboard(&mut self) {
+        self.clipboard.clear_patterns();
     }
 
     /// The range, if it's in the block that's showing, kept inside the block if that's got
@@ -1358,7 +1356,7 @@ impl AppState {
         if let Some(pattern) = self.active_pattern_mut() {
             let cut = pattern.copy_range(range.tracks(), range.lines());
             pattern.clear_range(range.tracks(), range.lines());
-            self.range_buffer = Some(cut);
+            self.clipboard.range = Some(cut);
         }
     }
 
@@ -1367,7 +1365,7 @@ impl AppState {
             return;
         };
         if let Some(pattern) = self.active_pattern() {
-            self.range_buffer = Some(pattern.copy_range(range.tracks(), range.lines()));
+            self.clipboard.range = Some(pattern.copy_range(range.tracks(), range.lines()));
         }
     }
 
@@ -1387,7 +1385,7 @@ impl AppState {
     }
 
     fn paste_range_into(&mut self, track: usize) {
-        let Some(buffer) = self.range_buffer.take() else {
+        let Some(buffer) = self.clipboard.range.take() else {
             self.notify("Range buffer is empty");
             return;
         };
@@ -1395,7 +1393,7 @@ impl AppState {
         if let Some(pattern) = self.active_pattern_mut() {
             pattern.paste_range(track, line, &buffer);
         }
-        self.range_buffer = Some(buffer);
+        self.clipboard.range = Some(buffer);
     }
 
     pub fn clear_range(&mut self) {
@@ -1891,7 +1889,7 @@ mod tests {
         let mut state = state();
         state.copy_track();
         state.copy_block();
-        state.delete_buffer();
+        state.clear_pattern_clipboard();
         state.paste_track();
         assert_eq!(state.notification.as_deref(), Some("Track buffer is empty"));
         state.paste_block();
@@ -2097,11 +2095,11 @@ mod tests {
     }
 
     #[test]
-    fn range_buffer_goes_with_del_buff() {
+    fn the_range_buffer_goes_with_del_buff() {
         let mut state = state();
         state.select_block_range();
         state.copy_range();
-        state.delete_buffer();
+        state.clear_pattern_clipboard();
         state.paste_range();
         assert_eq!(state.notification.as_deref(), Some("Range buffer is empty"));
     }

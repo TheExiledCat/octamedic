@@ -121,6 +121,16 @@ impl WaveView {
         }
     }
 
+    /// Shows `samples` around the middle of the view, as far as the sample goes.
+    pub fn show_around_middle(&mut self, samples: usize) {
+        let visible = self.visible();
+        let middle = (visible.start + visible.end) / 2;
+        let start = middle
+            .saturating_sub(samples / 2)
+            .min(self.length.saturating_sub(samples));
+        self.show(start..start + samples);
+    }
+
     fn visible_length(&self, zoom: u32) -> usize {
         return self.base.checked_shr(zoom).unwrap_or(0);
     }
@@ -295,5 +305,22 @@ mod tests {
         empty.zoom_in();
         empty.scroll(true);
         assert_eq!(empty.visible(), 0..0);
+    }
+
+    #[test]
+    fn showing_around_the_middle() {
+        let mut view = view(1000);
+        view.show_around_middle(640);
+        assert_eq!(view.visible(), 180..820);
+        view.show_around_middle(100);
+        assert_eq!(view.visible(), 450..550);
+        for _ in 0..10 {
+            view.scroll(true);
+        }
+        view.show_around_middle(640);
+        assert_eq!(view.visible(), 360..1000);
+        let mut short = self::view(300);
+        short.show_around_middle(640);
+        assert_eq!(short.visible(), 0..300);
     }
 }
