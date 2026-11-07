@@ -67,23 +67,35 @@ impl Default for Config {
     }
 }
 
+/// The outcome of loading configuration at startup.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LoadedConfig {
+    pub config: Config,
+    pub path: Option<PathBuf>,
+    pub error: Option<String>,
+}
+
 impl Config {
     /// Loads configuration from `config.toml`, or creates it with defaults if it doesn't exist
     /// yet. Returns the config, its path if found, and any error from reading or parsing so
     /// startup can report it.
-    pub fn load() -> (Self, Option<PathBuf>, Option<String>) {
+    pub fn load() -> LoadedConfig {
         let path = match files::get_config_file_path() {
             Ok(path) => path,
             Err(error) => {
-                return (
-                    Self::default(),
-                    None,
-                    Some(format!("Config folder missing: {error}")),
-                );
+                return LoadedConfig {
+                    config: Self::default(),
+                    path: None,
+                    error: Some(format!("Config folder missing: {error}")),
+                };
             }
         };
         let (config, error) = Self::load_from_path(&path);
-        return (config, Some(path), error);
+        return LoadedConfig {
+            config,
+            path: Some(path),
+            error,
+        };
     }
 
     pub fn load_from_path(path: &Path) -> (Self, Option<String>) {
@@ -104,6 +116,9 @@ impl Config {
         match toml::from_str(&content) {
             Ok(config) => return (config, None),
             Err(error) => {
+                // preserve the damaged file so the user can inspect or recover it
+                let bak = path.with_extension("toml.bak");
+                let _ = fs::rename(path, &bak);
                 return (
                     Self::default(),
                     Some(format!("Couldn't parse {}: {error}", path.display())),
@@ -188,7 +203,7 @@ mod tests {
         let _ = fs::remove_dir_all(&folder);
         assert_eq!(error, None);
         assert_eq!(loaded, Config::default());
-        assert!(written.contains("video = 'pal'") || written.contains("video = \"pal\""));
+        assert!(written.contains("video = 'pal'"));
     }
 
     #[test]
@@ -196,12 +211,15 @@ mod tests {
         let folder =
             std::env::temp_dir().join(format!("octamedic-bad-config-{}", std::process::id()));
         let path = folder.join("config.toml");
+        let bak = folder.join("config.toml.bak");
         fs::create_dir_all(&folder).unwrap();
         fs::write(&path, "invalid [[[ toml").unwrap();
         let (loaded, error) = Config::load_from_path(&path);
-        let _ = fs::remove_dir_all(&folder);
         assert_eq!(loaded, Config::default());
         assert!(error.is_some());
         assert!(error.unwrap().contains("Couldn't parse"));
+        assert!(bak.exists());
+        assert_eq!(fs::read_to_string(&bak).unwrap(), "invalid [[[ toml");
+        let _ = fs::remove_dir_all(&folder);
     }
 }

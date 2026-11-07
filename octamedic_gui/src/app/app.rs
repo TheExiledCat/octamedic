@@ -262,6 +262,7 @@ impl EventHandler for App {
         #[cfg(target_os = "macos")]
         self.ask_about_menu_quit();
         if self.state.exit_requested {
+            self.state.flush_config();
             ctx.request_quit();
         }
         return Ok(());

@@ -200,6 +200,8 @@ pub struct AppState {
     config_path: Option<PathBuf>,
     // the last try at opening it didn't work, so the engine is disconnected
     audio_failed: bool,
+    // running on the default device because the configured device couldn't be opened
+    using_fallback: bool,
     queued_sequence_index: Option<usize>,
     started: Option<PlayStart>,
     muted_tracks: [bool; SONG_TRACKS],
@@ -276,6 +278,7 @@ impl AppState {
             config_changed: false,
             config_path,
             audio_failed: false,
+            using_fallback: false,
             queued_sequence_index: None,
             started: None,
             muted_tracks: [false; SONG_TRACKS],
@@ -298,11 +301,15 @@ impl AppState {
         return state;
     }
 
-    pub fn update(&mut self) {
+    pub fn flush_config(&mut self) {
         if self.config_changed {
             self.config_changed = false;
             self.save_config();
         }
+    }
+
+    pub fn update(&mut self) {
+        self.flush_config();
         if let Some(start) = self.playback_start_time {
             if self.is_playing() {
                 self.time = start.elapsed();
@@ -354,6 +361,7 @@ impl AppState {
         return &mut self.config;
     }
 
+    #[cfg(test)]
     pub fn config_changed(&self) -> bool {
         return self.config_changed;
     }
@@ -361,6 +369,15 @@ impl AppState {
     #[cfg(test)]
     pub fn set_config_path(&mut self, path: Option<PathBuf>) {
         self.config_path = path;
+    }
+
+    pub fn using_fallback(&self) -> bool {
+        return self.using_fallback;
+    }
+
+    #[cfg(test)]
+    pub fn set_using_fallback(&mut self, using_fallback: bool) {
+        self.using_fallback = using_fallback;
     }
 
     // keeps what isn't the song's, like the file browser and which screen is showing
@@ -549,23 +566,46 @@ impl AppState {
         return self.config.output.device.as_deref();
     }
 
+    /// Starts the engine on the given device without fallback.
+    fn try_open_audio(&mut self, device: Option<&str>) -> Result<(), String> {
+        let engine = match EngineHandle::spawn(self.config.video.clock(), device) {
+            Ok(engine) => engine,
+            Err(error) => {
+                self.audio_failed = true;
+                return Err(format!("NO AUDIO: {error}"));
+            }
+        };
+        self.engine = engine;
+        self.audio_failed = false;
+        self.send_all_to_engine();
+        for track in (0..SONG_TRACKS).filter(|&track| self.muted_tracks[track]) {
+            self.engine.set_track_muted(track, true);
+        }
+        self.engine.set_mono(self.config.output.mono);
+        self.engine_active_instrument = None;
+        return Ok(());
+    }
+
     /// Starts the engine again on `device`, or the default one with `None`, which stops playing.
     /// If that can't be opened it goes back to the one before. The same device again only opens
-    /// if the last try failed.
+    /// if the last try failed, or if we were running on a fallback device.
     pub fn set_output_device(&mut self, device: Option<String>) {
-        if device == self.config.output.device && !self.audio_failed {
+        if device == self.config.output.device && !self.audio_failed && !self.using_fallback {
             return;
         }
         self.stop();
         // closed first, the new one could be the same hardware
         self.engine = EngineHandle::disconnected();
+        let target = device.clone();
         let previous = std::mem::replace(&mut self.config_mut().output.device, device);
-        if let Err(error) = self.open_audio() {
+        if let Err(error) = self.try_open_audio(target.as_deref()) {
             if self.config.output.device != previous {
-                self.config_mut().output.device = previous;
-                let _ = self.open_audio();
+                self.config_mut().output.device = previous.clone();
+                let _ = self.try_open_audio(previous.as_deref());
             }
             self.notify(error);
+        } else {
+            self.using_fallback = false;
         }
     }
 
@@ -573,44 +613,22 @@ impl AppState {
     /// can't. If a saved device can't be opened it falls back to the default device for this
     /// run, keeping the saved setting for when the device returns.
     pub fn open_audio(&mut self) -> Result<(), String> {
-        let (engine, device_failed) = match EngineHandle::spawn(
-            self.config.video.clock(),
-            self.config.output.device.as_deref(),
-        ) {
-            Ok(engine) => (engine, None),
-            Err(error) => {
-                if self.config.output.device.is_some() {
-                    match EngineHandle::spawn(self.config.video.clock(), None) {
-                        Ok(engine) => (engine, Some(error)),
-                        Err(fallback_error) => {
-                            self.audio_failed = true;
-                            return Err(format!("NO AUDIO: {fallback_error}"));
-                        }
-                    }
-                } else {
-                    self.audio_failed = true;
-                    return Err(format!("NO AUDIO: {error}"));
-                }
+        let saved = self.config.output.device.clone();
+        match self.try_open_audio(saved.as_deref()) {
+            Ok(()) => {
+                self.using_fallback = false;
+                return Ok(());
             }
-        };
-        self.engine = engine;
-        self.audio_failed = device_failed.is_some();
-        self.send_all_to_engine();
-        for track in (0..SONG_TRACKS).filter(|&track| self.muted_tracks[track]) {
-            self.engine.set_track_muted(track, true);
+            Err(error) => {
+                if saved.is_some() && self.try_open_audio(None).is_ok() {
+                    self.using_fallback = true;
+                    let name = saved.as_deref().unwrap_or("saved device");
+                    return Err(format!("Couldn't open {name}, using default: {error}"));
+                }
+                self.using_fallback = false;
+                return Err(error);
+            }
         }
-        self.engine.set_mono(self.config.output.mono);
-        self.engine_active_instrument = None;
-        if let Some(error) = device_failed {
-            let name = self
-                .config
-                .output
-                .device
-                .as_deref()
-                .unwrap_or("saved device");
-            return Err(format!("Couldn't open {name}, using default: {error}"));
-        }
-        return Ok(());
     }
 
     pub fn mono(&self) -> bool {
@@ -1834,16 +1852,14 @@ mod tests {
         let mut state = state();
         state.config_mut().output.device = Some("non-existent-device-12345".to_owned());
         let result = state.open_audio();
-        assert_eq!(
-            state.config().output.device.as_deref(),
-            Some("non-existent-device-12345")
-        );
-        assert!(state.audio_failed());
-        if let Err(msg) = result {
-            assert!(
-                msg.contains("Couldn't open non-existent-device-12345, using default")
-                    || msg.contains("NO AUDIO")
-            );
+        assert_eq!(state.output_device(), Some("non-existent-device-12345"));
+        let err = result.expect_err("saved device is non-existent");
+        if state.using_fallback() {
+            assert!(!state.audio_failed());
+            assert!(err.contains("Couldn't open non-existent-device-12345, using default"));
+        } else {
+            assert!(state.audio_failed());
+            assert!(err.contains("NO AUDIO"));
         }
     }
 }

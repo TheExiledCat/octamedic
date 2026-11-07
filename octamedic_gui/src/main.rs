@@ -12,7 +12,11 @@ use ggez::{
 use octamedic_core::{amiga::clock::VideoStandard, data::project::OctamedicProject};
 use rustuition::screen::Screen;
 
-use crate::app::{app::App, config::Config, files, icon, screen};
+use crate::app::{
+    app::App,
+    config::{Config, LoadedConfig},
+    files, icon, screen,
+};
 
 mod app;
 mod crash_log;
@@ -44,7 +48,11 @@ fn main() {
     if let Err(error) = files::initialize() {
         errors.push(format!("Couldn't create OctaMEDIC's folders: {error}"));
     }
-    let (config, config_path, config_error) = Config::load();
+    let LoadedConfig {
+        config,
+        path: config_path,
+        error: config_error,
+    } = Config::load();
     if let Some(error) = config_error {
         errors.push(error);
     }

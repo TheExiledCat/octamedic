@@ -38,7 +38,9 @@ fn output_dialog(state: &AppState, devices: Vec<OutputDevice>) -> Dialog {
     return dialog.on_submit(move |state, result| {
         let picked = *result.get(device);
         // left alone, a device that's missing from the list stays
-        if picked != chosen || state.audio_failed() {
+        let reopen =
+            picked != chosen || state.audio_failed() || (state.using_fallback() && picked != 0);
+        if reopen {
             let id = picked
                 .checked_sub(1)
                 .and_then(|index| devices.get(index))
@@ -100,6 +102,18 @@ mod tests {
         let mut dialog = output_dialog(&state, devices());
         submit(&mut dialog, &mut state);
         assert_eq!(state.output_device(), Some("unplugged"));
+    }
+
+    #[test]
+    fn mono_with_active_fallback_keeps_saved_device() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        state.config_mut().output.device = Some("headphones".to_owned());
+        state.set_using_fallback(true);
+        let mut dialog = output_dialog(&state, devices());
+        submit(&mut dialog, &mut state);
+        assert!(dialog.is_closed());
+        assert_eq!(state.output_device(), Some("headphones"));
+        assert!(state.using_fallback());
     }
 
     #[test]
