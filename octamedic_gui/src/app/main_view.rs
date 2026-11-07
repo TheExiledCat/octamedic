@@ -1,5 +1,4 @@
 use ggez::input::keyboard::{KeyCode, KeyMods};
-use octamedic_core::data::pattern::PatternId;
 use rustuition::{
     gadget::Gadget,
     painter::{Align, CHAR_HEIGHT, Painter, Pen},
@@ -41,51 +40,8 @@ pub enum MainAction {
     ToggleVideo,
     ScreenFilters,
     Play(PlayStart),
-    Sequence(SequenceAction),
     ToggleFilter,
-    // the keyboard's octaves, F1 to F5 on any screen
-    Octave(u8),
 }
-
-const OCTAVE_NAMES: [&str; 5] = ["Octave 1", "Octave 2", "Octave 3", "Octave 4", "Octave 5"];
-
-// the play sequence list's keys, on the keypad like OctaMED's
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum SequenceAction {
-    Top,
-    End,
-    Up,
-    Down,
-    DecreaseBlock,
-    IncreaseBlock,
-    InsertCurrent,
-    InsertZero,
-    Delete,
-}
-
-const SEQUENCE_KEYS: [(KeyCode, SequenceAction, &str); 9] = [
-    (KeyCode::Numpad7, SequenceAction::Top, "Seq top"),
-    (KeyCode::Numpad1, SequenceAction::End, "Seq end"),
-    (KeyCode::Numpad8, SequenceAction::Up, "Seq up"),
-    (KeyCode::Numpad2, SequenceAction::Down, "Seq down"),
-    (
-        KeyCode::Numpad4,
-        SequenceAction::DecreaseBlock,
-        "Seq block -",
-    ),
-    (
-        KeyCode::Numpad6,
-        SequenceAction::IncreaseBlock,
-        "Seq block +",
-    ),
-    (
-        KeyCode::Numpad5,
-        SequenceAction::InsertCurrent,
-        "Seq ins cur",
-    ),
-    (KeyCode::Numpad0, SequenceAction::InsertZero, "Seq ins 0"),
-    (KeyCode::NumpadDecimal, SequenceAction::Delete, "Seq del"),
-];
 
 impl Action for MainAction {
     // starting again while held would keep restarting
@@ -136,25 +92,6 @@ impl MainView {
                 "Cont. block",
             );
         let keys = keys.bind(Key::amiga(KeyCode::F), MainAction::ToggleFilter, "Filter");
-        let octave_keys = [
-            KeyCode::F1,
-            KeyCode::F2,
-            KeyCode::F3,
-            KeyCode::F4,
-            KeyCode::F5,
-        ];
-        let keys =
-            (1..)
-                .zip(octave_keys)
-                .zip(OCTAVE_NAMES)
-                .fold(keys, |keys, ((octave, code), name)| {
-                    keys.bind(Key::plain(code), MainAction::Octave(octave), name)
-                });
-        let keys = SEQUENCE_KEYS
-            .into_iter()
-            .fold(keys, |keys, (code, action, name)| {
-                keys.bind(Key::ctrl(code), MainAction::Sequence(action), name)
-            });
         return Self {
             keys,
             title: TitleBar::new(),
@@ -199,7 +136,6 @@ impl Gadget<AppState, Event> for MainView {
         let taken = self.console.handle_event(state, event)
             || self.copyright.handle_event(state, event)
             || self.dispatch(state, event)
-            || caps_lock_keypad(state, event)
             || self.pass_to_widgets(state, event);
         let right_click = matches!(
             event,
@@ -265,41 +201,6 @@ impl Gadget<AppState, Event> for MainView {
 }
 
 // with caps lock on the keypad does the sequence list without Ctrl
-fn caps_lock_keypad(state: &mut AppState, event: &Event) -> bool {
-    let Event::Key { key, mods, .. } = *event else {
-        return false;
-    };
-    if !state.caps_lock || !mods.is_empty() {
-        return false;
-    }
-    let Some(&(_, action, _)) = SEQUENCE_KEYS.iter().find(|(code, ..)| *code == key) else {
-        return false;
-    };
-    sequence(state, action);
-    return true;
-}
-
-fn sequence(state: &mut AppState, action: SequenceAction) {
-    match action {
-        SequenceAction::Top => {
-            state.set_sequence(0);
-        }
-        SequenceAction::End => {
-            state.set_sequence(usize::MAX);
-        }
-        SequenceAction::Up => {
-            state.prev_sequence();
-        }
-        SequenceAction::Down => {
-            state.next_sequence();
-        }
-        SequenceAction::DecreaseBlock => state.decrement_sequence_pattern(),
-        SequenceAction::IncreaseBlock => state.increment_sequence_pattern(),
-        SequenceAction::InsertCurrent => state.insert_sequence(state.active_pattern),
-        SequenceAction::InsertZero => state.insert_sequence(PatternId::ZERO),
-        SequenceAction::Delete => state.delete_sequence(state.active_sequence_index),
-    }
-}
 
 // a typed character that isn't part of a shortcut
 fn typed_key(event: &Event) -> Option<char> {
@@ -344,9 +245,7 @@ impl KeyActions for MainView {
             MainAction::ToggleVideo => state.set_video(state.video().other()),
             MainAction::ScreenFilters => open_filters_dialog(state),
             MainAction::Play(start) => state.start(start),
-            MainAction::Sequence(action) => sequence(state, action),
             MainAction::ToggleFilter => state.set_filter(!state.song().flags.filter_on),
-            MainAction::Octave(octave) => state.set_octave(octave),
         }
     }
 
@@ -360,23 +259,16 @@ impl KeyActions for MainView {
             MainAction::Play(PlayStart::Block) => "Play the block from the start",
             MainAction::Play(PlayStart::ContinueBlock) => "Continue playing the block",
             MainAction::ToggleFilter => "Switch the low pass filter on or off",
-            MainAction::Octave(_) => "Play notes from this octave up",
-            MainAction::Sequence(SequenceAction::Top) => "Go to the top of the play sequence",
-            MainAction::Sequence(SequenceAction::End) => "Go to the end of the play sequence",
-            MainAction::Sequence(SequenceAction::Up) => "Scroll the play sequence up",
-            MainAction::Sequence(SequenceAction::Down) => "Scroll the play sequence down",
-            MainAction::Sequence(SequenceAction::DecreaseBlock) => "Decrease the block number",
-            MainAction::Sequence(SequenceAction::IncreaseBlock) => "Increase the block number",
-            MainAction::Sequence(SequenceAction::InsertCurrent) => "Insert the current block",
-            MainAction::Sequence(SequenceAction::InsertZero) => "Insert block 0",
-            MainAction::Sequence(SequenceAction::Delete) => "Delete the block number",
         };
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
+    use octamedic_core::{
+        data::{pattern::PatternId, project::OctamedicProject},
+        engine::handle::EngineHandle,
+    };
     use rustuition::rect::Point;
 
     use super::*;

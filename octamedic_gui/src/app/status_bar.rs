@@ -1,4 +1,5 @@
 use ggez::input::keyboard::{KeyCode, KeyMods};
+use octamedic_core::data::pattern::PatternId;
 use octamedic_util::{base32, primitives::Flip};
 use rustuition::{
     gadget::Gadget,
@@ -55,7 +56,61 @@ pub enum StatusBarAction {
     FirstInstrument,
     LastInstrument,
     EditName(NameEdit),
+    Octave(u8),
+    ToggleEdit,
+    FirstBlock,
+    LastBlock,
+    PreviousBlock,
+    NextBlock,
+    Sequence(SequenceAction),
 }
+
+// the play sequence list's, on the keypad like OctaMED's
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SequenceAction {
+    Top,
+    End,
+    Up,
+    Down,
+    DecreaseBlock,
+    IncreaseBlock,
+    InsertCurrent,
+    InsertZero,
+    Delete,
+}
+
+// with Ctrl, or on their own with Caps Lock on
+const SEQUENCE_KEYS: [(KeyCode, SequenceAction, &str); 9] = [
+    (KeyCode::Numpad7, SequenceAction::Top, "Seq top"),
+    (KeyCode::Numpad1, SequenceAction::End, "Seq end"),
+    (KeyCode::Numpad8, SequenceAction::Up, "Seq up"),
+    (KeyCode::Numpad2, SequenceAction::Down, "Seq down"),
+    (
+        KeyCode::Numpad4,
+        SequenceAction::DecreaseBlock,
+        "Seq block -",
+    ),
+    (
+        KeyCode::Numpad6,
+        SequenceAction::IncreaseBlock,
+        "Seq block +",
+    ),
+    (
+        KeyCode::Numpad5,
+        SequenceAction::InsertCurrent,
+        "Seq ins cur",
+    ),
+    (KeyCode::Numpad0, SequenceAction::InsertZero, "Seq ins 0"),
+    (KeyCode::NumpadDecimal, SequenceAction::Delete, "Seq del"),
+];
+
+const OCTAVE_KEYS: [(KeyCode, &str); 5] = [
+    (KeyCode::F1, "Octave 1"),
+    (KeyCode::F2, "Octave 2"),
+    (KeyCode::F3, "Octave 3"),
+    (KeyCode::F4, "Octave 4"),
+    (KeyCode::F5, "Octave 5"),
+];
 
 // a quick scroll through the instrument list
 const INSTRUMENT_PAGE: i32 = 8;
@@ -65,7 +120,9 @@ impl Action for StatusBarAction {
     fn repeats(self) -> bool {
         return !matches!(
             self,
-            StatusBarAction::ToggleSpacing | StatusBarAction::EditName(_)
+            StatusBarAction::ToggleSpacing
+                | StatusBarAction::ToggleEdit
+                | StatusBarAction::EditName(_)
         );
     }
 }
@@ -163,73 +220,109 @@ impl StatusBar {
             });
 
         let mute_boxes = (0..MUTE_COLUMNS * MUTE_ROWS).map(mute_box).collect();
+        let keys = Keymap::new("status")
+            .bind(
+                Key::shift(KeyCode::Right),
+                StatusBarAction::NextInstrument,
+                "Next instrument",
+            )
+            .bind(
+                Key::shift(KeyCode::Left),
+                StatusBarAction::PrevInstrument,
+                "Prev instrument",
+            )
+            .bind(
+                Key::plain(KeyCode::Grave),
+                StatusBarAction::ToggleSpacing,
+                "Spacing",
+            )
+            .bind(
+                Key::alt(KeyCode::Numpad7),
+                StatusBarAction::FirstInstrument,
+                "First instr",
+            )
+            .bind(
+                Key::alt(KeyCode::Numpad1),
+                StatusBarAction::LastInstrument,
+                "Last instr",
+            )
+            .bind(
+                Key::alt(KeyCode::Numpad8),
+                StatusBarAction::MoveInstrument(-1),
+                "Instr up",
+            )
+            .bind(
+                Key::alt(KeyCode::Numpad2),
+                StatusBarAction::MoveInstrument(1),
+                "Instr down",
+            )
+            .bind(
+                Key::alt(KeyCode::Numpad9),
+                StatusBarAction::MoveInstrument(-INSTRUMENT_PAGE),
+                "Instr page up",
+            )
+            .bind(
+                Key::alt(KeyCode::Numpad3),
+                StatusBarAction::MoveInstrument(INSTRUMENT_PAGE),
+                "Instr page down",
+            )
+            .bind(
+                Key::new(KeyCode::Left, KeyMods::ALT | KeyMods::SHIFT),
+                StatusBarAction::MoveInstrument(-INSTRUMENT_JUMP),
+                "16 instr back",
+            )
+            .bind(
+                Key::new(KeyCode::Right, KeyMods::ALT | KeyMods::SHIFT),
+                StatusBarAction::MoveInstrument(INSTRUMENT_JUMP),
+                "16 instr on",
+            )
+            .bind(
+                Key::amiga(KeyCode::I),
+                StatusBarAction::EditName(NameEdit::Select),
+                "Instr name",
+            )
+            .bind(
+                Key::new(KeyCode::I, AMIGA | KeyMods::SHIFT),
+                StatusBarAction::EditName(NameEdit::Clear),
+                "Clear instr name",
+            )
+            .bind(
+                Key::plain(KeyCode::Escape),
+                StatusBarAction::ToggleEdit,
+                "Edit",
+            )
+            .bind(
+                Key::alt(KeyCode::Up),
+                StatusBarAction::FirstBlock,
+                "First block",
+            )
+            .bind(
+                Key::alt(KeyCode::Down),
+                StatusBarAction::LastBlock,
+                "Last block",
+            )
+            .bind(
+                Key::shift(KeyCode::Up),
+                StatusBarAction::PreviousBlock,
+                "Prev block",
+            )
+            .bind(
+                Key::shift(KeyCode::Down),
+                StatusBarAction::NextBlock,
+                "Next block",
+            );
+        let keys = (1..)
+            .zip(OCTAVE_KEYS)
+            .fold(keys, |keys, (octave, (code, name))| {
+                return keys.bind(Key::plain(code), StatusBarAction::Octave(octave), name);
+            });
+        let keys = SEQUENCE_KEYS
+            .into_iter()
+            .fold(keys, |keys, (code, action, name)| {
+                return keys.bind(Key::ctrl(code), StatusBarAction::Sequence(action), name);
+            });
         return Self {
-            keys: Keymap::new("status")
-                .bind(
-                    Key::shift(KeyCode::Right),
-                    StatusBarAction::NextInstrument,
-                    "Next instrument",
-                )
-                .bind(
-                    Key::shift(KeyCode::Left),
-                    StatusBarAction::PrevInstrument,
-                    "Prev instrument",
-                )
-                .bind(
-                    Key::plain(KeyCode::Grave),
-                    StatusBarAction::ToggleSpacing,
-                    "Spacing",
-                )
-                .bind(
-                    Key::alt(KeyCode::Numpad7),
-                    StatusBarAction::FirstInstrument,
-                    "First instr",
-                )
-                .bind(
-                    Key::alt(KeyCode::Numpad1),
-                    StatusBarAction::LastInstrument,
-                    "Last instr",
-                )
-                .bind(
-                    Key::alt(KeyCode::Numpad8),
-                    StatusBarAction::MoveInstrument(-1),
-                    "Instr up",
-                )
-                .bind(
-                    Key::alt(KeyCode::Numpad2),
-                    StatusBarAction::MoveInstrument(1),
-                    "Instr down",
-                )
-                .bind(
-                    Key::alt(KeyCode::Numpad9),
-                    StatusBarAction::MoveInstrument(-INSTRUMENT_PAGE),
-                    "Instr page up",
-                )
-                .bind(
-                    Key::alt(KeyCode::Numpad3),
-                    StatusBarAction::MoveInstrument(INSTRUMENT_PAGE),
-                    "Instr page down",
-                )
-                .bind(
-                    Key::new(KeyCode::Left, KeyMods::ALT | KeyMods::SHIFT),
-                    StatusBarAction::MoveInstrument(-INSTRUMENT_JUMP),
-                    "16 instr back",
-                )
-                .bind(
-                    Key::new(KeyCode::Right, KeyMods::ALT | KeyMods::SHIFT),
-                    StatusBarAction::MoveInstrument(INSTRUMENT_JUMP),
-                    "16 instr on",
-                )
-                .bind(
-                    Key::amiga(KeyCode::I),
-                    StatusBarAction::EditName(NameEdit::Select),
-                    "Instr name",
-                )
-                .bind(
-                    Key::new(KeyCode::I, AMIGA | KeyMods::SHIFT),
-                    StatusBarAction::EditName(NameEdit::Clear),
-                    "Clear instr name",
-                ),
+            keys,
             boxes,
             mutes: Grid::new(MUTE_COLUMNS, MUTE_ROWS, mute_boxes),
         };
@@ -285,6 +378,7 @@ impl Gadget<AppState, Event> for StatusBar {
 
     fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
         return self.dispatch(state, event)
+            || caps_lock_keypad(state, event)
             || self.mutes.handle_event(state, event)
             || self
                 .boxes
@@ -302,6 +396,42 @@ impl Gadget<AppState, Event> for StatusBar {
                 button.render(state, rect, painter);
             }
         }
+    }
+}
+
+fn caps_lock_keypad(state: &mut AppState, event: &Event) -> bool {
+    let Event::Key { key, mods, .. } = *event else {
+        return false;
+    };
+    if !state.caps_lock || !mods.is_empty() {
+        return false;
+    }
+    let Some(&(_, action, _)) = SEQUENCE_KEYS.iter().find(|(code, ..)| *code == key) else {
+        return false;
+    };
+    sequence(state, action);
+    return true;
+}
+
+fn sequence(state: &mut AppState, action: SequenceAction) {
+    match action {
+        SequenceAction::Top => {
+            state.set_sequence(0);
+        }
+        SequenceAction::End => {
+            state.set_sequence(usize::MAX);
+        }
+        SequenceAction::Up => {
+            state.prev_sequence();
+        }
+        SequenceAction::Down => {
+            state.next_sequence();
+        }
+        SequenceAction::DecreaseBlock => state.decrement_sequence_pattern(),
+        SequenceAction::IncreaseBlock => state.increment_sequence_pattern(),
+        SequenceAction::InsertCurrent => state.insert_sequence(state.active_pattern),
+        SequenceAction::InsertZero => state.insert_sequence(PatternId::ZERO),
+        SequenceAction::Delete => state.delete_sequence(state.active_sequence_index),
     }
 }
 
@@ -357,6 +487,15 @@ impl KeyActions for StatusBar {
                 state.set_modes(HeaderMode::Instrument, state.main_mode());
                 state.name_edit_request = Some(edit);
             }
+            StatusBarAction::Octave(octave) => state.set_octave(octave),
+            StatusBarAction::ToggleEdit => state.cursor.edit_mode.flip(),
+            StatusBarAction::FirstBlock => state.select_block(0),
+            StatusBarAction::LastBlock => state.select_block(usize::MAX),
+            StatusBarAction::PreviousBlock => {
+                state.select_block((state.active_pattern.0 as usize).saturating_sub(1));
+            }
+            StatusBarAction::NextBlock => state.select_block(state.active_pattern.0 as usize + 1),
+            StatusBarAction::Sequence(action) => sequence(state, action),
         }
     }
 
@@ -371,6 +510,21 @@ impl KeyActions for StatusBar {
             StatusBarAction::LastInstrument => "Last instrument",
             StatusBarAction::EditName(NameEdit::Select) => "Edit the instrument's name",
             StatusBarAction::EditName(NameEdit::Clear) => "Clear and edit the instrument's name",
+            StatusBarAction::Octave(_) => "Play notes from this octave up",
+            StatusBarAction::ToggleEdit => "Switch edit mode on or off",
+            StatusBarAction::FirstBlock => "Go to the first block",
+            StatusBarAction::LastBlock => "Go to the last block",
+            StatusBarAction::PreviousBlock => "Go to the previous block",
+            StatusBarAction::NextBlock => "Go to the next block",
+            StatusBarAction::Sequence(SequenceAction::Top) => "Go to the top of the play sequence",
+            StatusBarAction::Sequence(SequenceAction::End) => "Go to the end of the play sequence",
+            StatusBarAction::Sequence(SequenceAction::Up) => "Scroll the play sequence up",
+            StatusBarAction::Sequence(SequenceAction::Down) => "Scroll the play sequence down",
+            StatusBarAction::Sequence(SequenceAction::DecreaseBlock) => "Decrease the block number",
+            StatusBarAction::Sequence(SequenceAction::IncreaseBlock) => "Increase the block number",
+            StatusBarAction::Sequence(SequenceAction::InsertCurrent) => "Insert the current block",
+            StatusBarAction::Sequence(SequenceAction::InsertZero) => "Insert block 0",
+            StatusBarAction::Sequence(SequenceAction::Delete) => "Delete the block number",
         };
     }
 }
@@ -496,5 +650,52 @@ mod tests {
             repeat: false,
         };
         assert!(!status.handle_event(&mut state, &plain));
+    }
+
+    fn press(status: &mut StatusBar, state: &mut AppState, key: KeyCode, mods: KeyMods) {
+        let event = Event::Key {
+            key,
+            mods,
+            repeat: false,
+        };
+        assert!(status.handle_event(state, &event), "{key:?}");
+    }
+
+    #[test]
+    fn esc_toggles_edit() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        let mut status = StatusBar::new();
+        press(&mut status, &mut state, KeyCode::Escape, KeyMods::NONE);
+        assert!(state.cursor.edit_mode);
+        press(&mut status, &mut state, KeyCode::Escape, KeyMods::NONE);
+        assert!(!state.cursor.edit_mode);
+    }
+
+    #[test]
+    fn block_keys_clamp() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        let mut status = StatusBar::new();
+        state.next_pattern();
+        state.next_pattern();
+        state.select_block(0);
+        let mut block = |key, mods| {
+            press(&mut status, &mut state, key, mods);
+            return state.active_pattern.0;
+        };
+        assert_eq!(block(KeyCode::Up, KeyMods::SHIFT), 0);
+        assert_eq!(block(KeyCode::Down, KeyMods::SHIFT), 1);
+        assert_eq!(block(KeyCode::Down, KeyMods::ALT), 2);
+        assert_eq!(block(KeyCode::Down, KeyMods::SHIFT), 2);
+        assert_eq!(block(KeyCode::Up, KeyMods::ALT), 0);
+    }
+
+    #[test]
+    fn f1_to_f5_pick_the_octave() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        let mut status = StatusBar::new();
+        for (octave, (key, _)) in (1..).zip(OCTAVE_KEYS) {
+            press(&mut status, &mut state, key, KeyMods::NONE);
+            assert_eq!(state.current_octave, octave);
+        }
     }
 }

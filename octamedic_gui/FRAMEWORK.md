@@ -178,10 +178,16 @@ the first key that isn't a modifier closes it and goes to its closure with the s
 `Prompt::yes_no` is the usual "(Y/N)" question. `state.notify(text)` shows a message in the same
 bar for a few seconds. The bar is the title bar's height and covers it.
 
+A shortcut for something the status bar shows goes in the status bar's keymap
+(`app/status_bar.rs`), and since the status bar is on every screen, so are they: F1 to F5 for the
+octaves, Esc for edit mode (E), ~ for SP, Shift+Up/Down and Alt+Up/Down for the previous, next,
+first and last block, the instrument keys, and Ctrl and the keypad (or the keypad with Caps Lock
+on) for the play sequence.
+
 The status bar's box next to E shows the keyboard's two octaves, the bottom row's and the top
 row's, in hex like OctaMED: 12 up to 9A. Clicking it goes up (right click down) and loops round;
-F1 to F5 work on any screen and only go up to 5. Shift+Left and Shift+Right change the instrument.
-Holding a note key repeats it like a new press.
+F1 to F5 only go up to 5. Shift+Left and Shift+Right change the instrument. Holding a note key
+repeats it like a new press.
 
 In edit mode the block editor types into whichever column the cursor is on: a note key in the
 note column, a base 32 digit (0-9, A-V) in the instrument's right column, and a hex digit in the
