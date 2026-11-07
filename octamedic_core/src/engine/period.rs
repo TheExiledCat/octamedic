@@ -191,7 +191,6 @@ fn extra_low_period(index: i8, finetune: i8) -> u16 {
     return first_octave * times;
 }
 
-// from C-1, after the transpose, octaves up until it's not negative and one down past D-6
 /// The note, 1 for C-1 to 36 for B-3, whose period without finetune is `period`.
 pub fn period_note(period: u16) -> Option<u8> {
     let index = table(0)
@@ -207,6 +206,7 @@ pub fn nearest_period_note(period: u16) -> u8 {
     return nearest.map_or(1, |index| index as u8 + 1);
 }
 
+// from C-1, after the transpose, octaves up until it's not negative and one down past D-6
 fn note_index(note: u8, transpose: i8) -> i8 {
     // i8 on purpose, the player does this in a byte and wraps
     let mut index = (note as i8).wrapping_add(transpose).wrapping_sub(1);

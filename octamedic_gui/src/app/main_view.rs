@@ -126,6 +126,7 @@ impl MainView {
 
 impl Gadget<AppState, Event> for MainView {
     fn update(&mut self, state: &mut AppState) {
+        state.typing = false;
         for widget in self.widgets(state.main_mode()) {
             widget.update(state);
         }
@@ -199,8 +200,6 @@ impl Gadget<AppState, Event> for MainView {
         }
     }
 }
-
-// with caps lock on the keypad does the sequence list without Ctrl
 
 // a typed character that isn't part of a shortcut
 fn typed_key(event: &Event) -> Option<char> {

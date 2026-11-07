@@ -195,6 +195,9 @@ pub struct AppState {
     pub displays_off: bool,
     // the modifier keys down at the last mouse event, Amiga included
     pub mouse_mods: KeyMods,
+    // a text box on the screen below the header has the keyboard, so the status bar's keys, which
+    // come first, leave it alone. set again by the screen each update
+    pub typing: bool,
     // the application config, saved between runs
     config: Config,
     // true when config has been modified, flushed by save_config in update
@@ -279,6 +282,7 @@ impl AppState {
             pending_dialogs: Vec::new(),
             displays_off: false,
             mouse_mods: KeyMods::NONE,
+            typing: false,
             config,
             config_changed: false,
             config_path,

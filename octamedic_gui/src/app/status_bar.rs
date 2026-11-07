@@ -377,8 +377,8 @@ impl Gadget<AppState, Event> for StatusBar {
     }
 
     fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
-        return self.dispatch(state, event)
-            || caps_lock_keypad(state, event)
+        let keys = !state.typing;
+        return keys && (self.dispatch(state, event) || caps_lock_keypad(state, event))
             || self.mutes.handle_event(state, event)
             || self
                 .boxes
@@ -399,6 +399,7 @@ impl Gadget<AppState, Event> for StatusBar {
     }
 }
 
+// with Caps Lock on the keypad does the sequence list without Ctrl
 fn caps_lock_keypad(state: &mut AppState, event: &Event) -> bool {
     let Event::Key { key, mods, .. } = *event else {
         return false;
@@ -697,5 +698,19 @@ mod tests {
             press(&mut status, &mut state, key, KeyMods::NONE);
             assert_eq!(state.current_octave, octave);
         }
+    }
+
+    #[test]
+    fn keys_go_to_a_box_being_typed_in() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        let mut status = StatusBar::new();
+        state.typing = true;
+        let esc = Event::Key {
+            key: KeyCode::Escape,
+            mods: KeyMods::NONE,
+            repeat: false,
+        };
+        assert!(!status.handle_event(&mut state, &esc));
+        assert!(!state.cursor.edit_mode);
     }
 }

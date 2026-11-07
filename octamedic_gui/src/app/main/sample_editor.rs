@@ -1,12 +1,14 @@
 use std::{
     ops::{Range, RangeInclusive},
-    sync::Arc,
+    sync::{Arc, Weak},
 };
 
 use ggez::input::keyboard::KeyCode;
 use octamedic_core::{
     data::{
-        instrument::{InstrumentId, InstrumentKind, OctamedicSample, SampleOctaves},
+        instrument::{
+            InstrumentId, InstrumentKind, MIN_LOOP, OctamedicSample, SampleOctaves, word_loop,
+        },
         note::OctamedicNote,
     },
     engine::period::{nearest_period_note, note_period, period_note},
@@ -82,8 +84,9 @@ const BOXES: [(&str, Rect); 13] = [
     ("0", on_row(0, 74, 60)),
     ("0", on_row(1, 74, 60)),
     ("0", on_row(2, 74, 60)),
-    ("428", on_row(0, 554, 44)),
-    ("428", on_row(1, 554, 44)),
+    // PITCH and DEST, which show the editor's periods
+    ("", on_row(0, 554, 44)),
+    ("", on_row(1, 554, 44)),
     ("200", on_row(2, 432, 34)),
     ("200", on_row(2, 485, 35)),
     ("16", on_row(3, 270, 36)),
@@ -97,9 +100,9 @@ const BOXES: [(&str, Rect); 13] = [
 const BUFFSIZE_BOX: usize = 0;
 const RANGE_START_BOX: usize = 1;
 const RANGE_END_BOX: usize = 2;
-// CHG.VOL.'s start and end, in percent
 const PITCH_BOX: usize = 3;
 const DEST_BOX: usize = 4;
+// CHG.VOL.'s start and end, in percent
 const VOLUME_START_BOX: usize = 5;
 const VOLUME_END_BOX: usize = 6;
 const VOLUME_DIGITS: usize = 3;
@@ -122,9 +125,8 @@ const LOOP_ON: &str = "LOOP ON";
 // which of the loop's ends the arrows move
 const LOOP_START: &str = "S";
 const LOOP_END: &str = "E";
-// MMD keeps a loop in words and takes a one word loop for none
-const MIN_LOOP: usize = 4;
 const LOOP_STEP: usize = 2;
+const TOO_LONG: &str = "Sample would be too long";
 // the loop markers are sprites with colours of their own: a line down the waveform with a flag
 // at the top, the start's to its left and the end's to its right, filled yellow on the selected
 // one
@@ -253,6 +255,11 @@ const OCTAVE_ARROW_GAP: i32 = 6;
 // between CHG.VOL.'s two boxes
 const CHANGE_VOLUME_ARROW: Rect = on_row(2, 466, 19);
 const CHANGE_VOLUME_ARROW_SIZE: [i32; 2] = [8, 7];
+
+fn active_sample_shared(state: &AppState) -> Option<Arc<OctamedicSample>> {
+    let instrument = state.song().instrument(state.active_instrument)?;
+    return instrument.sample().cloned();
+}
 
 fn active_sample(state: &AppState) -> Option<&OctamedicSample> {
     let instrument = state.song().instrument(state.active_instrument)?;
@@ -534,9 +541,11 @@ pub struct SampleEditor {
     periods: [u16; 2],
     // a note box was clicked, and the next note key sets its period
     picking_note: Option<usize>,
-    // what LOOP ON last turned off, to put back when it's turned on again
-    turned_off_loop: Option<(usize, usize)>,
-    dragged_loop_end: Option<LoopEnd>,
+    // what LOOP ON last turned off, to put back when it's turned on again, as long as the sample
+    // is still the one it left
+    turned_off_loop: Option<(Weak<OctamedicSample>, (usize, usize))>,
+    // and how far from the mouse the marker's line was when it was grabbed
+    dragged_loop_end: Option<(LoopEnd, i32)>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -545,17 +554,18 @@ enum LoopEnd {
     End,
 }
 
-// `which` end of the loop taken to `at`, keeping it at least MIN_LOOP long and inside `limit`
+// `which` end of the loop taken to `at`, as near as a loop MMD can keep inside `limit` gets
 fn moved_loop(
     (start, end): (usize, usize),
     which: LoopEnd,
     at: usize,
     limit: usize,
 ) -> (usize, usize) {
-    return match which {
-        LoopEnd::Start => (at.min(end.saturating_sub(MIN_LOOP)), end),
-        LoopEnd::End => (start, at.max(start + MIN_LOOP).min(limit)),
+    let moved = match which {
+        LoopEnd::Start => word_loop(at.min(end.saturating_sub(MIN_LOOP)), end),
+        LoopEnd::End => word_loop(start, at.max(start + MIN_LOOP).min(limit)),
     };
+    return moved.unwrap_or((start, end));
 }
 
 fn move_loop_end(state: &mut AppState, which: LoopEnd, at: usize) {
@@ -656,7 +666,8 @@ impl SampleEditor {
             picking_note: None,
             turned_off_loop: None,
             dragged_loop_end: None,
-        };
+        }
+        .with_periods_shown();
     }
 }
 
@@ -717,8 +728,9 @@ impl SampleEditor {
         let pos = self.mouse.press_pos();
         let index = self.sample_at(pos.x);
         if button == MouseButton::Left && !self.free_hand {
-            self.dragged_loop_end = self.marker_at(state, pos);
-            if let Some(which) = self.dragged_loop_end {
+            let grabbed = self.marker_at(state, pos);
+            self.dragged_loop_end = grabbed.map(|(which, column)| (which, column - pos.x));
+            if let Some((which, _)) = grabbed {
                 self.selected_loop_end = which;
             }
         }
@@ -731,18 +743,29 @@ impl SampleEditor {
             Some(index)
         };
     }
-    // a marker's flag or line under `pos`, the selected one first where they overlap
-    fn marker_at(&self, state: &AppState, pos: Point) -> Option<LoopEnd> {
+    fn with_periods_shown(mut self) -> Self {
+        for (period, index) in self.periods.iter().zip([PITCH_BOX, DEST_BOX]) {
+            self.boxes[index].0.set_text(period.to_string());
+        }
+        return self;
+    }
+
+    // a shown marker's flag or line under `pos`, the selected one first where they overlap, and
+    // the column its line is on
+    fn marker_at(&self, state: &AppState, pos: Point) -> Option<(LoopEnd, i32)> {
         let repeat = active_sample(state)?.repeat?;
         let selected = self.selected_loop_end;
         let other = match selected {
             LoopEnd::Start => LoopEnd::End,
             LoopEnd::End => LoopEnd::Start,
         };
-        return [selected, other].into_iter().find(|&which| {
-            let [flag, line] = self.marker_rects(loop_end_at(repeat, which), which);
-            let at = |rect: Rect| rect.contains(pos);
-            return at(flag) || at(line);
+        let visible = self.view.visible();
+        return [selected, other].into_iter().find_map(|which| {
+            let at = loop_end_at(repeat, which);
+            let [flag, line] = self.marker_rects(at, which);
+            let grabbed = (visible.start..=visible.end).contains(&at)
+                && (flag.contains(pos) || line.contains(pos));
+            return grabbed.then_some((which, line.x));
         });
     }
 
@@ -783,15 +806,22 @@ impl SampleEditor {
         if self.clicked(LOOP_ON) {
             match repeat {
                 Some(repeat) => {
-                    self.turned_off_loop = Some(repeat);
                     edit_sample(state, |sample| sample.with_loop(None));
+                    let left = active_sample_shared(state);
+                    self.turned_off_loop = left.map(|left| (Arc::downgrade(&left), repeat));
                 }
-                None if limit >= MIN_LOOP => {
-                    let back = self.turned_off_loop.filter(|&(_, end)| end <= limit);
-                    let repeat = back.unwrap_or((0, limit));
-                    edit_sample(state, |sample| sample.with_loop(Some(repeat)));
+                None => {
+                    let current = active_sample_shared(state);
+                    let back = self.turned_off_loop.take().filter(|(left, _)| {
+                        return current
+                            .as_ref()
+                            .is_some_and(|current| left.as_ptr() == Arc::as_ptr(current));
+                    });
+                    let repeat = back.map(|(_, repeat)| repeat).or(word_loop(0, limit));
+                    if repeat.is_some() {
+                        edit_sample(state, |sample| sample.with_loop(repeat));
+                    }
                 }
-                None => {}
             }
         }
         for (index, to) in moves.into_iter().enumerate() {
@@ -801,9 +831,16 @@ impl SampleEditor {
                 move_loop_end(state, which, to);
             }
         }
-        if let Some(dragged) = self.dragged_loop_end {
-            let at = self.sample_at(self.mouse.pos().x);
-            move_loop_end(state, dragged, at);
+        if let Some((dragged, offset)) = self.dragged_loop_end {
+            let column = self.mouse.pos().x + offset;
+            let marker = repeat.map(|repeat| {
+                let [_, line] = self.marker_rects(loop_end_at(repeat, dragged), dragged);
+                return line.x;
+            });
+            // a click without a move only selects it
+            if marker != Some(column) {
+                move_loop_end(state, dragged, self.sample_at(column));
+            }
             if self.mouse.held().is_none() {
                 self.dragged_loop_end = None;
             }
@@ -841,11 +878,17 @@ impl SampleEditor {
             (self.picture_clicked(4), (2, 1)),
             (self.picture_clicked(5), (1, 2)),
         ];
+        let length = sample_length(state);
         for (clicked, (from, to)) in resample {
-            if clicked && sample_length(state) > 0 {
-                edit_sample(state, |sample| sample.resampled(from, to));
-                self.view.resized(sample_length(state));
+            if !clicked || length == 0 {
+                continue;
             }
+            if length * to as usize / from as usize > MAX_SAMPLE_SIZE {
+                state.notify(TOO_LONG);
+                continue;
+            }
+            edit_sample(state, |sample| sample.resampled(from, to));
+            self.view.resized(sample_length(state));
         }
     }
 
@@ -1100,6 +1143,7 @@ impl Gadget<AppState, Event> for SampleEditor {
         if !buffer_size.is_focused() {
             buffer_size.set_text(length.to_string());
         }
+        state.typing |= self.boxes.iter().any(|(textbox, _)| textbox.is_focused());
     }
 
     fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
@@ -1950,25 +1994,88 @@ mod tests {
         let waveform = WAVEFORM.within(AREA);
         let at = |column: i32| Point::new(waveform.x + column, waveform.y + 3);
         let button = MouseButton::Left;
-        // the end's flag is to the right of its line, at sample 600's column
+        // the end's line is at sample 600's column, 384, and its flag to the right of it. a click
+        // there only selects it
         editor.handle_event(
             &mut state,
             &Event::MouseDown {
-                pos: at(390),
+                pos: at(388),
                 button,
             },
         );
-        editor.handle_event(&mut state, &Event::MouseMove { pos: at(512) });
         editor.handle_event(
             &mut state,
             &Event::MouseUp {
-                pos: at(512),
+                pos: at(388),
+                button,
+            },
+        );
+        editor.update(&mut state);
+        assert_eq!(repeat(&state), Some((200, 600)));
+        assert!(editor.button(LOOP_END).is_toggled());
+        // and it moves as far as the mouse does
+        editor.handle_event(
+            &mut state,
+            &Event::MouseDown {
+                pos: at(388),
+                button,
+            },
+        );
+        editor.handle_event(&mut state, &Event::MouseMove { pos: at(516) });
+        editor.handle_event(
+            &mut state,
+            &Event::MouseUp {
+                pos: at(516),
                 button,
             },
         );
         editor.update(&mut state);
         assert_eq!(repeat(&state), Some((200, 800)));
-        assert!(editor.button(LOOP_END).is_toggled());
+    }
+
+    #[test]
+    fn markers_out_of_view_stay_put() {
+        let mut state = state();
+        with_loop(&mut state, vec![0; 1000], Some((0, 1000)));
+        let (mut editor, _) = drawn_editor(&mut state);
+        editor.view.show(400..600);
+        let waveform = WAVEFORM.within(AREA);
+        let pos = Point::new(waveform.x, waveform.y + 3);
+        let button = MouseButton::Left;
+        editor.handle_event(&mut state, &Event::MouseDown { pos, button });
+        editor.handle_event(&mut state, &Event::MouseUp { pos, button });
+        editor.update(&mut state);
+        assert_eq!(repeat(&state), Some((0, 1000)));
+    }
+
+    #[test]
+    fn resampling_stops_at_the_biggest_sample() {
+        let mut state = state();
+        with_sample(&mut state, MAX_SAMPLE_SIZE / 2 + 1);
+        let (mut editor, _) = drawn_editor(&mut state);
+        click_picture(&mut editor, &mut state, 5);
+        assert_eq!(sample_length(&state), MAX_SAMPLE_SIZE / 2 + 1);
+        assert_eq!(state.notification.as_deref(), Some(TOO_LONG));
+    }
+
+    #[test]
+    fn a_turned_off_loop_only_comes_back_to_the_same_sample() {
+        let mut state = state();
+        with_loop(&mut state, vec![0; 1000], Some((100, 200)));
+        let (mut editor, _) = drawn_editor(&mut state);
+        click(&mut editor, &mut state, LOOP_ON);
+        click_picture(&mut editor, &mut state, 5);
+        click(&mut editor, &mut state, LOOP_ON);
+        assert_eq!(repeat(&state), Some((0, 2000)));
+    }
+
+    #[test]
+    fn a_focused_box_marks_typing() {
+        let mut state = state();
+        with_sample(&mut state, 100);
+        let (mut editor, _) = drawn_editor(&mut state);
+        type_into(&mut editor, &mut state, PITCH_BOX, "300");
+        assert!(state.typing);
     }
 
     #[test]

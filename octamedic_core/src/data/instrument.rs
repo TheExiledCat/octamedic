@@ -18,6 +18,19 @@ pub const MAX_FINETUNE: i8 = 7;
 // two digits on octamed's instrument panel
 pub const MAX_HOLD_DECAY: u8 = 99;
 
+/// MMD keeps a loop in words, so its ends are on even bytes, it takes a one word loop for none
+/// and its length has to fit a word.
+pub const MIN_LOOP: usize = 4;
+pub const MAX_LOOP: usize = 2 * u16::MAX as usize;
+
+/// `start..end` as a loop MMD can keep: on whole words, at least MIN_LOOP and at most MAX_LOOP
+/// long. None if it can't be.
+pub fn word_loop(start: usize, end: usize) -> Option<(usize, usize)> {
+    let (start, end) = (start & !1, end & !1);
+    let end = end.min(start + MAX_LOOP);
+    return (end >= start + MIN_LOOP).then_some((start, end));
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct InstrumentId(pub u8);
 
@@ -225,10 +238,10 @@ impl OctamedicSample {
             .collect();
         let repeat = self
             .repeat
-            .map(|(start, end)| (start * to / from, end * to / from));
+            .and_then(|(start, end)| word_loop(start * to / from, end * to / from));
         return Self {
             data,
-            repeat: repeat.filter(|(start, end)| start < end),
+            repeat,
             ..*self
         };
     }
@@ -265,9 +278,10 @@ impl OctamedicSample {
         return self.octave_copy(0).data.end;
     }
 
-    /// The nearest silent sample past `from`, towards the end or the start.
+    /// The nearest silent sample past `from` on an even byte, where a loop can start or end,
+    /// towards the end or the start.
     pub fn zero_from(&self, from: usize, forward: bool) -> Option<usize> {
-        let silent = |&index: &usize| self.data.get(index) == Some(&0);
+        let silent = |&index: &usize| index % 2 == 0 && self.data.get(index) == Some(&0);
         if forward {
             return (from + 1..self.data.len()).find(silent);
         }
@@ -523,9 +537,11 @@ mod tests {
         let mut sample = ramp();
         sample.data[2] = 0;
         sample.data[7] = 0;
-        assert_eq!(sample.zero_from(4, true), Some(7));
+        sample.data[8] = 0;
+        // 7's odd, so a loop can't end there
+        assert_eq!(sample.zero_from(4, true), Some(8));
         assert_eq!(sample.zero_from(4, false), Some(2));
-        assert_eq!(sample.zero_from(7, true), None);
+        assert_eq!(sample.zero_from(8, true), None);
         assert_eq!(sample.zero_from(2, false), None);
     }
 
@@ -542,13 +558,29 @@ mod tests {
     #[test]
     fn resampling() {
         // up an octave, each pair averaged
-        let higher = ramp().resampled(2, 1);
+        let looped = OctamedicSample {
+            repeat: Some((2, 10)),
+            ..ramp()
+        };
+        let higher = looped.resampled(2, 1);
         assert_eq!(higher.data, [2, 4, 6, 8, 10]);
-        assert_eq!(higher.repeat, Some((3, 4)));
+        assert_eq!(higher.repeat, Some((0, 4)));
         // and back down, the gaps filled in on a line
         let lower = higher.resampled(1, 2);
         assert_eq!(lower.data, [2, 3, 4, 5, 6, 7, 8, 9, 10, 10]);
+        assert_eq!(lower.repeat, Some((0, 8)));
         // up a fifth, C-2's 428 to G-2's 285
         assert_eq!(ramp().resampled(428, 285).data.len(), 6);
+    }
+
+    #[test]
+    fn loops_mmd_can_keep() {
+        assert_eq!(word_loop(3, 11), Some((2, 10)));
+        assert_eq!(word_loop(2, 5), None);
+        assert_eq!(word_loop(0, 200_000), Some((0, MAX_LOOP)));
+        // up two octaves a 4 byte loop is too short to keep
+        let mut sample = ramp();
+        sample.repeat = Some((4, 8));
+        assert_eq!(sample.resampled(4, 1).repeat, None);
     }
 }
