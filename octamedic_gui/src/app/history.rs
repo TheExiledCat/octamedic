@@ -103,6 +103,7 @@ impl History {
         if changes.is_empty() {
             return;
         }
+        changes.shrink_to_fit();
         let step = Step {
             id: self.new_id(),
             changes,

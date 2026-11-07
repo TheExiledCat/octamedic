@@ -445,11 +445,7 @@ impl AppState {
     pub fn active_pattern_mut(&mut self) -> Option<&mut OctamedicPattern> {
         let id = self.active_pattern;
         self.changed_patterns.insert(id);
-        return self
-            .project
-            .get_song_mut(self.active_song)
-            .expect("the active song should exist")
-            .get_pattern_mut(id);
+        return self.song_and_history().0.get_pattern_mut(id);
     }
 
     pub fn toggle_highlight(&mut self, line: usize) {
@@ -888,11 +884,10 @@ impl AppState {
         if let Some(pattern) = self.active_pattern_mut() {
             edit(pattern);
         }
-        let song = self
-            .project
-            .get_song(self.active_song)
-            .expect("the active song should exist");
-        self.history.accept(song.patterns());
+        // undo can't take it back, so it's unsaved like any other change of that kind
+        self.has_changes = true;
+        let (song, history) = self.song_and_history();
+        history.accept(song.patterns());
     }
 
     pub fn set_song_name(&mut self, name: &str) {
@@ -1226,8 +1221,12 @@ impl AppState {
     pub fn slide_volume(&mut self) {
         let EditCursor { line, track, .. } = self.cursor;
         let hex = self.song().flags.volumes_hex;
-        if let Some(pattern) = self.active_pattern_mut() {
-            pattern.slide_volume(line, track, hex);
+        let id = self.active_pattern;
+        let Some(pattern) = self.song_and_history().0.get_pattern_mut(id) else {
+            return;
+        };
+        if pattern.slide_volume(line, track, hex) {
+            self.changed_patterns.insert(id);
         }
     }
 
@@ -1463,20 +1462,23 @@ impl AppState {
         self.active_sequence_index = index.min(last);
     }
 
-    fn record_history(&mut self) {
+    // the song without marking it changed, and the history beside it
+    fn song_and_history(&mut self) -> (&mut OctamedicSong, &mut History) {
         let song = self
             .project
-            .get_song(self.active_song)
+            .get_song_mut(self.active_song)
             .expect("the active song should exist");
-        self.history.record(song.patterns());
+        return (song, &mut self.history);
+    }
+
+    fn record_history(&mut self) {
+        let (song, history) = self.song_and_history();
+        history.record(song.patterns());
     }
 
     fn reset_history(&mut self) {
-        let song = self
-            .project
-            .get_song(self.active_song)
-            .expect("the active song should exist");
-        self.history.reset(song.patterns());
+        let (song, history) = self.song_and_history();
+        history.reset(song.patterns());
     }
 
     pub fn undo(&mut self) {
@@ -1498,14 +1500,11 @@ impl AppState {
             self.notify(nothing);
             return;
         }
-        let song = self
-            .project
-            .get_song_mut(self.active_song)
-            .expect("the active song should exist");
+        let (song, history) = self.song_and_history();
         let jump = if undo {
-            self.history.undo(song)
+            history.undo(song)
         } else {
-            self.history.redo(song)
+            history.redo(song)
         };
         let jump = jump.expect("checked above");
         self.changed_patterns.extend(&jump.patterns);
@@ -2062,6 +2061,16 @@ mod tests {
         state.set_tempo(OctamedicTempo::new());
         state.update();
         assert!(!state.is_saved());
+    }
+
+    #[test]
+    fn a_renamed_block_is_unsaved() {
+        let mut state = state();
+        state.set_block_name("intro");
+        state.update();
+        assert!(!state.is_saved());
+        state.undo();
+        assert_eq!(state.notification.as_deref(), Some("Nothing to undo"));
     }
 
     #[test]
