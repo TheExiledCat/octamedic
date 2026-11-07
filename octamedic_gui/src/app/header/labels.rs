@@ -12,7 +12,6 @@ pub type Words = &'static [(i32, &'static str)];
 // the labels' top from the button's
 const LABEL_Y: i32 = 3;
 
-/// A button label of `words` in `font`, at the label row.
 pub fn placed(font: Font, words: Words) -> impl Fn(ContentArea, Pen, &mut Painter) {
     return move |area, pen, painter| {
         let [left, top] = button_origin(area);
@@ -20,7 +19,6 @@ pub fn placed(font: Font, words: Words) -> impl Fn(ContentArea, Pen, &mut Painte
     };
 }
 
-/// Each of `words` in `font`, its first pixel `x` along from `left`.
 pub fn draw_words(
     painter: &mut Painter,
     font: Font,
@@ -53,7 +51,6 @@ pub struct Picture {
     pub rows: &'static [&'static str],
 }
 
-/// A button label of `picture`.
 pub fn picture(picture: &'static Picture) -> impl Fn(ContentArea, Pen, &mut Painter) {
     return move |area, pen, painter| {
         let [left, top] = button_origin(area);
@@ -62,7 +59,6 @@ pub fn picture(picture: &'static Picture) -> impl Fn(ContentArea, Pen, &mut Pain
     };
 }
 
-/// A pixel for each '#' in `rows`, from `left` and `top`.
 pub fn draw_pixels(painter: &mut Painter, [left, top]: [i32; 2], rows: &[&str], pen: Pen) {
     for (row, line) in rows.iter().enumerate() {
         for (column, pixel) in line.bytes().enumerate() {

@@ -48,7 +48,6 @@ const SEMITONES: u8 = SEMITONES_PER_OCTAVE;
 const MAX_SEQUENCE_ENTRIES: usize = 256;
 
 const MAX_DEBUG_LINES: usize = 256;
-/// The RANGE panel's SELECT: has a button for each of the first 16 tracks.
 pub const SELECTABLE_TRACKS: usize = 16;
 const MULTIPLE_ERRORS: &str = "Multiple errors have occurred";
 
@@ -175,8 +174,8 @@ pub struct AppState {
     // loading another song, so you can copy between songs.
     pub track_buffer: Option<OctamedicPattern>,
     pub block_buffer: Option<OctamedicPattern>,
-    // the RANGE panel's. only shown and used while its block is the active one, and dropped when
-    // blocks move, since it knows its block by number
+    // the RANGE panel's range, shown and used only while its block is the active one. It knows
+    // its block by number, so it's dropped when blocks move
     pub range: Option<BlockRange>,
     pub range_buffer: Option<OctamedicPattern>,
     // the RANGE panel's SELECT: 0 to F. PASTE SELECT goes to the first, the transpose panel will
@@ -1315,7 +1314,6 @@ impl AppState {
         return Some(range);
     }
 
-    /// A range of just `cell` in the active block.
     pub fn start_range(&mut self, cell: Cell) {
         self.range = Some(BlockRange::at(self.active_pattern, cell));
     }
@@ -1331,7 +1329,6 @@ impl AppState {
         }
     }
 
-    /// SELECT TRACK: the cursor's track, top to bottom.
     pub fn select_track_range(&mut self) {
         let lines = self
             .active_pattern()
@@ -1342,7 +1339,6 @@ impl AppState {
         self.range = Some(range);
     }
 
-    /// SELECT BLOCK: every cell.
     pub fn select_block_range(&mut self) {
         let (lines, tracks) = self.active_pattern().map_or((1, 1), |pattern| {
             (pattern.line_count(), pattern.track_count())
@@ -1375,7 +1371,6 @@ impl AppState {
         }
     }
 
-    /// PASTE: the buffer over the block from the cursor, right and down.
     pub fn paste_range(&mut self) {
         let track = self.cursor.track;
         self.paste_range_into(track);
@@ -1403,7 +1398,6 @@ impl AppState {
         self.range_buffer = Some(buffer);
     }
 
-    /// CLEAR: empties the range without copying it.
     pub fn clear_range(&mut self) {
         let Some(range) = self.range_or_notify() else {
             return;
@@ -1413,7 +1407,6 @@ impl AppState {
         }
     }
 
-    /// CANCEL: no range any more.
     pub fn cancel_range(&mut self) {
         self.range = None;
     }
@@ -2041,7 +2034,6 @@ mod tests {
         state.cut_range();
         assert_eq!(notes(&state, 0), [1, 0, 0, 4]);
         assert_eq!(notes(&state, 1), [11, 0, 0, 14]);
-        // PASTE goes in at the cursor, right and down, and what runs off the block is left out
         state.cursor = EditCursor {
             track: 2,
             line: 3,
@@ -2097,10 +2089,8 @@ mod tests {
         assert_eq!(state.active_range(), None);
         state.copy_range();
         assert_eq!(state.notification.as_deref(), Some("No range"));
-        // nor does a drag carry on into it
         state.extend_range(Cell { track: 1, line: 0 });
         assert_eq!(state.active_range(), None);
-        // and blocks moving drop it
         state.active_pattern = PatternId(0);
         state.new_block_here();
         assert_eq!(state.range, None);

@@ -54,10 +54,8 @@ const RANGE_BOXES: [Rect; 4] = [
     Rect::new(415, 34, 28, 11),
 ];
 const RANGE_ARROWS: [[i32; 2]; 2] = [[353, 37], [407, 37]];
-// where the numbers start in the boxes
 const RANGE_TEXT: [i32; 2] = [2, 2];
 
-// the labels' first pixels, SELECT: squeezed in
 const LABELS: [([i32; 2], Font, Words); 6] = [
     ([4, 3], fonts::NARROW_LABEL, &[(0, "SELECT"), (39, ":")]),
     ([229, 25], fonts::LABEL, &[(0, "SPREAD:")]),
@@ -67,7 +65,6 @@ const LABELS: [([i32; 2], Font, Words); 6] = [
     ([296, 37], fonts::LABEL, &[(0, "RANGE:")]),
 ];
 
-// NOTE ECHO's settings as OctaMED starts with them
 const DEFAULT_DIST: &str = "4";
 const DEFAULT_MIN: &str = "1";
 
@@ -86,7 +83,6 @@ pub struct Range {
     clear: Button,
     cancel: Button,
     slide_vol: Button,
-    // not hooked up yet, each with where it goes
     unhooked: Vec<(Button, Rect)>,
     dist: Textbox,
     min: Textbox,
@@ -132,7 +128,6 @@ impl Range {
         };
     }
 
-    // the hooked up ones with where they go, and what they do
     fn actions(&mut self) -> [Action<'_>; 9] {
         return [
             (
@@ -230,7 +225,6 @@ impl Gadget<AppState, Event> for Range {
     }
 }
 
-// the range's tracks and lines, in boxes with arrows between
 fn render_range(state: &AppState, area: Rect, painter: &mut Painter) {
     let numbers = state.active_range().map(|range| {
         let (tracks, lines) = (range.tracks(), range.lines());
@@ -494,7 +488,6 @@ mod tests {
 
     use super::*;
 
-    // inside the header's panel frame
     const AREA: Rect = Rect::new(0, 0, 448, 45);
 
     fn all_rects() -> Vec<Rect> {

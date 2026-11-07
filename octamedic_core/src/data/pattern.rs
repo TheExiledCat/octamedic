@@ -196,8 +196,8 @@ impl OctamedicPattern {
         }
     }
 
-    /// The cells in `tracks` on `lines` as a block of their own, as many tracks wide and lines long
-    /// as there are of them in the block.
+    /// The cells in `tracks` and `lines` as a block of their own, cut down to what this block
+    /// has.
     pub fn copy_range(&self, tracks: Range<usize>, lines: Range<usize>) -> OctamedicPattern {
         let tracks = tracks.start.min(self.track_count())..tracks.end.min(self.track_count());
         let lines = lines.start.min(self.line_count())..lines.end.min(self.line_count());
@@ -670,7 +670,6 @@ mod tests {
         assert_eq!((range.line_count(), range.track_count()), (2, 2));
         assert_eq!(notes(&range, 0), [13, 14]);
         assert_eq!(notes(&range, 1), [23, 24]);
-        // clamped to the block
         let edge = grid(6, 4).copy_range(3..9, 5..9);
         assert_eq!((edge.line_count(), edge.track_count()), (1, 1));
         assert_eq!(notes(&edge, 0), [36]);
@@ -684,7 +683,6 @@ mod tests {
         pattern.paste_range(1, 1, &range);
         assert_eq!(notes(&pattern, 1), [0, 1, 2, 0]);
         assert_eq!(notes(&pattern, 2), [0, 11, 12, 0]);
-        // past the last line and track is left out
         pattern.paste_range(3, 3, &range);
         assert_eq!(notes(&pattern, 3), [0, 0, 0, 1]);
     }
