@@ -107,8 +107,6 @@ pub enum EditorAction {
     // no note, just the instrument, which keeps a held note going
     Hold,
     Highlight,
-    // the bottom row of note keys; the top row plays the octave above
-    Octave(u8),
     // the note and instrument, or the command digit under the cursor
     DeleteNote,
     DeleteCell,
@@ -172,11 +170,6 @@ impl BlockEditor {
             .bind(Key::plain(KeyCode::Return), Hold, "Hold")
             .bind(Key::plain(KeyCode::NumpadEnter), Hold, "Hold")
             .bind(Key::plain(KeyCode::Tab), Highlight, "Highlight")
-            .bind(Key::plain(KeyCode::F1), Octave(1), "Octave 1")
-            .bind(Key::plain(KeyCode::F2), Octave(2), "Octave 2")
-            .bind(Key::plain(KeyCode::F3), Octave(3), "Octave 3")
-            .bind(Key::plain(KeyCode::F4), Octave(4), "Octave 4")
-            .bind(Key::plain(KeyCode::F5), Octave(5), "Octave 5")
             .bind(Key::plain(KeyCode::Delete), DeleteNote, "Del note")
             .bind(Key::shift(KeyCode::Delete), DeleteCell, "Del note+cmd")
             .bind(Key::plain(KeyCode::Back), DeleteSpace, "Del space")
@@ -545,7 +538,6 @@ impl KeyActions for BlockEditor {
             LastBlock => state.select_block(usize::MAX),
             PreviousBlock => state.select_block(block.saturating_sub(1)),
             NextBlock => state.select_block(block + 1),
-            Octave(octave) => state.set_octave(octave),
             DeleteNote => delete(state, false),
             DeleteCell => delete(state, true),
             DeleteSpace | InsertSpace => {
@@ -600,7 +592,6 @@ impl KeyActions for BlockEditor {
             ToggleEdit => "Switch edit mode on or off",
             Hold => "Enter a hold: no note, just the instrument",
             Highlight => "Highlight the line, or take its highlight off",
-            Octave(_) => "Play notes from this octave up",
             DeleteNote => "Delete the note, or the digit under the cursor",
             DeleteCell => "Delete the note and its command",
             DeleteSpace => "Delete the note and close the gap in its track",
@@ -1167,22 +1158,6 @@ mod tests {
         for (key, line) in keys {
             press(&mut editor, &mut state, key, KeyMods::NONE);
             assert_eq!(state.cursor.line, line, "{key:?}");
-        }
-    }
-
-    #[test]
-    fn fkeys_octave() {
-        let (mut editor, mut state) = (BlockEditor::new(), state());
-        let keys = [
-            KeyCode::F1,
-            KeyCode::F2,
-            KeyCode::F3,
-            KeyCode::F4,
-            KeyCode::F5,
-        ];
-        for (octave, key) in (1..).zip(keys) {
-            press(&mut editor, &mut state, key, KeyMods::NONE);
-            assert_eq!(state.current_octave, octave, "{key:?}");
         }
     }
 

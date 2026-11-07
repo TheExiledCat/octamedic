@@ -180,8 +180,8 @@ bar for a few seconds. The bar is the title bar's height and covers it.
 
 The status bar's box next to E shows the keyboard's two octaves, the bottom row's and the top
 row's, in hex like OctaMED: 12 up to 9A. Clicking it goes up (right click down) and loops round;
-F1 to F5 only go up to 5. Shift+Left and Shift+Right change the instrument. Holding a note key
-repeats it like a new press.
+F1 to F5 work on any screen and only go up to 5. Shift+Left and Shift+Right change the instrument.
+Holding a note key repeats it like a new press.
 
 In edit mode the block editor types into whichever column the cursor is on: a note key in the
 note column, a base 32 digit (0-9, A-V) in the instrument's right column, and a hex digit in the

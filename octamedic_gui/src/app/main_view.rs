@@ -43,7 +43,11 @@ pub enum MainAction {
     Play(PlayStart),
     Sequence(SequenceAction),
     ToggleFilter,
+    // the keyboard's octaves, F1 to F5 on any screen
+    Octave(u8),
 }
+
+const OCTAVE_NAMES: [&str; 5] = ["Octave 1", "Octave 2", "Octave 3", "Octave 4", "Octave 5"];
 
 // the play sequence list's keys, on the keypad like OctaMED's
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -132,6 +136,20 @@ impl MainView {
                 "Cont. block",
             );
         let keys = keys.bind(Key::amiga(KeyCode::F), MainAction::ToggleFilter, "Filter");
+        let octave_keys = [
+            KeyCode::F1,
+            KeyCode::F2,
+            KeyCode::F3,
+            KeyCode::F4,
+            KeyCode::F5,
+        ];
+        let keys =
+            (1..)
+                .zip(octave_keys)
+                .zip(OCTAVE_NAMES)
+                .fold(keys, |keys, ((octave, code), name)| {
+                    keys.bind(Key::plain(code), MainAction::Octave(octave), name)
+                });
         let keys = SEQUENCE_KEYS
             .into_iter()
             .fold(keys, |keys, (code, action, name)| {
@@ -328,6 +346,7 @@ impl KeyActions for MainView {
             MainAction::Play(start) => state.start(start),
             MainAction::Sequence(action) => sequence(state, action),
             MainAction::ToggleFilter => state.set_filter(!state.song().flags.filter_on),
+            MainAction::Octave(octave) => state.set_octave(octave),
         }
     }
 
@@ -341,6 +360,7 @@ impl KeyActions for MainView {
             MainAction::Play(PlayStart::Block) => "Play the block from the start",
             MainAction::Play(PlayStart::ContinueBlock) => "Continue playing the block",
             MainAction::ToggleFilter => "Switch the low pass filter on or off",
+            MainAction::Octave(_) => "Play notes from this octave up",
             MainAction::Sequence(SequenceAction::Top) => "Go to the top of the play sequence",
             MainAction::Sequence(SequenceAction::End) => "Go to the end of the play sequence",
             MainAction::Sequence(SequenceAction::Up) => "Scroll the play sequence up",
@@ -367,6 +387,32 @@ mod tests {
             button: MouseButton::Right,
         };
         return view.handle_event(state, &event);
+    }
+
+    #[test]
+    fn f1_to_f5_pick_the_octave_on_any_screen() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        state.set_modes(
+            crate::app::mode::HeaderMode::Instrument,
+            MainMode::SampleEditor,
+        );
+        let mut view = MainView::new();
+        let keys = [
+            KeyCode::F1,
+            KeyCode::F2,
+            KeyCode::F3,
+            KeyCode::F4,
+            KeyCode::F5,
+        ];
+        for (octave, key) in (1..).zip(keys) {
+            let event = Event::Key {
+                key,
+                mods: KeyMods::NONE,
+                repeat: false,
+            };
+            assert!(view.handle_event(&mut state, &event));
+            assert_eq!(state.current_octave, octave, "{key:?}");
+        }
     }
 
     #[test]
