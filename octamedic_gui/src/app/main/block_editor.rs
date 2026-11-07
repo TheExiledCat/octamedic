@@ -144,7 +144,6 @@ pub struct BlockEditor {
     meters: [VuMeter; SCOPE_CHANNELS],
     clickable: Clickable,
     area: Rect,
-    // a range is being dragged out with the right button
     dragging_range: bool,
 }
 
@@ -239,7 +238,6 @@ impl BlockEditor {
         return click.handled();
     }
 
-    // a right press on a track starts a range there, which follows the mouse until it's let go
     fn drag_range(&mut self, state: &mut AppState, event: &Event) -> bool {
         match *event {
             Event::MouseDown {
@@ -254,7 +252,7 @@ impl BlockEditor {
                 return true;
             }
             Event::MouseMove { pos } if self.dragging_range => {
-                // let go somewhere the release didn't come here
+                // the button was let go where the release didn't reach the editor
                 self.dragging_range = state.right_button_held;
                 if let Some(cell) = self
                     .cell_at(state, pos, true)
@@ -278,8 +276,8 @@ impl BlockEditor {
         }
     }
 
-    // the cell under `pos`, or with `nearest` the closest one when it's off the tracks or the
-    // block, as a drag can go past them
+    // the cell under `pos`. With `nearest`, the closest one when it's off the tracks or the
+    // block, since a drag can go past them
     fn cell_at(&self, state: &AppState, pos: Point, nearest: bool) -> Option<Cell> {
         let pattern = state.active_pattern()?;
         let layout = Layout::new(self.area, pattern.track_count());
@@ -1074,7 +1072,6 @@ mod tests {
         };
         assert!(editor.handle_event(&mut state, &press));
         state.right_button_held = true;
-        // moves are left for others too
         let moved = Event::MouseMove { pos: at(2, 4) };
         assert!(!editor.handle_event(&mut state, &moved));
         let release = Event::MouseUp {
@@ -1102,7 +1099,7 @@ mod tests {
             button: MouseButton::Right,
         };
         editor.handle_event(&mut state, &press);
-        // the release went to something else, so the button's up without the editor hearing
+        // let go where the editor didn't hear it
         let moved = Event::MouseMove {
             pos: Point::new(400, 180),
         };

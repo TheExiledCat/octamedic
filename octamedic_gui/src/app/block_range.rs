@@ -2,7 +2,6 @@ use std::ops::Range;
 
 use octamedic_core::data::pattern::PatternId;
 
-/// A cell in a block, by track and line.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Cell {
     pub track: usize,
@@ -19,7 +18,6 @@ pub struct BlockRange {
 }
 
 impl BlockRange {
-    /// Just the one cell.
     pub fn at(block: PatternId, cell: Cell) -> Self {
         return Self {
             block,
