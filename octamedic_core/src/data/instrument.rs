@@ -132,6 +132,19 @@ impl OctamedicSample {
         return Self { data, ..*self };
     }
 
+    /// A copy with `range`'s volume faded linearly from `from` percent at its first sample to `to`
+    /// percent at its last, clipping at the limits.
+    pub fn with_volume_changed(&self, range: Range<usize>, from: u32, to: u32) -> Self {
+        let mut data = self.data.clone();
+        let steps = range.len().saturating_sub(1).max(1) as f64;
+        for (step, sample) in data[range].iter_mut().enumerate() {
+            let percent = from as f64 + (to as f64 - from as f64) * step as f64 / steps;
+            let scaled = (*sample as f64 * percent / 100.0).round();
+            *sample = scaled.clamp(i8::MIN as f64, i8::MAX as f64) as i8;
+        }
+        return Self { data, ..*self };
+    }
+
     /// A copy with `other` mixed in from sample `at`, each sample halfway between the two so it
     /// can't clip. It's made longer if `other` runs past the end.
     pub fn mixed(&self, at: usize, other: &[i8]) -> Self {
@@ -348,6 +361,25 @@ mod tests {
         let cleared = ramp().cleared(2..5);
         assert_eq!(cleared.data, [1, 2, 0, 0, 0, 6, 7, 8, 9, 10]);
         assert_eq!(cleared.repeat, Some((6, 9)));
+    }
+
+    #[test]
+    fn changing_volume_fades_across_the_range() {
+        let sample = OctamedicSample {
+            data: vec![100; 5],
+            repeat: None,
+            octaves: SampleOctaves::One,
+        };
+        let faded = sample.with_volume_changed(1..4, 100, 0);
+        assert_eq!(faded.data, [100, 100, 50, 0, 100]);
+        let louder = sample.with_volume_changed(0..5, 200, 200);
+        assert_eq!(louder.data, [127; 5]);
+        let negative = OctamedicSample {
+            data: vec![-100],
+            ..sample
+        };
+        assert_eq!(negative.with_volume_changed(0..1, 50, 0).data, [-50]);
+        assert_eq!(negative.with_volume_changed(0..1, 300, 0).data, [-128]);
     }
 
     #[test]

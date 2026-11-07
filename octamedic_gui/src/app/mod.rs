@@ -3,6 +3,7 @@ use rustuition::screen::Screen;
 
 pub mod app;
 pub mod block_range;
+pub mod clipboard;
 pub mod config;
 pub mod copyright_bar;
 pub mod cursor;

@@ -1,4 +1,7 @@
-use std::{ops::Range, sync::Arc};
+use std::{
+    ops::{Range, RangeInclusive},
+    sync::Arc,
+};
 
 use ggez::input::keyboard::KeyCode;
 use octamedic_core::data::{
@@ -90,11 +93,17 @@ const BOXES: [(&str, Rect); 13] = [
 const BUFFSIZE_BOX: usize = 0;
 const RANGE_START_BOX: usize = 1;
 const RANGE_END_BOX: usize = 2;
+// CHG.VOL.'s start and end, in percent
+const VOLUME_START_BOX: usize = 5;
+const VOLUME_END_BOX: usize = 6;
+const VOLUME_DIGITS: usize = 3;
+const VOLUMES: RangeInclusive<u32> = 1..=999;
+const VOLUME_OUT_OF_RANGE: &str = "Volume has to be in range 1 - 999";
 const RANGE_DIGITS: usize = 8;
 // the most BUFFSIZE takes, from the manual
-const MAX_BUFFER_SIZE: usize = 131072;
+const MAX_SAMPLE_SIZE: usize = 131072;
 const MULTI_OCTAVE_LENGTH: &str = "Can't change a multi-octave sample's length";
-const BUFFER_PROMPT: &str = "Clear or retain sample? (C/R)";
+const RESIZE_PROMPT: &str = "Clear or retain sample? (C/R)";
 // the notes PITCH and DEST are, grey rather than black
 const NOTE_BOXES: [Rect; 2] = [on_row(0, 598, 32), on_row(1, 598, 32)];
 
@@ -114,12 +123,17 @@ const DELETE: &str = "DEL";
 const CUT: &str = "CUT";
 const COPY: &str = "COPY";
 const PASTE: &str = "PASTE";
-const SAMPLE_TO_BUFFER: &str = "S>CBUFF";
-const BUFFER_TO_SAMPLE: &str = "CBUFF>S";
+const SAMPLE_TO_CLIPBOARD: &str = "S>CBUFF";
+const CLIPBOARD_TO_SAMPLE: &str = "CBUFF>S";
+const CLEAR_CLIPBOARD: &str = "DEL CB";
 const REVERSE: &str = "REV";
-// the copy buffer mixed in from the range's start, only as far as its end if there's a range
+// fades the range from VOLUME_START_BOX's percent to VOLUME_END_BOX's
+const CHANGE_VOLUME: &str = "CHG.VOL.";
+// the clipboard mixed in from the range's start, only as far as its end if there's a range
 const MIX: &str = "MIX";
 const FREEHAND: &str = "FREEHAND";
+// what FREEHAND zooms to, a sample for every column
+const FREEHAND_SAMPLES: usize = WAVEFORM.w as usize;
 // dot pixels: each sample on its own, without the line from the one before
 const D_PIXELS: &str = "D.PIXELS";
 // only picks the format the Files panel saves instruments in, nothing's saved here. its label
@@ -130,22 +144,22 @@ const SAVE_TYPE: &str = "SAVE RAW";
 const BUTTONS: [(&str, Rect); 32] = [
     (PLAY_DISPLAY, on_row(0, 134, 92)),
     (PLAY_RANGE, on_row(0, 226, 92)),
-    (SAMPLE_TO_BUFFER, on_row(0, 318, 62)),
+    (SAMPLE_TO_CLIPBOARD, on_row(0, 318, 62)),
     ("MONITOR", on_row(0, 380, 70)),
     ("RECORD", on_row(0, 450, 70)),
 
     (SHOW_RANGE, on_row(1, 134, 92)),
     (SHOW_ALL, on_row(1, 226, 92)),
-    (BUFFER_TO_SAMPLE, on_row(1, 318, 62)),
+    (CLIPBOARD_TO_SAMPLE, on_row(1, 318, 62)),
     ("R>SY", on_row(1, 380, 37)),
-    ("DEL CB", on_row(1, 417, 43)),
+    (CLEAR_CLIPBOARD, on_row(1, 417, 43)),
     (REVERSE, on_row(1, 460, 30)),
     (MIX, on_row(1, 490, 30)),
 
     (ZOOM_IN, on_row(2, 134, 92)),
     (ZOOM_OUT, on_row(2, 226, 92)),
     (FREEHAND, on_row(2, 318, 62)),
-    ("CHG.VOL.", on_row(2, 380, 52)),
+    (CHANGE_VOLUME, on_row(2, 380, 52)),
     ("CHANGE RATE", on_row(2, 522, 116)),
 
     (CLEAR, on_row(3, 6, 64)),
@@ -179,13 +193,15 @@ const HOOKED_UP: &[&str] = &[
     CUT,
     COPY,
     PASTE,
-    SAMPLE_TO_BUFFER,
-    BUFFER_TO_SAMPLE,
+    SAMPLE_TO_CLIPBOARD,
+    CLIPBOARD_TO_SAMPLE,
     D_PIXELS,
     FREEHAND,
     SAVE_TYPE,
     PLAY_DISPLAY,
     PLAY_RANGE,
+    CLEAR_CLIPBOARD,
+    CHANGE_VOLUME,
 ];
 
 const LOOP_ARROWS: [Rect; 2] = [on_row(3, 440, 14), on_row(3, 454, 14)];
@@ -239,17 +255,17 @@ fn stretch_anchor(range: Range<usize>, sample: usize) -> Option<usize> {
     return None;
 }
 
-fn ask_buffer_size(state: &mut AppState, typed: &str, length: usize) {
+fn ask_sample_size(state: &mut AppState, typed: &str, length: usize) {
     let Ok(size) = typed.parse::<usize>() else {
         return;
     };
-    let size = size.min(MAX_BUFFER_SIZE);
+    let size = size.min(MAX_SAMPLE_SIZE);
     if size == length {
         return;
     }
-    state.open_prompt(Prompt::new(BUFFER_PROMPT, move |state, key| match key {
-        KeyCode::C => resize_buffer(state, size, true),
-        KeyCode::R => resize_buffer(state, size, false),
+    state.open_prompt(Prompt::new(RESIZE_PROMPT, move |state, key| match key {
+        KeyCode::C => resize_sample(state, size, true),
+        KeyCode::R => resize_sample(state, size, false),
         _ => {}
     }));
 }
@@ -280,7 +296,7 @@ fn edit_sample(state: &mut AppState, edit: impl FnOnce(&OctamedicSample) -> Octa
 }
 
 // an instrument without a sound of its own gets one, synths are left alone
-fn resize_buffer(state: &mut AppState, size: usize, clear: bool) {
+fn resize_sample(state: &mut AppState, size: usize, clear: bool) {
     edit_sample(state, |sample| {
         let resized = sample.resized(size);
         if clear {
@@ -497,13 +513,16 @@ impl SampleEditor {
             .into_iter()
             .enumerate()
             .map(|(index, (text, rect))| {
+                let volume = [VOLUME_START_BOX, VOLUME_END_BOX].contains(&index);
+                let digits = if volume { VOLUME_DIGITS } else { RANGE_DIGITS };
                 let mut textbox = widgets::textbox()
                     .font(fonts::INTERFACE)
                     .padding(1)
-                    .max_length(RANGE_DIGITS);
+                    .max_length(digits);
                 textbox.set_text(text);
-                textbox
-                    .set_enabled([BUFFSIZE_BOX, RANGE_START_BOX, RANGE_END_BOX].contains(&index));
+                textbox.set_enabled(
+                    volume || [BUFFSIZE_BOX, RANGE_START_BOX, RANGE_END_BOX].contains(&index),
+                );
                 return (textbox, rect);
             })
             .collect();
@@ -645,15 +664,16 @@ impl SampleEditor {
         let data = active_sample(state).map_or(&[][..], |sample| &sample.data[..]);
         let ranged = data.get(range.clone()).unwrap_or(&[]).to_vec();
         let whole = data.to_vec();
+        let length = whole.len();
         if self.clicked(CLEAR) && !ranged.is_empty() {
             edit_sample(state, |sample| sample.cleared(range.clone()));
         }
         if self.clicked(COPY) && !ranged.is_empty() {
-            state.copy_buffer = ranged.clone();
+            state.clipboard.sample = ranged.clone();
         }
         let cut = self.clicked(CUT) && !ranged.is_empty();
         if cut {
-            state.copy_buffer = ranged.clone();
+            state.clipboard.sample = ranged.clone();
         }
         let delete = self.clicked(DELETE);
         if (delete || cut) && !ranged.is_empty() {
@@ -661,31 +681,52 @@ impl SampleEditor {
             self.view.resized(sample_length(state));
             self.set_range(range.start..range.start);
         }
-        if self.clicked(PASTE) && !state.copy_buffer.is_empty() {
-            let buffer = state.copy_buffer.clone();
-            edit_sample(state, |sample| sample.with_inserted(range.start, &buffer));
+        if self.clicked(PASTE) && !state.clipboard.sample.is_empty() {
+            let clip = state.clipboard.sample.clone();
+            edit_sample(state, |sample| sample.with_inserted(range.start, &clip));
             self.view.resized(sample_length(state));
-            self.set_range(range.start..range.start + buffer.len());
+            self.set_range(range.start..range.start + clip.len());
         }
-        if self.clicked(SAMPLE_TO_BUFFER) && !whole.is_empty() {
-            state.copy_buffer = whole;
+        if self.clicked(SAMPLE_TO_CLIPBOARD) && !whole.is_empty() {
+            state.clipboard.sample = whole;
             state.notify("Sample copied");
         }
+        if self.clicked(CLEAR_CLIPBOARD) {
+            state.clipboard.sample.clear();
+        }
+
         if self.clicked(REVERSE) && !ranged.is_empty() {
             edit_sample(state, |sample| sample.reversed(range.clone()));
         }
-        if self.clicked(MIX) && !state.copy_buffer.is_empty() {
-            let mut buffer = state.copy_buffer.clone();
-            if !range.is_empty() {
-                buffer.truncate(range.len());
+        // without a range it's just the selected sample, at the start percentage
+        let changed = match range.is_empty() {
+            true => range.start..range.start + 1,
+            false => range.clone(),
+        };
+        if self.clicked(CHANGE_VOLUME) && changed.end <= length {
+            let percent = |index: usize| {
+                let typed = self.boxes[index].0.text().parse::<u32>().ok();
+                return typed.filter(|percent| VOLUMES.contains(percent));
+            };
+            match (percent(VOLUME_START_BOX), percent(VOLUME_END_BOX)) {
+                (Some(from), Some(to)) => edit_sample(state, |sample| {
+                    sample.with_volume_changed(changed.clone(), from, to)
+                }),
+                _ => state.notify(VOLUME_OUT_OF_RANGE),
             }
-            edit_sample(state, |sample| sample.mixed(range.start, &buffer));
+        }
+        if self.clicked(MIX) && !state.clipboard.sample.is_empty() {
+            let mut clip = state.clipboard.sample.clone();
+            if !range.is_empty() {
+                clip.truncate(range.len());
+            }
+            edit_sample(state, |sample| sample.mixed(range.start, &clip));
             self.view.resized(sample_length(state));
             state.notify("Sample mixed");
         }
-        if self.clicked(BUFFER_TO_SAMPLE) && !state.copy_buffer.is_empty() {
-            let buffer = state.copy_buffer.clone();
-            edit_sample(state, |_| sample_of(buffer));
+        if self.clicked(CLIPBOARD_TO_SAMPLE) && !state.clipboard.sample.is_empty() {
+            let clip = state.clipboard.sample.clone();
+            edit_sample(state, |_| sample_of(clip));
             self.set_range(0..0);
         }
     }
@@ -745,6 +786,7 @@ impl Gadget<AppState, Event> for SampleEditor {
             self.set_range(0..length);
         }
         self.follow_range_boxes(length);
+        let shown = self.view.visible().len();
         if self.clicked(ZOOM_IN) {
             self.view.zoom_in();
         }
@@ -760,6 +802,9 @@ impl Gadget<AppState, Event> for SampleEditor {
             let range = self.range();
             self.view.show(range);
         }
+        if self.view.visible().len() > shown {
+            self.free_hand = false;
+        }
         if self.clicked(PLAY_DISPLAY) {
             play_part(state, self.view.visible());
         }
@@ -771,6 +816,9 @@ impl Gadget<AppState, Event> for SampleEditor {
         }
         if self.clicked(FREEHAND) {
             self.free_hand = !self.free_hand;
+            if self.free_hand {
+                self.view.show_around_middle(FREEHAND_SAMPLES);
+            }
         }
         if let Some(click) = self.button(SAVE_TYPE).clicked() {
             let chosen = state.instrument_save_type;
@@ -786,7 +834,7 @@ impl Gadget<AppState, Event> for SampleEditor {
         let label = save_type_label(state.instrument_save_type);
         self.button(SAVE_TYPE).set_text(label);
         if std::mem::take(&mut self.buffer_size_entered) {
-            ask_buffer_size(state, self.boxes[BUFFSIZE_BOX].0.text(), length);
+            ask_sample_size(state, self.boxes[BUFFSIZE_BOX].0.text(), length);
         }
         let buffer_size = &mut self.boxes[BUFFSIZE_BOX].0;
         if !buffer_size.is_focused() {
@@ -833,7 +881,7 @@ impl Gadget<AppState, Event> for SampleEditor {
             active_sample(state),
             visible.clone(),
             range_columns,
-            self.dot_pixels,
+            self.dot_pixels || self.free_hand,
         );
         let playing = state.engine.status().sample_position();
         if let Some(pos) = playing.filter(|pos| visible.contains(pos)) {
@@ -1229,7 +1277,7 @@ mod tests {
         enter_size(&mut state, "1500", KeyCode::Return);
         assert_eq!(
             state.prompt.as_ref().map(|prompt| prompt.text()),
-            Some(BUFFER_PROMPT)
+            Some(RESIZE_PROMPT)
         );
         crate::app::prompt::handle_event(&mut state, &key(KeyCode::R));
         let data = &active_sample(&state).unwrap().data;
@@ -1245,7 +1293,7 @@ mod tests {
         assert_eq!(sample_length(&state), 500);
         enter_size(&mut state, "999999", KeyCode::NumpadEnter);
         crate::app::prompt::handle_event(&mut state, &key(KeyCode::R));
-        assert_eq!(sample_length(&state), MAX_BUFFER_SIZE);
+        assert_eq!(sample_length(&state), MAX_SAMPLE_SIZE);
         editor.update(&mut state);
         assert_eq!(editor.boxes[BUFFSIZE_BOX].0.text(), "131072");
     }
@@ -1274,7 +1322,7 @@ mod tests {
     }
 
     #[test]
-    fn copy_buffer() {
+    fn sample_clipboard() {
         let mut state = state();
         state.edit_active_instrument(|instrument| {
             instrument.kind = InstrumentKind::Sample(Arc::new(OctamedicSample {
@@ -1291,12 +1339,12 @@ mod tests {
 
         editor.set_range(10..13);
         click(&mut editor, &mut state, COPY);
-        assert_eq!(state.copy_buffer, [10, 11, 12]);
+        assert_eq!(state.clipboard.sample, [10, 11, 12]);
         assert_eq!(data(&state).len(), 100);
 
         editor.set_range(0..2);
         click(&mut editor, &mut state, CUT);
-        assert_eq!(state.copy_buffer, [0, 1]);
+        assert_eq!(state.clipboard.sample, [0, 1]);
         assert_eq!(data(&state)[..3], [2, 3, 4]);
         assert_eq!(editor.range(), 0..0);
 
@@ -1306,19 +1354,19 @@ mod tests {
         assert_eq!(editor.range(), 3..5);
         assert_eq!(sample_length(&state), 100);
 
-        click(&mut editor, &mut state, SAMPLE_TO_BUFFER);
-        assert_eq!(state.copy_buffer.len(), 100);
+        click(&mut editor, &mut state, SAMPLE_TO_CLIPBOARD);
+        assert_eq!(state.clipboard.sample.len(), 100);
         assert_eq!(state.notification.as_deref(), Some("Sample copied"));
-        state.copy_buffer = vec![7; 5];
-        click(&mut editor, &mut state, BUFFER_TO_SAMPLE);
+        state.clipboard.sample = vec![7; 5];
+        click(&mut editor, &mut state, CLIPBOARD_TO_SAMPLE);
         assert_eq!(data(&state), [7; 5]);
-        state.copy_buffer = vec![7; 5];
+        state.clipboard.sample = vec![7; 5];
 
         editor.set_range(4..4);
         click(&mut editor, &mut state, MIX);
         assert_eq!(data(&state), [7, 7, 7, 7, 7, 3, 3, 3, 3]);
         editor.set_range(1..3);
-        state.copy_buffer = vec![-7; 5];
+        state.clipboard.sample = vec![-7; 5];
         click(&mut editor, &mut state, MIX);
         assert_eq!(data(&state)[..4], [7, 0, 0, 7]);
         editor.set_range(2..6);
@@ -1329,6 +1377,72 @@ mod tests {
         editor.update(&mut state);
         click(&mut editor, &mut state, PASTE);
         assert_eq!(data(&state), [-7; 5]);
+    }
+
+    #[test]
+    fn chg_vol_fades_the_range() {
+        let mut state = state();
+        state.edit_active_instrument(|instrument| {
+            instrument.kind = InstrumentKind::Sample(Arc::new(OctamedicSample {
+                data: vec![i8::MAX / 2; 100],
+                repeat: None,
+                octaves: SampleOctaves::One,
+            }));
+        });
+        let mut editor = SampleEditor::new();
+        editor.update(&mut state);
+        let mut screen = Framebuffer::new(AREA.w, AREA.h);
+        editor.render(&state, AREA, &mut Painter::new(&mut screen, &state.palette));
+        let data = |state: &AppState| active_sample(state).unwrap().data.clone();
+
+        editor.boxes[VOLUME_START_BOX].0.set_text("200");
+        editor.boxes[VOLUME_END_BOX].0.set_text("1");
+        // without a range only the selected sample changes, at the start percentage
+        editor.set_range(5..5);
+        click(&mut editor, &mut state, CHANGE_VOLUME);
+        assert_eq!(data(&state)[4..7], [63, 126, 63]);
+
+        state.edit_active_instrument(|instrument| {
+            instrument.kind = InstrumentKind::Sample(Arc::new(sample_of(vec![i8::MAX / 2; 100])));
+        });
+        editor.set_range(0..100);
+        click(&mut editor, &mut state, CHANGE_VOLUME);
+        let faded = data(&state);
+        assert_eq!((faded[0], faded[99]), (126, 1));
+        assert!(faded.windows(2).all(|pair| pair[0] >= pair[1]));
+
+        for typed in ["0", ""] {
+            editor.boxes[VOLUME_END_BOX].0.set_text(typed);
+            state.notification = None;
+            click(&mut editor, &mut state, CHANGE_VOLUME);
+            assert_eq!(state.notification.as_deref(), Some(VOLUME_OUT_OF_RANGE));
+            assert_eq!(data(&state), faded);
+        }
+    }
+
+    #[test]
+    fn freehand_zooms_to_a_sample_a_column() {
+        let mut state = state();
+        with_sample(&mut state, 1000);
+        let mut editor = SampleEditor::new();
+        editor.update(&mut state);
+        let mut screen = Framebuffer::new(AREA.w, AREA.h);
+        editor.render(&state, AREA, &mut Painter::new(&mut screen, &state.palette));
+        click(&mut editor, &mut state, FREEHAND);
+        assert!(editor.free_hand);
+        assert_eq!(editor.view.visible(), 180..820);
+        // zooming in keeps it, any zoom out lets go of it
+        click(&mut editor, &mut state, ZOOM_IN);
+        assert!(editor.free_hand);
+        click(&mut editor, &mut state, ZOOM_OUT);
+        assert!(!editor.free_hand);
+        click(&mut editor, &mut state, FREEHAND);
+        click(&mut editor, &mut state, SHOW_ALL);
+        assert!(!editor.free_hand && !editor.button(FREEHAND).is_toggled());
+        // turning it off leaves the view alone
+        click(&mut editor, &mut state, FREEHAND);
+        click(&mut editor, &mut state, FREEHAND);
+        assert_eq!(editor.view.visible(), 180..820);
     }
 
     #[test]
