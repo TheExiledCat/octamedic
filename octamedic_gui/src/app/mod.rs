@@ -2,6 +2,7 @@ use octamedic_core::amiga::clock::VideoStandard;
 use rustuition::screen::Screen;
 
 pub mod app;
+pub mod block_range;
 pub mod copyright_bar;
 pub mod cursor;
 pub mod debug_console;

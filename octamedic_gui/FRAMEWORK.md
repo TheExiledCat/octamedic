@@ -192,8 +192,27 @@ the BLOCK panel's DEL.TRK and INS.TRK, and like the buttons don't need edit mode
 Amiga+O is OctaMED's SLIDE: VOL. With the cursor between two volume commands in a track (or on one
 of them), it fills the lines between with volume commands going evenly from the first's volume to
 the second's, rounded, read as hex or decimal like VOL says (`OctamedicPattern::slide_volume`). The
-VOL button belongs to the RANGE page's SLIDE: 1 | 2 | VOL panel, which isn't built yet, so for now
-it's just the key; the button only needs to call `AppState::slide_volume`.
+RANGE panel's SLIDE: VOL does the same.
+
+A range is a rectangle of cells in a block (`BlockRange` in `app/block_range.rs`, kept in
+`AppState::range` with the block it's in). Dragging with the right button over the tracks makes
+one, from any panel; it follows the mouse past the tracks and the block's ends, held to the nearest
+cell. App keeps `AppState::right_button_held`, so a drag let go where the editor doesn't hear it
+still ends. The range knows its block by number, so it's dropped when blocks are inserted,
+deleted, split or joined, or another song is loaded, and it's kept inside its block if the block
+gets smaller. Its cells are filled red, which turns the text over them rose, like OctaMED's
+bitplanes. A
+right click anywhere else still switches the displays off. The RANGE panel (`header/range.rs`)
+works on it: SELECT TRACK and SELECT BLOCK make the cursor's track or the whole block the range,
+CUT and COPY put it in `AppState::range_buffer` (its own, apart from the track and block buffers;
+DEL BUFF clears all three), PASTE puts the buffer in from the cursor right and down, over what's
+there, and PASTE SELECT does the same from the first track picked with SELECT: 0 to F rather than
+the cursor's (SET picks them all, CLR none; picking more than one is for the transpose panel, which
+isn't built yet). CLEAR empties the range and CANCEL drops it. The
+RANGE: boxes show its first and last track and line. SPREAD, SLIDE: 1 and 2, CHORD and NOTE ECHO
+are ghosted. The SELECT: digits and SET and CLR are taller than any of the fonts, so they're
+pictures (`header/labels.rs`, which also has the hand placed labels the BLOCK and RANGE panels
+share).
 
 Enter or A in the note column puts in a hold: no note, just the selected instrument, shown as `-|-`
 like any cell with an instrument and no note. It keeps a note held past its instrument's hold length
