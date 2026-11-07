@@ -1,4 +1,7 @@
-use std::{fs, io, path::Path};
+use std::{
+    fs, io,
+    path::{Path, PathBuf},
+};
 
 use octamedic_core::amiga::clock::VideoStandard;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -66,18 +69,21 @@ impl Default for Config {
 
 impl Config {
     /// Loads configuration from `config.toml`, or creates it with defaults if it doesn't exist
-    /// yet. Any error from reading or parsing is returned so startup can report it.
-    pub fn load() -> (Self, Option<String>) {
+    /// yet. Returns the config, its path if found, and any error from reading or parsing so
+    /// startup can report it.
+    pub fn load() -> (Self, Option<PathBuf>, Option<String>) {
         let path = match files::get_config_file_path() {
             Ok(path) => path,
             Err(error) => {
                 return (
                     Self::default(),
+                    None,
                     Some(format!("Config folder missing: {error}")),
                 );
             }
         };
-        return Self::load_from_path(&path);
+        let (config, error) = Self::load_from_path(&path);
+        return (config, Some(path), error);
     }
 
     pub fn load_from_path(path: &Path) -> (Self, Option<String>) {

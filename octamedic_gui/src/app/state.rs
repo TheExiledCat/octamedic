@@ -191,11 +191,11 @@ pub struct AppState {
     // the modifier keys down at the last mouse event, Amiga included
     pub mouse_mods: KeyMods,
     // the application config, saved between runs
-    pub config: Config,
+    config: Config,
     // true when config has been modified, flushed by save_config in update
-    pub config_changed: bool,
+    config_changed: bool,
     // where config is saved when it changes. None in tests
-    pub config_path: Option<PathBuf>,
+    config_path: Option<PathBuf>,
     // the last try at opening it didn't work, so the engine is disconnected
     audio_failed: bool,
     queued_sequence_index: Option<usize>,
@@ -230,6 +230,15 @@ pub fn screen_palette(palette: &OctamedColorPalette) -> IntuitionColorPalette {
 
 impl AppState {
     pub fn new(project: OctamedicProject, engine: EngineHandle) -> Self {
+        return Self::with_config(project, engine, Config::default(), None);
+    }
+
+    pub fn with_config(
+        project: OctamedicProject,
+        engine: EngineHandle,
+        config: Config,
+        config_path: Option<PathBuf>,
+    ) -> Self {
         let palette = screen_palette(&project.palette());
         let mut state = Self {
             engine,
@@ -261,9 +270,9 @@ impl AppState {
             pending_dialogs: Vec::new(),
             displays_off: false,
             mouse_mods: KeyMods::NONE,
-            config: Config::default(),
+            config,
             config_changed: false,
-            config_path: None,
+            config_path,
             audio_failed: false,
             queued_sequence_index: None,
             started: None,
@@ -341,6 +350,15 @@ impl AppState {
     pub fn config_mut(&mut self) -> &mut Config {
         self.config_changed = true;
         return &mut self.config;
+    }
+
+    pub fn config_changed(&self) -> bool {
+        return self.config_changed;
+    }
+
+    #[cfg(test)]
+    pub fn set_config_path(&mut self, path: Option<PathBuf>) {
+        self.config_path = path;
     }
 
     // keeps what isn't the song's, like the file browser and which screen is showing
@@ -540,26 +558,46 @@ impl AppState {
     }
 
     /// Starts the engine on the output device and sends it everything, or gives back why it
-    /// can't.
+    /// can't. If a saved device can't be opened it falls back to the default device for this
+    /// run, keeping the saved setting for when the device returns.
     pub fn open_audio(&mut self) -> Result<(), String> {
-        let engine = match EngineHandle::spawn(
+        let (engine, device_failed) = match EngineHandle::spawn(
             self.config.video.clock(),
             self.config.output.device.as_deref(),
         ) {
-            Ok(engine) => engine,
+            Ok(engine) => (engine, None),
             Err(error) => {
-                self.audio_failed = true;
-                return Err(format!("NO AUDIO: {error}"));
+                if self.config.output.device.is_some() {
+                    match EngineHandle::spawn(self.config.video.clock(), None) {
+                        Ok(engine) => (engine, Some(error)),
+                        Err(fallback_error) => {
+                            self.audio_failed = true;
+                            return Err(format!("NO AUDIO: {fallback_error}"));
+                        }
+                    }
+                } else {
+                    self.audio_failed = true;
+                    return Err(format!("NO AUDIO: {error}"));
+                }
             }
         };
         self.engine = engine;
-        self.audio_failed = false;
+        self.audio_failed = device_failed.is_some();
         self.send_all_to_engine();
         for track in (0..SONG_TRACKS).filter(|&track| self.muted_tracks[track]) {
             self.engine.set_track_muted(track, true);
         }
         self.engine.set_mono(self.config.output.mono);
         self.engine_active_instrument = None;
+        if let Some(error) = device_failed {
+            let name = self
+                .config
+                .output
+                .device
+                .as_deref()
+                .unwrap_or("saved device");
+            return Err(format!("Couldn't open {name}, using default: {error}"));
+        }
         return Ok(());
     }
 
@@ -1722,9 +1760,9 @@ mod tests {
     #[test]
     fn config_mut_marks_changed() {
         let mut state = state();
-        assert!(!state.config_changed);
+        assert!(!state.config_changed());
         state.config_mut().video = VideoStandard::Ntsc;
-        assert!(state.config_changed);
+        assert!(state.config_changed());
         assert_eq!(state.video(), VideoStandard::Ntsc);
     }
 
@@ -1734,12 +1772,12 @@ mod tests {
             std::env::temp_dir().join(format!("octamedic-state-config-{}", std::process::id()));
         let path = folder.join("config.toml");
         let mut state = state();
-        state.config_path = Some(path.clone());
+        state.set_config_path(Some(path.clone()));
 
         state.set_video(VideoStandard::Ntsc);
-        assert!(state.config_changed);
+        assert!(state.config_changed());
         state.update();
-        assert!(!state.config_changed);
+        assert!(!state.config_changed());
         let (loaded, _) = Config::load_from_path(&path);
         assert_eq!(loaded.video, VideoStandard::Ntsc);
 
@@ -1754,5 +1792,23 @@ mod tests {
         assert!(loaded.output.mono);
 
         let _ = std::fs::remove_dir_all(&folder);
+    }
+
+    #[test]
+    fn open_audio_falls_back_when_saved_device_fails() {
+        let mut state = state();
+        state.config_mut().output.device = Some("non-existent-device-12345".to_owned());
+        let result = state.open_audio();
+        assert_eq!(
+            state.config().output.device.as_deref(),
+            Some("non-existent-device-12345")
+        );
+        assert!(state.audio_failed());
+        if let Err(msg) = result {
+            assert!(
+                msg.contains("Couldn't open non-existent-device-12345, using default")
+                    || msg.contains("NO AUDIO")
+            );
+        }
     }
 }

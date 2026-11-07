@@ -42,7 +42,7 @@ fn main() {
     if let Err(error) = files::initialize() {
         errors.push(format!("Couldn't create OctaMEDIC's folders: {error}"));
     }
-    let (config, config_error) = Config::load();
+    let (config, config_path, config_error) = Config::load();
     if let Some(error) = config_error {
         errors.push(error);
     }
@@ -51,12 +51,17 @@ fn main() {
         OctamedicProject::new()
     });
     // only comes back if the window couldn't open
-    let Err(error) = run(project, config, &errors);
+    let Err(error) = run(project, config, config_path, &errors);
     crash_log::log_error(&error.to_string(), &errors);
     std::process::exit(1);
 }
 
-fn run(project: OctamedicProject, config: Config, errors: &[String]) -> GameResult<Infallible> {
+fn run(
+    project: OctamedicProject,
+    config: Config,
+    config_path: Option<PathBuf>,
+    errors: &[String],
+) -> GameResult<Infallible> {
     let [width, height] = screen(config.video).window_size(WINDOW_SCALE);
     let mode = WindowMode {
         maximized: false,
@@ -77,7 +82,7 @@ fn run(project: OctamedicProject, config: Config, errors: &[String]) -> GameResu
         .window_setup(WindowSetup::default().title("OctaMEDIC").vsync(false))
         .build()?;
     open_window(&mut ctx, mode, config.video)?;
-    let app = App::new(&mut ctx, project, config, errors.to_vec())?;
+    let app = App::new(&mut ctx, project, config, config_path, errors.to_vec())?;
     icon::set_window_icons(ctx.gfx.window())?;
     event::run(ctx, event_loop, app);
 }
