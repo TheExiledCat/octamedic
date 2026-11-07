@@ -1,3 +1,4 @@
+use octamedic_util::primitives::Flip;
 use rustuition::{
     font::Font,
     gadget::Gadget,
@@ -83,6 +84,8 @@ pub struct Range {
     clear: Button,
     cancel: Button,
     slide_vol: Button,
+    chord: Button,
+    chord_reset: Button,
     unhooked: Vec<(Button, Rect)>,
     dist: Textbox,
     min: Textbox,
@@ -113,9 +116,9 @@ impl Range {
             clear: label(&[(11, "CLEAR")]),
             cancel: label(&[(7, "CANCEL")]),
             slide_vol: label(&[(7, "VOL")]),
+            chord: Button::new(placed(fonts::PANEL, &[(8, "CHORD")])),
+            chord_reset: Button::new(placed(fonts::NARROW_LABEL, &[(4, "RST")])),
             unhooked: vec![
-                unhooked(fonts::PANEL, &[(8, "CHORD")], CHORD),
-                unhooked(fonts::NARROW_LABEL, &[(4, "RST")], RST),
                 unhooked(fonts::LABEL, &[(5, "2")], SPREAD[0]),
                 unhooked(fonts::LABEL, &[(5, "3")], SPREAD[1]),
                 unhooked(fonts::LABEL, &[(4, "4")], SPREAD[2]),
@@ -178,6 +181,14 @@ impl Gadget<AppState, Event> for Range {
         for (button, selected) in self.select.iter_mut().zip(state.selected_tracks) {
             button.set_toggled(selected);
         }
+        if self.chord.clicked().is_some() {
+            state.chord_mode.flip();
+        }
+        if self.chord_reset.clicked().is_some() {
+            state.chord_reset.flip();
+        }
+        self.chord.set_toggled(state.chord_mode);
+        self.chord_reset.set_toggled(state.chord_reset);
         for (button, _, action) in self.actions() {
             if button.clicked().is_some() {
                 action(state);
@@ -189,7 +200,12 @@ impl Gadget<AppState, Event> for Range {
         let selecting = self
             .select
             .iter_mut()
-            .chain([&mut self.set, &mut self.clr])
+            .chain([
+                &mut self.set,
+                &mut self.clr,
+                &mut self.chord,
+                &mut self.chord_reset,
+            ])
             .any(|button| button.handle_event(state, event));
         return selecting
             || self
@@ -216,6 +232,8 @@ impl Gadget<AppState, Event> for Range {
         for (button, rect, _) in self.actions() {
             button.render(state, rect.within(area), painter);
         }
+        self.chord.render(state, CHORD.within(area), painter);
+        self.chord_reset.render(state, RST.within(area), painter);
         for (button, rect) in &mut self.unhooked {
             button.render(state, rect.within(area), painter);
         }
@@ -556,6 +574,18 @@ mod tests {
         assert!(!state.selected_tracks[3]);
         click(&mut panel, &mut state, SET);
         assert_eq!(state.selected_tracks, [true; SELECTABLE_TRACKS]);
+    }
+
+    #[test]
+    fn chord_and_rst_switch_on_and_off() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        let mut panel = Range::new();
+        click(&mut panel, &mut state, CHORD);
+        click(&mut panel, &mut state, RST);
+        assert!(state.chord_mode && panel.chord.is_toggled());
+        assert!(state.chord_reset && panel.chord_reset.is_toggled());
+        click(&mut panel, &mut state, CHORD);
+        assert!(!state.chord_mode);
     }
 
     #[test]

@@ -25,6 +25,7 @@ use rustuition::palette::{Color, IntuitionColorPalette};
 use crate::{
     app::{
         block_range::{BlockRange, Cell},
+        chord::HeldChord,
         clipboard::Clipboard,
         config::Config,
         cursor::EditCursor,
@@ -179,6 +180,10 @@ pub struct AppState {
     // the RANGE panel's SELECT: 0 to F. PASTE SELECT goes to the first, the transpose panel will
     // use them all
     pub selected_tracks: [bool; SELECTABLE_TRACKS],
+    pub chord_mode: bool,
+    pub chord_reset: bool,
+    pub held_chord: Option<HeldChord>,
+    pub last_chord_tracks: Vec<usize>,
     // shown instead of the notification, and holding everything up until it's answered
     pub prompt: Option<Prompt>,
     pub instrument_save_type: InstrumentSaveType,
@@ -274,6 +279,10 @@ impl AppState {
             clipboard: Clipboard::default(),
             range: None,
             selected_tracks: [true; SELECTABLE_TRACKS],
+            chord_mode: false,
+            chord_reset: false,
+            held_chord: None,
+            last_chord_tracks: Vec::new(),
             prompt: None,
             instrument_save_type: InstrumentSaveType::default(),
             mod_format: ModFormat::default(),
@@ -828,6 +837,13 @@ impl AppState {
     }
 
     /// Lines the cursor moves after entering something, and with the arrows.
+    pub fn move_down(&mut self) {
+        let lines = self
+            .active_pattern()
+            .map_or(0, |pattern| pattern.line_count());
+        self.cursor.move_lines(self.line_step() as isize, lines);
+    }
+
     pub fn line_step(&self) -> usize {
         if self.spacing {
             return self.line_add.max(1) as usize;

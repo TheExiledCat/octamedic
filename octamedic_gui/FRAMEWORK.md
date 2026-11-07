@@ -248,6 +248,15 @@ the oldest steps. Undoing back to where the song was loaded or saved makes it sa
 history starts over when the number of blocks changes, a song is loaded or cleared, and when
 Shift-clicking HEX or DEC rewrites the volume commands.
 
+CHRD on the status bar and the RANGE panel's CHORD switch the same chord mode (`app/chord.rs`).
+While it's on, the note keys held down together go on the cursor's track and then the tracks right
+of it picked with SELECT: 0 to F, one note each; notes past the last of them are dropped. In edit
+mode they're entered on the cursor's line and the cursor waits on the next chord track, and out of
+it they're only played, on those tracks so they sound together. A key's repeats aren't more notes.
+`App` ends the chord once every key but the modifiers is up (ggez's key ups don't reach the
+gadgets), and with RST on the cursor then goes back to the chord's first track and down by the line
+add. Shift+Return enters holds on every track of the last chord.
+
 A range is a rectangle of cells in a block (`BlockRange` in `app/block_range.rs`, kept in
 `AppState::range` with the block it's in). Dragging with the right button over the tracks makes
 one, from any panel; it follows the mouse past the tracks and the block's ends, held to the nearest
@@ -263,8 +272,8 @@ DEL BUFF clears all three), PASTE puts the buffer in from the cursor right and d
 there, and PASTE SELECT does the same from the first track picked with SELECT: 0 to F rather than
 the cursor's (SET picks them all, CLR none; picking more than one is for the transpose panel, which
 isn't built yet). CLEAR empties the range and CANCEL drops it. The
-RANGE: boxes show its first and last track and line. SPREAD, SLIDE: 1 and 2, CHORD and NOTE ECHO
-are ghosted. The SELECT: digits and SET and CLR are taller than any of the fonts, so they're
+RANGE: boxes show its first and last track and line. SPREAD, SLIDE: 1 and 2 and NOTE ECHO are
+ghosted. The SELECT: digits and SET and CLR are taller than any of the fonts, so they're
 pictures (`header/labels.rs`, which also has the hand placed labels the BLOCK and RANGE panels
 share).
 

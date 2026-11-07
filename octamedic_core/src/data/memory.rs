@@ -114,7 +114,7 @@ mod tests {
     use super::*;
     use crate::data::{
         instrument::{InstrumentId, OctamedicSample, SampleOctaves},
-        pattern::{OctamedicPattern, PatternId},
+        pattern::OctamedicPattern,
         song::SongId,
     };
 

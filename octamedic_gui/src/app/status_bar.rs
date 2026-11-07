@@ -192,7 +192,7 @@ impl StatusBar {
         boxes[SONG] = Button::new("").align(Align::Right).font(fonts::INTERFACE);
         boxes[EDIT] = flag("E", 3).on_click(|state, _| state.cursor.edit_mode.flip());
         boxes[SP] = flag("SP", 2).on_click(|state, _| state.spacing.flip());
-        boxes[CHRD] = flag("CHRD", 2).enabled(false);
+        boxes[CHRD] = flag("CHRD", 2).on_click(|state, _| state.chord_mode.flip());
         boxes[INSTRUMENT] = Button::new("")
             .align(Align::Left)
             .font(fonts::INTERFACE)
@@ -371,6 +371,7 @@ impl Gadget<AppState, Event> for StatusBar {
 
         self.boxes[EDIT].set_toggled(state.cursor.edit_mode);
         self.boxes[SP].set_toggled(state.spacing);
+        self.boxes[CHRD].set_toggled(state.chord_mode);
         for (track, button) in self.mutes.cells_mut().iter_mut().enumerate() {
             button.set_toggled(!state.is_track_muted(track));
         }
@@ -663,6 +664,15 @@ mod tests {
             repeat: false,
         };
         assert!(status.handle_event(state, &event), "{key:?}");
+    }
+
+    #[test]
+    fn chrd_shows_chord_mode() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        let mut status = StatusBar::new();
+        state.chord_mode = true;
+        status.update(&mut state);
+        assert!(status.boxes[CHRD].is_enabled() && status.boxes[CHRD].is_toggled());
     }
 
     #[test]

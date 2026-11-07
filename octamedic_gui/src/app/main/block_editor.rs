@@ -122,6 +122,7 @@ pub enum EditorAction {
     VolumeSlide,
     Undo,
     Redo,
+    HoldChord,
 }
 
 impl Action for EditorAction {}
@@ -187,6 +188,8 @@ impl BlockEditor {
                 "Paste block",
             )
             .bind(Key::amiga(KeyCode::O), VolumeSlide, "Volume slide")
+            .bind(Key::shift(KeyCode::Return), HoldChord, "Hold chord")
+            .bind(Key::shift(KeyCode::NumpadEnter), HoldChord, "Hold chord")
             .bind(Key::ctrl(KeyCode::Z), Undo, "Undo")
             .bind(Key::ctrl(KeyCode::Y), Redo, "Redo")
             .bind(
@@ -557,6 +560,7 @@ impl KeyActions for BlockEditor {
             VolumeSlide => state.slide_volume(),
             Undo => state.undo(),
             Redo => state.redo(),
+            HoldChord => state.hold_last_chord(),
         }
     }
 
@@ -592,6 +596,7 @@ impl KeyActions for BlockEditor {
             PasteBlock => "Replace the block with the block buffer",
             VolumeSlide => "Slide the volume between the volume commands around the cursor",
             Undo => "Undo the last change to the blocks",
+            HoldChord => "Enter holds on every track of the last chord",
             Redo => "Redo the last change undone",
         };
     }
@@ -632,7 +637,9 @@ impl Gadget<AppState, Event> for BlockEditor {
             return cursor.edit_mode && command_column && enter_digit(state, digit);
         }
         let Event::Text {
-            character, mods, ..
+            character,
+            mods,
+            repeat,
         } = *event
         else {
             return false;
@@ -640,6 +647,9 @@ impl Gadget<AppState, Event> for BlockEditor {
         // shortcuts type characters too
         if mods.intersects(KeyMods::CTRL | KeyMods::ALT | KeyMods::LOGO) {
             return false;
+        }
+        if state.chord_mode && !character.eq_ignore_ascii_case(&HOLD_KEY) {
+            return type_chord_key(state, character, repeat);
         }
         return enter_key(state, character);
     }
@@ -795,7 +805,28 @@ fn enter_key(state: &mut AppState, key: char) -> bool {
     if state.play_on_note && !state.is_playing() {
         state.start(PlayStart::Block);
     }
-    move_down(state);
+    state.move_down();
+    return true;
+}
+
+fn type_chord_key(state: &mut AppState, key: char, repeat: bool) -> bool {
+    let cursor = state.cursor;
+    if cursor.column != 0 {
+        return cursor.edit_mode && enter_digit(state, key);
+    }
+    // a held key's repeats aren't more notes
+    if repeat {
+        return state.key_to_note(key).is_some();
+    }
+    if !cursor.edit_mode {
+        return state.play_chord_key(key);
+    }
+    if !state.enter_chord_key(key) {
+        return false;
+    }
+    if state.play_on_note && !state.is_playing() {
+        state.start(PlayStart::Block);
+    }
     return true;
 }
 
@@ -817,7 +848,7 @@ fn delete(state: &mut AppState, whole_cell: bool) {
             *cell = cleared;
         }
     });
-    move_down(state);
+    state.move_down();
 }
 
 fn enter_hold(state: &mut AppState) {
@@ -826,7 +857,7 @@ fn enter_hold(state: &mut AppState) {
         return;
     }
     state.enter_note(cursor.track, cursor.line, OctamedicNote { value: 0 });
-    move_down(state);
+    state.move_down();
 }
 
 // Alt and a number key types 10 more, so A to F go in from the number row like OctaMED
@@ -853,15 +884,8 @@ fn enter_digit(state: &mut AppState, key: char) -> bool {
         return false;
     };
     state.edit_track(cursor.line, cursor.track, |cell| *cell = typed);
-    move_down(state);
+    state.move_down();
     return true;
-}
-
-fn move_down(state: &mut AppState) {
-    let lines = state
-        .active_pattern()
-        .map_or(0, |pattern| pattern.line_count());
-    state.cursor.move_lines(state.line_step() as isize, lines);
 }
 
 // the instrument's right base 32 digit, then the command's and the value's two hex digits each.
@@ -1329,6 +1353,48 @@ mod tests {
         assert!(!editor.handle_event(&mut state, &with_super));
         state.cursor.column = 1;
         assert!(!editor.handle_event(&mut state, &held));
+    }
+
+    #[test]
+    fn typing_a_chord() {
+        let (mut editor, mut state) = (BlockEditor::new(), state());
+        state.chord_mode = true;
+        state.cursor.edit_mode = true;
+        let mut type_key = |state: &mut AppState, character, repeat| {
+            let event = Event::Text {
+                character,
+                mods: KeyMods::NONE,
+                repeat,
+            };
+            return editor.handle_event(state, &event);
+        };
+        assert!(type_key(&mut state, 'q', false));
+        assert!(type_key(&mut state, 'q', true));
+        assert!(type_key(&mut state, 'e', false));
+        state.end_chord();
+        let notes = |state: &AppState, line: usize| {
+            let tracks = &state.active_pattern().unwrap().lines[line].tracks;
+            return tracks
+                .iter()
+                .map(|cell| cell.note.value)
+                .collect::<Vec<_>>();
+        };
+        let [c, e] = ['q', 'e'].map(|key| state.key_to_note(key).unwrap().value);
+        assert_eq!(notes(&state, 0), [c, e, 0, 0]);
+        state.cursor = EditCursor {
+            edit_mode: true,
+            line: 3,
+            ..EditCursor::default()
+        };
+        press(&mut editor, &mut state, KeyCode::Return, KeyMods::SHIFT);
+        assert_eq!(notes(&state, 3), [0; 4]);
+        let instrument = state.active_instrument;
+        let held = &state.active_pattern().unwrap().lines[3].tracks;
+        assert!(
+            held[..2]
+                .iter()
+                .all(|cell| cell.instrument_id == instrument)
+        );
     }
 
     #[test]
