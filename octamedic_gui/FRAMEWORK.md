@@ -141,6 +141,15 @@ blue line with a flag, the start's flag to its left and the end's to its right, 
 filled yellow. S and E pick which end the arrows move: < and > by 2 bytes, <0 and 0> to the next
 silent sample. Dragging a marker's flag or line moves it and selects it. A loop is kept at least
 4 bytes long, as MMD stores it in words and takes a one word loop for none.
+
+PITCH is the period the sample sounds right at and DEST the one CHANGE RATE moves it to; the
+boxes next to them show its note, or --- if it isn't one of the table's (`period::period_note`),
+and clicking one then pressing a note key sets its period to that note's. CHANGE RATE resamples
+the sample so that played at PITCH it sounds like DEST did (`OctamedicSample::resampled`, the loop
+stretched with it), and OCT ▲ and OCT ▼ halve and double it. Shortening averages the samples each
+new one covers and lengthening draws the ones between on a line, so both smooth the sound like
+OctaMED's; up and down an octave a few times comes back noticeably duller.
+PLAY DISPLAY and PLAY RANGE play at the note nearest PITCH.
 The rest of the buttons are ghosted.
 
 Change project data through `AppState` methods like `enter_note` and `edit_track`, not directly.

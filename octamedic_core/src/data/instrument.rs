@@ -210,6 +210,47 @@ impl OctamedicSample {
         };
     }
 
+    /// Played at period `to`, sounds like it did at `from`: shorter for a smaller period, longer
+    /// for a bigger one, and the loop stretches with it. Shortened, each new sample is the average
+    /// of the old ones it covers; lengthened, the ones between are on a line from one old sample
+    /// to the next. Both smooth the sound like OctaMED's do.
+    pub fn resampled(&self, from: u16, to: u16) -> Self {
+        let (from, to) = (from.max(1) as usize, to.max(1) as usize);
+        let length = self.data.len() * to / from;
+        let data = (0..length)
+            .map(|index| match to < from {
+                true => self.averaged(index * from / to..(index + 1) * from / to),
+                false => self.between(index * from, to),
+            })
+            .collect();
+        let repeat = self
+            .repeat
+            .map(|(start, end)| (start * to / from, end * to / from));
+        return Self {
+            data,
+            repeat: repeat.filter(|(start, end)| start < end),
+            ..*self
+        };
+    }
+
+    fn averaged(&self, range: Range<usize>) -> i8 {
+        let range = range.start..range.end.max(range.start + 1).min(self.data.len());
+        let sum: i32 = self.data[range.clone()]
+            .iter()
+            .map(|&value| value as i32)
+            .sum();
+        return (sum as f32 / range.len() as f32).round() as i8;
+    }
+
+    // the value `position / steps` samples in, on a line between the samples either side
+    fn between(&self, position: usize, steps: usize) -> i8 {
+        let (index, part) = (position / steps, position % steps);
+        let here = self.data[index] as i32;
+        let next = self.data.get(index + 1).map_or(here, |&next| next as i32);
+        let value = here as f32 + (next - here) as f32 * part as f32 / steps as f32;
+        return value.round() as i8;
+    }
+
     pub fn with_loop(&self, repeat: Option<(usize, usize)>) -> Self {
         return Self {
             data: self.data.clone(),
@@ -496,5 +537,18 @@ mod tests {
         sample.octaves = SampleOctaves::Three;
         assert_eq!(sample.loop_limit(), 3);
         assert_eq!(sample.with_loop(None).repeat, None);
+    }
+
+    #[test]
+    fn resampling() {
+        // up an octave, each pair averaged
+        let higher = ramp().resampled(2, 1);
+        assert_eq!(higher.data, [2, 4, 6, 8, 10]);
+        assert_eq!(higher.repeat, Some((3, 4)));
+        // and back down, the gaps filled in on a line
+        let lower = higher.resampled(1, 2);
+        assert_eq!(lower.data, [2, 3, 4, 5, 6, 7, 8, 9, 10, 10]);
+        // up a fifth, C-2's 428 to G-2's 285
+        assert_eq!(ramp().resampled(428, 285).data.len(), 6);
     }
 }

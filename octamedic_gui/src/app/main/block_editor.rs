@@ -913,7 +913,7 @@ fn type_digit(
     return Some(cell);
 }
 
-fn note_text(note: u8) -> String {
+pub fn note_text(note: u8) -> String {
     if note == 0 {
         return "---".to_string();
     }

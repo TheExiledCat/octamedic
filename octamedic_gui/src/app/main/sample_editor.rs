@@ -4,9 +4,12 @@ use std::{
 };
 
 use ggez::input::keyboard::KeyCode;
-use octamedic_core::data::{
-    instrument::{InstrumentId, InstrumentKind, OctamedicSample, SampleOctaves},
-    note::OctamedicNote,
+use octamedic_core::{
+    data::{
+        instrument::{InstrumentId, InstrumentKind, OctamedicSample, SampleOctaves},
+        note::OctamedicNote,
+    },
+    engine::period::{nearest_period_note, note_period, period_note},
 };
 use rustuition::{
     font::Font,
@@ -24,7 +27,7 @@ use rustuition::{
 use crate::{
     app::{
         fonts,
-        main::{wave_view::WaveView, waveform_mouse::WaveformMouse},
+        main::{block_editor::note_text, wave_view::WaveView, waveform_mouse::WaveformMouse},
         pens,
         prompt::Prompt,
         state::{AppState, InstrumentSaveType},
@@ -95,6 +98,8 @@ const BUFFSIZE_BOX: usize = 0;
 const RANGE_START_BOX: usize = 1;
 const RANGE_END_BOX: usize = 2;
 // CHG.VOL.'s start and end, in percent
+const PITCH_BOX: usize = 3;
+const DEST_BOX: usize = 4;
 const VOLUME_START_BOX: usize = 5;
 const VOLUME_END_BOX: usize = 6;
 const VOLUME_DIGITS: usize = 3;
@@ -110,8 +115,9 @@ const NOTE_BOXES: [Rect; 2] = [on_row(0, 598, 32), on_row(1, 598, 32)];
 
 const PLAY_DISPLAY: &str = "PLAY DISPLAY";
 const PLAY_RANGE: &str = "PLAY RANGE";
-// C-2, what the PITCH box shows until it's hooked up
-const PLAY_NOTE: OctamedicNote = OctamedicNote { value: 13 };
+// C-2
+const DEFAULT_PERIOD: u16 = 428;
+const CHANGE_RATE: &str = "CHANGE RATE";
 const LOOP_ON: &str = "LOOP ON";
 // which of the loop's ends the arrows move
 const LOOP_START: &str = "S";
@@ -174,7 +180,7 @@ const BUTTONS: [(&str, Rect); 32] = [
     (ZOOM_OUT, on_row(2, 226, 92)),
     (FREEHAND, on_row(2, 318, 62)),
     (CHANGE_VOLUME, on_row(2, 380, 52)),
-    ("CHANGE RATE", on_row(2, 522, 116)),
+    (CHANGE_RATE, on_row(2, 522, 116)),
 
     (CLEAR, on_row(3, 6, 64)),
     (DELETE, on_row(3, 70, 64)),
@@ -219,6 +225,7 @@ const HOOKED_UP: &[&str] = &[
     LOOP_ON,
     LOOP_START,
     LOOP_END,
+    CHANGE_RATE,
 ];
 
 const LOOP_ARROWS: [Rect; 2] = [on_row(3, 440, 14), on_row(3, 454, 14)];
@@ -330,11 +337,11 @@ fn can_play(state: &AppState, part: &Range<usize>) -> bool {
 
 // once, without the loop. the engine plays its own copy of the instrument so the play position
 // follows it
-fn play_part(state: &AppState, part: Range<usize>) {
+fn play_part(state: &AppState, part: Range<usize>, note: OctamedicNote) {
     if can_play(state, &part) {
         state
             .engine
-            .play_sample(state.active_instrument, part, PLAY_NOTE);
+            .play_sample(state.active_instrument, part, note);
     }
 }
 
@@ -523,6 +530,10 @@ pub struct SampleEditor {
     buffer_size_entered: bool,
     mouse: WaveformMouse,
     selected_loop_end: LoopEnd,
+    // PITCH, the period the sample sounds right at, and DEST, the one CHANGE RATE moves it to
+    periods: [u16; 2],
+    // a note box was clicked, and the next note key sets its period
+    picking_note: Option<usize>,
     // what LOOP ON last turned off, to put back when it's turned on again
     turned_off_loop: Option<(usize, usize)>,
     dragged_loop_end: Option<LoopEnd>,
@@ -580,9 +591,14 @@ impl SampleEditor {
                     .padding(1)
                     .max_length(digits);
                 textbox.set_text(text);
-                textbox.set_enabled(
-                    volume || [BUFFSIZE_BOX, RANGE_START_BOX, RANGE_END_BOX].contains(&index),
-                );
+                let hooked_up = [
+                    BUFFSIZE_BOX,
+                    RANGE_START_BOX,
+                    RANGE_END_BOX,
+                    PITCH_BOX,
+                    DEST_BOX,
+                ];
+                textbox.set_enabled(volume || hooked_up.contains(&index));
                 return (textbox, rect);
             })
             .collect();
@@ -608,9 +624,7 @@ impl SampleEditor {
             .into_iter()
             .zip([Up, Down])
             .map(|(rect, direction)| (Button::new(octave_label(direction)), rect));
-        let pictures = loop_arrows
-            .chain(to_zero)
-            .chain(octaves.map(|(button, rect)| (button.enabled(false), rect)));
+        let pictures = loop_arrows.chain(to_zero).chain(octaves);
         let buttons = labelled.chain(pictures).collect();
         let keys = Keymap::new("sample editor")
             .bind(
@@ -638,6 +652,8 @@ impl SampleEditor {
             mouse: WaveformMouse::default(),
             free_hand: false,
             selected_loop_end: LoopEnd::Start,
+            periods: [DEFAULT_PERIOD; 2],
+            picking_note: None,
             turned_off_loop: None,
             dragged_loop_end: None,
         };
@@ -673,7 +689,7 @@ impl SampleEditor {
         return self.button(label).clicked().is_some();
     }
 
-    // the picture buttons come after the labelled ones: the loop arrows, then to zero
+    // the picture buttons come after the labelled ones: the loop arrows, to zero, then the octaves
     fn picture_clicked(&mut self, index: usize) -> bool {
         return self.buttons[BUTTONS.len() + index].0.clicked().is_some();
     }
@@ -796,6 +812,63 @@ impl SampleEditor {
         self.button(LOOP_ON).set_toggled(looping);
         self.button(LOOP_START).set_toggled(which == LoopEnd::Start);
         self.button(LOOP_END).set_toggled(which == LoopEnd::End);
+    }
+
+    fn change_rate(&mut self, state: &mut AppState) {
+        for (period, index) in self.periods.iter_mut().zip([PITCH_BOX, DEST_BOX]) {
+            let textbox = &mut self.boxes[index].0;
+            let typed = typed_number(textbox).and_then(|typed| u16::try_from(typed).ok());
+            if let Some(typed) = typed.filter(|&typed| typed > 0) {
+                *period = typed;
+            }
+            if !textbox.is_focused() {
+                textbox.set_text(period.to_string());
+            }
+        }
+        for (box_index, (note, _)) in self.note_boxes.iter_mut().enumerate() {
+            if note.clicked().is_some() {
+                self.picking_note = Some(box_index);
+            }
+        }
+        for (box_index, (note_box, _)) in self.note_boxes.iter_mut().enumerate() {
+            let note = period_note(self.periods[box_index]).unwrap_or(0);
+            note_box.set_text(note_text(note));
+            note_box.set_toggled(self.picking_note == Some(box_index));
+        }
+        let [pitch, dest] = self.periods;
+        let resample = [
+            (self.clicked(CHANGE_RATE), (pitch, dest)),
+            (self.picture_clicked(4), (2, 1)),
+            (self.picture_clicked(5), (1, 2)),
+        ];
+        for (clicked, (from, to)) in resample {
+            if clicked && sample_length(state) > 0 {
+                edit_sample(state, |sample| sample.resampled(from, to));
+                self.view.resized(sample_length(state));
+            }
+        }
+    }
+
+    // the note key after a note box's been clicked sets its period, anything else lets go of it
+    fn pick_note(&mut self, state: &AppState, event: &Event) -> bool {
+        let Some(box_index) = self.picking_note else {
+            return false;
+        };
+        match *event {
+            Event::Text { character, .. } => {
+                self.picking_note = None;
+                let Some(note) = state.key_to_note(character) else {
+                    return false;
+                };
+                self.periods[box_index] = note_period(note.value, 0, 0);
+                return true;
+            }
+            Event::MouseDown { .. } => {
+                self.picking_note = None;
+                return false;
+            }
+            _ => return false,
+        }
     }
 
     fn render_markers(&self, state: &AppState, waveform: Rect, painter: &mut Painter) {
@@ -962,6 +1035,7 @@ impl Gadget<AppState, Event> for SampleEditor {
             self.press_waveform(state, button, length);
         }
         self.edit_loop(state);
+        self.change_rate(state);
         self.mouse.take_release();
         self.drag_range();
         self.draw_waveform(state);
@@ -988,11 +1062,14 @@ impl Gadget<AppState, Event> for SampleEditor {
         if self.view.visible().len() > shown {
             self.free_hand = false;
         }
+        let note = OctamedicNote {
+            value: nearest_period_note(self.periods[0]),
+        };
         if self.clicked(PLAY_DISPLAY) {
-            play_part(state, self.view.visible());
+            play_part(state, self.view.visible(), note);
         }
         if self.clicked(PLAY_RANGE) {
-            play_part(state, self.range());
+            play_part(state, self.range(), note);
         }
         if self.clicked(D_PIXELS) {
             self.dot_pixels = !self.dot_pixels;
@@ -1036,6 +1113,9 @@ impl Gadget<AppState, Event> for SampleEditor {
         if enter && self.boxes[BUFFSIZE_BOX].0.is_focused() {
             self.buffer_size_entered = true;
         }
+        if self.pick_note(state, event) {
+            return true;
+        }
         // every box sees every event, so a click anywhere else lets go of the one being typed in
         let mut typed = false;
         for (textbox, _) in &mut self.boxes {
@@ -1047,6 +1127,7 @@ impl Gadget<AppState, Event> for SampleEditor {
             || self
                 .buttons
                 .iter_mut()
+                .chain(&mut self.note_boxes)
                 .any(|(button, _)| button.handle_event(state, event));
     }
 
@@ -1904,5 +1985,59 @@ mod tests {
         // the start's flag left of column 128, the end's right of 384
         assert_eq!(pixel(120), MARKER_YELLOW);
         assert_eq!(pixel(392), MARKER_BLUE);
+    }
+
+    fn type_into(editor: &mut SampleEditor, state: &mut AppState, index: usize, text: &str) {
+        let rect = editor.boxes[index].1.within(AREA);
+        let pos = Point::new(rect.x + 2, rect.y + 2);
+        let button = MouseButton::Left;
+        editor.handle_event(state, &Event::MouseDown { pos, button });
+        editor.handle_event(state, &Event::MouseUp { pos, button });
+        editor.boxes[index].0.set_text(text);
+        editor.update(state);
+    }
+
+    #[test]
+    fn change_rate_goes_from_pitch_to_dest() {
+        let mut state = state();
+        with_loop(&mut state, (0..100).collect(), Some((40, 80)));
+        let (mut editor, _) = drawn_editor(&mut state);
+        type_into(&mut editor, &mut state, DEST_BOX, "214");
+        assert_eq!(editor.periods, [428, 214]);
+        click(&mut editor, &mut state, CHANGE_RATE);
+        let sample = active_sample(&state).unwrap();
+        assert_eq!(sample.data.len(), 50);
+        assert_eq!(sample.data[..3], [1, 3, 5]);
+        assert_eq!(sample.repeat, Some((20, 40)));
+    }
+
+    #[test]
+    fn octave_buttons() {
+        let mut state = state();
+        with_sample(&mut state, 100);
+        let (mut editor, _) = drawn_editor(&mut state);
+        click_picture(&mut editor, &mut state, 4);
+        assert_eq!(sample_length(&state), 50);
+        click_picture(&mut editor, &mut state, 5);
+        click_picture(&mut editor, &mut state, 5);
+        assert_eq!(sample_length(&state), 200);
+    }
+
+    #[test]
+    fn a_note_key_sets_a_period() {
+        let mut state = state();
+        let (mut editor, _) = drawn_editor(&mut state);
+        let area = editor.note_boxes[1].0.area();
+        let pos = Point::new(area.x + 2, area.y + 2);
+        let button = MouseButton::Left;
+        editor.handle_event(&mut state, &Event::MouseDown { pos, button });
+        editor.handle_event(&mut state, &Event::MouseUp { pos, button });
+        editor.update(&mut state);
+        assert!(editor.note_boxes[1].0.is_toggled());
+        // T is G on the top row, an octave above the bottom row's
+        assert!(editor.handle_event(&mut state, &Event::text('t')));
+        editor.update(&mut state);
+        assert_eq!(editor.periods[1], 285);
+        assert!(!editor.note_boxes[1].0.is_toggled());
     }
 }
