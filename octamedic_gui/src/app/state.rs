@@ -24,6 +24,7 @@ use rustuition::palette::{Color, IntuitionColorPalette};
 use crate::{
     app::{
         DEFAULT_VIDEO,
+        block_range::{BlockRange, Cell},
         cursor::EditCursor,
         files::browser::Browser,
         mode::{HeaderMode, MainMode},
@@ -46,6 +47,7 @@ const SEMITONES: u8 = SEMITONES_PER_OCTAVE;
 const MAX_SEQUENCE_ENTRIES: usize = 256;
 
 const MAX_DEBUG_LINES: usize = 256;
+pub const SELECTABLE_TRACKS: usize = 16;
 const MULTIPLE_ERRORS: &str = "Multiple errors have occurred";
 
 const UNSAVED_PROMPT: &str = "Song has unsaved changes";
@@ -169,9 +171,15 @@ pub struct AppState {
     pub notification: Option<String>,
     // TRK: and BLK:'s buffers. A copied track is kept as a block one track wide. Both survive
     // loading another song, so you can copy between songs.
-    // TODO: check whether OctaMED's range copy buffer is one of these
     pub track_buffer: Option<OctamedicPattern>,
     pub block_buffer: Option<OctamedicPattern>,
+    // the RANGE panel's range, shown and used only while its block is the active one. It knows
+    // its block by number, so it's dropped when blocks move
+    pub range: Option<BlockRange>,
+    pub range_buffer: Option<OctamedicPattern>,
+    // the RANGE panel's SELECT: 0 to F. PASTE SELECT goes to the first, the transpose panel will
+    // use them all
+    pub selected_tracks: [bool; SELECTABLE_TRACKS],
     // shown instead of the notification, and holding everything up until it's answered
     pub prompt: Option<Prompt>,
     // the sample editor's clipboard, CBUFF
@@ -191,6 +199,8 @@ pub struct AppState {
     pub displays_off: bool,
     // the modifier keys down at the last mouse event, Amiga included
     pub mouse_mods: KeyMods,
+    // set by App whichever widget gets the press and release, so a drag knows when it's over
+    pub right_button_held: bool,
     video: VideoStandard,
     // the engine's device's id, None for the default. set_output_device changes it
     pub output_device: Option<String>,
@@ -247,6 +257,9 @@ impl AppState {
             notification: None,
             track_buffer: None,
             block_buffer: None,
+            range: None,
+            range_buffer: None,
+            selected_tracks: [true; SELECTABLE_TRACKS],
             prompt: None,
             copy_buffer: Vec::new(),
             instrument_save_type: InstrumentSaveType::default(),
@@ -260,6 +273,7 @@ impl AppState {
             pending_dialogs: Vec::new(),
             displays_off: false,
             mouse_mods: KeyMods::NONE,
+            right_button_held: false,
             video: DEFAULT_VIDEO,
             output_device: None,
             audio_failed: false,
@@ -339,6 +353,7 @@ impl AppState {
         }
         self.palette = screen_palette(&project.palette());
         self.project = project;
+        self.range = None;
         self.active_song = SongId(0);
         self.active_pattern = PatternId(0);
         self.cursor = EditCursor::default();
@@ -1014,6 +1029,7 @@ impl AppState {
         let index = self.active_pattern.0 as usize;
         let id = self.song_mut().insert_pattern(index, pattern);
         self.active_pattern = id;
+        self.range = None;
         self.cursor = EditCursor::default();
         self.send_all_to_engine();
     }
@@ -1034,6 +1050,7 @@ impl AppState {
             return;
         }
         self.song_mut().remove_pattern(index);
+        self.range = None;
         let last = self.song().patterns.len().saturating_sub(1) as u8;
         self.active_pattern.0 = self.active_pattern.0.min(last);
         self.clamp_cursor_to_active_pattern();
@@ -1058,6 +1075,7 @@ impl AppState {
             .expect("just checked it's there")
             .split_at(line);
         self.song_mut().insert_pattern(index + 1, tail);
+        self.range = None;
         self.cursor.line = 0;
         self.send_all_to_engine();
     }
@@ -1082,6 +1100,7 @@ impl AppState {
             }
         }
         self.song_mut().remove_pattern(index + 1);
+        self.range = None;
         self.send_all_to_engine();
     }
 
@@ -1186,6 +1205,130 @@ impl AppState {
     pub fn delete_buffer(&mut self) {
         self.track_buffer = None;
         self.block_buffer = None;
+        self.range_buffer = None;
+    }
+
+    /// The range, if it's in the block that's showing, kept inside the block if that's got
+    /// smaller since.
+    pub fn active_range(&self) -> Option<BlockRange> {
+        let mut range = self
+            .range
+            .filter(|range| range.block == self.active_pattern)?;
+        let pattern = self.active_pattern()?;
+        let last = Cell {
+            track: pattern.track_count().saturating_sub(1),
+            line: pattern.line_count().saturating_sub(1),
+        };
+        for cell in [&mut range.anchor, &mut range.end] {
+            cell.track = cell.track.min(last.track);
+            cell.line = cell.line.min(last.line);
+        }
+        return Some(range);
+    }
+
+    pub fn start_range(&mut self, cell: Cell) {
+        self.range = Some(BlockRange::at(self.active_pattern, cell));
+    }
+
+    /// Takes the range's far corner to `cell`, if it's in the active block.
+    pub fn extend_range(&mut self, cell: Cell) {
+        if let Some(range) = self
+            .range
+            .as_mut()
+            .filter(|range| range.block == self.active_pattern)
+        {
+            range.end = cell;
+        }
+    }
+
+    pub fn select_track_range(&mut self) {
+        let lines = self
+            .active_pattern()
+            .map_or(1, |pattern| pattern.line_count());
+        let track = self.cursor.track;
+        let mut range = BlockRange::at(self.active_pattern, Cell { track, line: 0 });
+        range.end.line = lines - 1;
+        self.range = Some(range);
+    }
+
+    pub fn select_block_range(&mut self) {
+        let (lines, tracks) = self.active_pattern().map_or((1, 1), |pattern| {
+            (pattern.line_count(), pattern.track_count())
+        });
+        let mut range = BlockRange::at(self.active_pattern, Cell::default());
+        range.end = Cell {
+            track: tracks - 1,
+            line: lines - 1,
+        };
+        self.range = Some(range);
+    }
+
+    pub fn cut_range(&mut self) {
+        let Some(range) = self.range_or_notify() else {
+            return;
+        };
+        if let Some(pattern) = self.active_pattern_mut() {
+            let cut = pattern.copy_range(range.tracks(), range.lines());
+            pattern.clear_range(range.tracks(), range.lines());
+            self.range_buffer = Some(cut);
+        }
+    }
+
+    pub fn copy_range(&mut self) {
+        let Some(range) = self.range_or_notify() else {
+            return;
+        };
+        if let Some(pattern) = self.active_pattern() {
+            self.range_buffer = Some(pattern.copy_range(range.tracks(), range.lines()));
+        }
+    }
+
+    pub fn paste_range(&mut self) {
+        let track = self.cursor.track;
+        self.paste_range_into(track);
+    }
+
+    /// PASTE SELECT: PASTE, but from the first track picked with SELECT: rather than the
+    /// cursor's. Picking more than one is for the transpose panel.
+    pub fn paste_select(&mut self) {
+        let Some(track) = self.selected_tracks.iter().position(|&selected| selected) else {
+            self.notify("No track selected");
+            return;
+        };
+        self.paste_range_into(track);
+    }
+
+    fn paste_range_into(&mut self, track: usize) {
+        let Some(buffer) = self.range_buffer.take() else {
+            self.notify("Range buffer is empty");
+            return;
+        };
+        let line = self.cursor.line;
+        if let Some(pattern) = self.active_pattern_mut() {
+            pattern.paste_range(track, line, &buffer);
+        }
+        self.range_buffer = Some(buffer);
+    }
+
+    pub fn clear_range(&mut self) {
+        let Some(range) = self.range_or_notify() else {
+            return;
+        };
+        if let Some(pattern) = self.active_pattern_mut() {
+            pattern.clear_range(range.tracks(), range.lines());
+        }
+    }
+
+    pub fn cancel_range(&mut self) {
+        self.range = None;
+    }
+
+    fn range_or_notify(&mut self) -> Option<BlockRange> {
+        let range = self.active_range();
+        if range.is_none() {
+            self.notify("No range");
+        }
+        return range;
     }
 
     fn run_timer(&mut self, playing: bool) {
@@ -1257,6 +1400,7 @@ impl AppState {
     pub fn clear_song(&mut self) {
         self.stop();
         self.song_mut().clear();
+        self.range = None;
         self.active_pattern = PatternId(0);
         self.cursor = EditCursor::default();
         self.active_sequence_index = 0;
@@ -1720,5 +1864,110 @@ mod tests {
         assert_eq!(state.notification.as_deref(), Some(MULTIPLE_ERRORS));
         let lines: Vec<&str> = state.debug_lines().iter().map(String::as_str).collect();
         assert_eq!(lines, ["NO AUDIO", "first", "second"]);
+    }
+
+    // track t, line l holds note 10 * t + l + 1
+    fn grid(state: &mut AppState, lines: usize) {
+        let pattern = state.active_pattern_mut().unwrap();
+        pattern.set_line_count(lines);
+        for (l, line) in pattern.lines.iter_mut().enumerate() {
+            for (t, cell) in line.tracks.iter_mut().enumerate() {
+                cell.note.value = (10 * t + l + 1) as u8;
+            }
+        }
+    }
+
+    fn range(state: &mut AppState, from: (usize, usize), to: (usize, usize)) {
+        let cell = |(track, line)| Cell { track, line };
+        state.start_range(cell(from));
+        state.extend_range(cell(to));
+    }
+
+    #[test]
+    fn range_cut_and_paste() {
+        let mut state = state();
+        grid(&mut state, 4);
+        range(&mut state, (1, 2), (0, 1));
+        state.cut_range();
+        assert_eq!(notes(&state, 0), [1, 0, 0, 4]);
+        assert_eq!(notes(&state, 1), [11, 0, 0, 14]);
+        state.cursor = EditCursor {
+            track: 2,
+            line: 3,
+            ..EditCursor::default()
+        };
+        state.paste_range();
+        assert_eq!(notes(&state, 2), [21, 22, 23, 2]);
+        assert_eq!(notes(&state, 3), [31, 32, 33, 12]);
+    }
+
+    #[test]
+    fn paste_select_goes_to_the_first_selected_track() {
+        let mut state = state();
+        grid(&mut state, 2);
+        range(&mut state, (0, 0), (1, 1));
+        state.copy_range();
+        state.active_pattern_mut().unwrap().clear();
+        state.selected_tracks = [false; SELECTABLE_TRACKS];
+        state.paste_select();
+        assert_eq!(state.notification.as_deref(), Some("No track selected"));
+        state.selected_tracks[1] = true;
+        state.selected_tracks[3] = true;
+        state.paste_select();
+        assert_eq!(notes(&state, 0), [0, 0]);
+        assert_eq!(notes(&state, 1), [1, 2]);
+        assert_eq!(notes(&state, 2), [11, 12]);
+        assert_eq!(notes(&state, 3), [0, 0]);
+    }
+
+    #[test]
+    fn select_track_and_block() {
+        let mut state = state();
+        grid(&mut state, 5);
+        state.cursor.track = 2;
+        state.select_track_range();
+        let range = state.active_range().unwrap();
+        assert_eq!((range.tracks(), range.lines()), (2..3, 0..5));
+        state.select_block_range();
+        let range = state.active_range().unwrap();
+        assert_eq!((range.tracks(), range.lines()), (0..4, 0..5));
+        state.clear_range();
+        assert_eq!(notes(&state, 3), [0; 5]);
+        state.cancel_range();
+        assert_eq!(state.active_range(), None);
+    }
+
+    #[test]
+    fn a_range_stays_with_its_block() {
+        let mut state = state();
+        grid(&mut state, 2);
+        range(&mut state, (0, 0), (0, 1));
+        state.active_pattern = PatternId(1);
+        assert_eq!(state.active_range(), None);
+        state.copy_range();
+        assert_eq!(state.notification.as_deref(), Some("No range"));
+        state.extend_range(Cell { track: 1, line: 0 });
+        assert_eq!(state.active_range(), None);
+        state.active_pattern = PatternId(0);
+        state.new_block_here();
+        assert_eq!(state.range, None);
+    }
+
+    #[test]
+    fn range_buffer_goes_with_del_buff() {
+        let mut state = state();
+        state.select_block_range();
+        state.copy_range();
+        state.delete_buffer();
+        state.paste_range();
+        assert_eq!(state.notification.as_deref(), Some("Range buffer is empty"));
+    }
+
+    #[test]
+    fn a_range_fits_a_smaller_block() {
+        let mut state = state();
+        state.select_block_range();
+        state.active_pattern_mut().unwrap().set_line_count(10);
+        assert_eq!(state.active_range().unwrap().lines(), 0..10);
     }
 }
