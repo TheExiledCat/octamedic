@@ -3,6 +3,28 @@
 What OctaMEDIC reads and writes besides what `mmd/format.md` (the original MMD
 documentation) covers, and how OctaMED's own files and samples work.
 
+## config.toml and crash.log
+
+Both are in the config folder (`files::get_config_directory_root`): `%LOCALAPPDATA%\octamedic` on
+Windows, `~/.config/octamedic` on Linux and `~/Library/Application Support/octamedic` on macOS.
+
+`config.toml` keeps the settings that aren't the song's between runs (`app/config.rs`):
+
+```toml
+video = "pal"          # or "ntsc"
+
+[output]
+device = "alsa:pulse"  # cpal's id for the device, left out for the default one
+mono = false
+```
+
+Anything missing takes its default, and a missing file is written with the defaults. A file that
+can't be read or parsed (a video standard other than pal or ntsc, say) is renamed to
+`config.toml.bak` so it isn't lost, the defaults are used, and the startup errors say why.
+
+`crash.log` is written when the GUI panics or can't open its window (`crash_log.rs`): the error, a
+backtrace for a panic, and the startup errors before it. Only the last crash is kept.
+
 ## Loading instruments
 
 LOAD INSTR (`octamedic_gui/src/app/files/load_instrument.rs`) tries the formats in its `LOADERS`

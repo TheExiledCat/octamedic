@@ -38,6 +38,7 @@ A faithful clone of OctaMED Professional v4
 
 - [CONTRIBUTING.md](CONTRIBUTING.md) for building, code style and PRs
 - [docs/PLAYER.md](docs/PLAYER.md) for how the player works (Paula, DMA, the CIA timer)
+- [docs/FILES.md](docs/FILES.md) for the files besides modules: loading instruments, multi-octave samples, synth sounds, config.toml and crash.log
 - [rustuition/README.md](rustuition/README.md) for the Amiga style GUI library, and
   [octamedic_gui/FRAMEWORK.md](octamedic_gui/FRAMEWORK.md) for how the GUI uses it
 - issue templates: [bug report](.github/ISSUE_TEMPLATE/bug_report.md), [feature request](.github/ISSUE_TEMPLATE/feature_request.md)
@@ -89,7 +90,7 @@ What's needed for the first release is tracked in [V0.0.1TARGETS.md](V0.0.1TARGE
 - [ ] Synth commands
 - [X] Loading wav, mp3, flac files as instruments
 - [X] Loading IFF files
-- [ ] Editing instruments
+- [X] Editing instruments
 - [ ] Keybind mapping
 - [ ] Midi in support
     - [ ] Omni in support

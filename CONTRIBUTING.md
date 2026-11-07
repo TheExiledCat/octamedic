@@ -33,7 +33,8 @@ over X11, because under WSLg's Wayland the window closes straight away.
 
 On Windows the GUI doesn't open a console, even from `cargo run`, so nothing it prints shows up.
 Errors from starting up go in the debug console (Ctrl+`), and a panic, or an error that stops the
-window opening, goes in `crash.log` in the config folder (`%LOCALAPPDATA%\octamedic`).
+window opening, goes in `crash.log` in the config folder (`%LOCALAPPDATA%\octamedic`). The settings
+kept between runs are in `config.toml` there; [docs/FILES.md](docs/FILES.md) has both.
 
 On a Mac, `octamedic_gui/macos/bundle.sh` turns a release build into `OctaMEDIC.app`, the same
 way the release workflow does. How to run it is at the top of the script.
