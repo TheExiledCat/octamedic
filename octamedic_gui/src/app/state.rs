@@ -24,8 +24,7 @@ use rustuition::palette::{Color, IntuitionColorPalette};
 
 use crate::{
     app::{
-        DEFAULT_VIDEO,
-        config::{Config, OutputConfig},
+        config::Config,
         cursor::EditCursor,
         files::browser::Browser,
         mode::{HeaderMode, MainMode},
@@ -191,14 +190,14 @@ pub struct AppState {
     pub displays_off: bool,
     // the modifier keys down at the last mouse event, Amiga included
     pub mouse_mods: KeyMods,
-    video: VideoStandard,
-    // the engine's device's id, None for the default. set_output_device changes it
-    pub output_device: Option<String>,
+    // the application config, saved between runs
+    pub config: Config,
+    // true when config has been modified, flushed by save_config in update
+    pub config_changed: bool,
     // where config is saved when it changes. None in tests
     pub config_path: Option<PathBuf>,
     // the last try at opening it didn't work, so the engine is disconnected
     audio_failed: bool,
-    mono: bool,
     queued_sequence_index: Option<usize>,
     started: Option<PlayStart>,
     muted_tracks: [bool; SONG_TRACKS],
@@ -262,11 +261,10 @@ impl AppState {
             pending_dialogs: Vec::new(),
             displays_off: false,
             mouse_mods: KeyMods::NONE,
-            video: DEFAULT_VIDEO,
-            output_device: None,
+            config: Config::default(),
+            config_changed: false,
             config_path: None,
             audio_failed: false,
-            mono: false,
             queued_sequence_index: None,
             started: None,
             muted_tracks: [false; SONG_TRACKS],
@@ -290,6 +288,10 @@ impl AppState {
     }
 
     pub fn update(&mut self) {
+        if self.config_changed {
+            self.config_changed = false;
+            self.save_config();
+        }
         if let Some(start) = self.playback_start_time {
             if self.is_playing() {
                 self.time = start.elapsed();
@@ -330,6 +332,15 @@ impl AppState {
     pub fn project_mut(&mut self) -> &mut OctamedicProject {
         self.has_changes = true;
         return &mut self.project;
+    }
+
+    pub fn config(&self) -> &Config {
+        return &self.config;
+    }
+
+    pub fn config_mut(&mut self) -> &mut Config {
+        self.config_changed = true;
+        return &mut self.config;
     }
 
     // keeps what isn't the song's, like the file browser and which screen is showing
@@ -492,44 +503,49 @@ impl AppState {
     }
 
     pub fn video(&self) -> VideoStandard {
-        return self.video;
+        return self.config.video;
     }
 
     pub fn set_video(&mut self, video: VideoStandard) {
-        self.video = video;
+        self.config_mut().video = video;
         self.engine.set_machine(video.clock());
-        self.save_config();
     }
 
     pub fn audio_failed(&self) -> bool {
         return self.audio_failed;
     }
 
+    pub fn output_device(&self) -> Option<&str> {
+        return self.config.output.device.as_deref();
+    }
+
     /// Starts the engine again on `device`, or the default one with `None`, which stops playing.
     /// If that can't be opened it goes back to the one before. The same device again only opens
     /// if the last try failed.
     pub fn set_output_device(&mut self, device: Option<String>) {
-        if device == self.output_device && !self.audio_failed {
+        if device == self.config.output.device && !self.audio_failed {
             return;
         }
         self.stop();
         // closed first, the new one could be the same hardware
         self.engine = EngineHandle::disconnected();
-        let previous = std::mem::replace(&mut self.output_device, device);
+        let previous = std::mem::replace(&mut self.config_mut().output.device, device);
         if let Err(error) = self.open_audio() {
-            if self.output_device != previous {
-                self.output_device = previous;
+            if self.config.output.device != previous {
+                self.config_mut().output.device = previous;
                 let _ = self.open_audio();
             }
             self.notify(error);
         }
-        self.save_config();
     }
 
     /// Starts the engine on the output device and sends it everything, or gives back why it
     /// can't.
     pub fn open_audio(&mut self) -> Result<(), String> {
-        let engine = match EngineHandle::spawn(self.video.clock(), self.output_device.as_deref()) {
+        let engine = match EngineHandle::spawn(
+            self.config.video.clock(),
+            self.config.output.device.as_deref(),
+        ) {
             Ok(engine) => engine,
             Err(error) => {
                 self.audio_failed = true;
@@ -542,42 +558,25 @@ impl AppState {
         for track in (0..SONG_TRACKS).filter(|&track| self.muted_tracks[track]) {
             self.engine.set_track_muted(track, true);
         }
-        self.engine.set_mono(self.mono);
+        self.engine.set_mono(self.config.output.mono);
         self.engine_active_instrument = None;
         return Ok(());
     }
 
     pub fn mono(&self) -> bool {
-        return self.mono;
+        return self.config.output.mono;
     }
 
     pub fn set_mono(&mut self, mono: bool) {
-        self.mono = mono;
+        self.config_mut().output.mono = mono;
         self.engine.set_mono(mono);
-        self.save_config();
-    }
-
-    pub fn apply_config(&mut self, config: &Config) {
-        self.video = config.video;
-        self.output_device = match config.output.device.as_deref() {
-            Some("Default") | Some("") => None,
-            other => other.map(ToOwned::to_owned),
-        };
-        self.mono = config.output.mono;
     }
 
     pub fn save_config(&mut self) {
         let Some(path) = self.config_path.clone() else {
             return;
         };
-        let config = Config {
-            video: self.video,
-            output: OutputConfig {
-                device: self.output_device.clone(),
-                mono: self.mono,
-            },
-        };
-        if let Err(error) = config.save_to_path(&path) {
+        if let Err(error) = self.config.save_to_path(&path) {
             self.debug(format!("Couldn't save config: {error}"));
         }
     }
@@ -1721,23 +1720,16 @@ mod tests {
     }
 
     #[test]
-    fn apply_config_updates_state() {
+    fn config_mut_marks_changed() {
         let mut state = state();
-        let config = Config {
-            video: VideoStandard::Ntsc,
-            output: OutputConfig {
-                device: Some("USB Audio".to_owned()),
-                mono: true,
-            },
-        };
-        state.apply_config(&config);
+        assert!(!state.config_changed);
+        state.config_mut().video = VideoStandard::Ntsc;
+        assert!(state.config_changed);
         assert_eq!(state.video(), VideoStandard::Ntsc);
-        assert_eq!(state.output_device.as_deref(), Some("USB Audio"));
-        assert!(state.mono());
     }
 
     #[test]
-    fn state_saves_config_when_changed() {
+    fn update_saves_config_when_changed() {
         let folder =
             std::env::temp_dir().join(format!("octamedic-state-config-{}", std::process::id()));
         let path = folder.join("config.toml");
@@ -1745,15 +1737,19 @@ mod tests {
         state.config_path = Some(path.clone());
 
         state.set_video(VideoStandard::Ntsc);
+        assert!(state.config_changed);
+        state.update();
+        assert!(!state.config_changed);
         let (loaded, _) = Config::load_from_path(&path);
         assert_eq!(loaded.video, VideoStandard::Ntsc);
 
-        state.output_device = Some("DAC".to_owned());
-        state.save_config();
+        state.config_mut().output.device = Some("DAC".to_owned());
+        state.update();
         let (loaded, _) = Config::load_from_path(&path);
         assert_eq!(loaded.output.device.as_deref(), Some("DAC"));
 
         state.set_mono(true);
+        state.update();
         let (loaded, _) = Config::load_from_path(&path);
         assert!(loaded.output.mono);
 

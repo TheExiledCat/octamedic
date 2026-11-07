@@ -78,7 +78,7 @@ impl App {
         mouse::set_cursor_hidden(ctx, true);
         // no audio device, run silent instead of bailing
         let mut state = AppState::new(project, EngineHandle::disconnected());
-        state.apply_config(&config);
+        state.config = config;
         state.config_path = files::get_config_file_path().ok();
         let audio = state.open_audio();
         let video = state.video();
