@@ -136,7 +136,7 @@ The range is dragged out on the waveform with the right button, and shift stretc
 is to the sample clicked. `WaveformMouse` (`main/waveform_mouse.rs`) follows a press on the
 waveform until it's let go. The range's columns are highlighted, RNGSTART and RNGEND show it and
 can be typed in, RANGE ALL makes it the whole sample, CLEAR silences it and DEL cuts it out.
-The copy buffer is `state.copy_buffer`: COPY puts the range in it, CUT does that and then what DEL
+The copy buffer is `state.clipboard.sample`: COPY puts the range in it, CUT does that and then what DEL
 does, PASTE puts it in at the range's start, S>CBUFF copies the whole sample and CBUFF>S swaps the
 sample for it. MIX mixes the buffer in from the range's start, only as far as the range goes if
 there is one, and REV turns the range round. BUFFSIZE takes a new length after Enter, with a prompt to clear or keep the sample.
@@ -230,6 +230,18 @@ Amiga+O is OctaMED's SLIDE: VOL. With the cursor between two volume commands in 
 of them), it fills the lines between with volume commands going evenly from the first's volume to
 the second's, rounded, read as hex or decimal like VOL says (`OctamedicPattern::slide_volume`). The
 RANGE panel's SLIDE: VOL does the same.
+
+Amiga+Z undoes a change to the blocks and Amiga+Shift+Z or Amiga+Y redoes it (`app/history.rs`).
+Nothing calls into the history when it edits: once a frame, before the changes go to the engine,
+`History::record` compares each block with the one it kept from the last frame and keeps the cells
+that differ. Blocks are `Arc`s the engine holds too, so the old one costs nothing extra to keep
+around, and a block that wasn't touched is skipped by pointer. Everything changed in one frame is
+one step, so CUT is a single undo. A step holds the other version of its cells, which makes undo
+and redo the same swap; a highlight keeps just its line, and a change of size or name keeps the
+whole old block. Undo goes to the block and puts the cursor on the first cell it changed. The
+history is capped at 1 MiB, dropping the oldest steps. Steps know their block by number, so the
+history starts over when the number of blocks changes, a song is loaded or cleared, and when
+Shift-clicking HEX or DEC rewrites the volume commands.
 
 A range is a rectangle of cells in a block (`BlockRange` in `app/block_range.rs`, kept in
 `AppState::range` with the block it's in). Dragging with the right button over the tracks makes

@@ -120,6 +120,8 @@ pub enum EditorAction {
     PasteBlock,
     // SLIDE: VOL
     VolumeSlide,
+    Undo,
+    Redo,
 }
 
 impl Action for EditorAction {}
@@ -184,7 +186,10 @@ impl BlockEditor {
                 PasteBlock,
                 "Paste block",
             )
-            .bind(Key::amiga(KeyCode::O), VolumeSlide, "Volume slide");
+            .bind(Key::amiga(KeyCode::O), VolumeSlide, "Volume slide")
+            .bind(Key::amiga(KeyCode::Z), Undo, "Undo")
+            .bind(Key::new(KeyCode::Z, AMIGA | KeyMods::SHIFT), Redo, "Redo")
+            .bind(Key::amiga(KeyCode::Y), Redo, "Redo");
         return Self {
             keys,
             first_track: 0,
@@ -546,6 +551,8 @@ impl KeyActions for BlockEditor {
             CopyBlock => state.copy_block(),
             PasteBlock => state.paste_block(),
             VolumeSlide => state.slide_volume(),
+            Undo => state.undo(),
+            Redo => state.redo(),
         }
     }
 
@@ -580,6 +587,8 @@ impl KeyActions for BlockEditor {
             CopyBlock => "Copy the block into the block buffer",
             PasteBlock => "Replace the block with the block buffer",
             VolumeSlide => "Slide the volume between the volume commands around the cursor",
+            Undo => "Undo the last change to the blocks",
+            Redo => "Redo the last change undone",
         };
     }
 }

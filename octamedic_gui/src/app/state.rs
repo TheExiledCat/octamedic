@@ -29,6 +29,7 @@ use crate::{
         config::Config,
         cursor::EditCursor,
         files::browser::Browser,
+        history::History,
         mode::{HeaderMode, MainMode},
         prompt::Prompt,
         screen_filters::ScreenFilters,
@@ -230,6 +231,7 @@ pub struct AppState {
     has_changes: bool,
     changed_patterns: HashSet<PatternId>,
     sequence_changed: bool,
+    history: History,
 }
 
 // the song's colours, as the screen shows them
@@ -306,8 +308,10 @@ impl AppState {
             has_changes: false,
             changed_patterns: HashSet::new(),
             sequence_changed: false,
+            history: History::default(),
         };
         state.send_all_to_engine();
+        state.reset_history();
         return state;
     }
 
@@ -410,6 +414,7 @@ impl AppState {
         self.has_changes = false;
         self.restart_timer();
         self.send_all_to_engine();
+        self.reset_history();
     }
 
     pub fn song(&self) -> &OctamedicSong {
@@ -906,6 +911,8 @@ impl AppState {
         let changed = self.song_mut().convert_volume_commands(hex);
         self.changed_patterns.extend(changed);
         self.set_volumes_hex(hex);
+        // an older step would put back a volume in the other format
+        self.reset_history();
     }
 
     pub fn set_filter(&mut self, on: bool) {
@@ -1441,6 +1448,63 @@ impl AppState {
         self.changed_patterns.insert(id);
     }
 
+    fn record_history(&mut self) {
+        let song = self
+            .project
+            .get_song(self.active_song)
+            .expect("the active song should exist");
+        self.history.record(song.patterns());
+    }
+
+    fn reset_history(&mut self) {
+        let song = self
+            .project
+            .get_song(self.active_song)
+            .expect("the active song should exist");
+        self.history.reset(song.patterns());
+    }
+
+    pub fn undo(&mut self) {
+        self.step_history(true);
+    }
+
+    pub fn redo(&mut self) {
+        self.step_history(false);
+    }
+
+    // the cursor goes to the first cell that changed
+    fn step_history(&mut self, undo: bool) {
+        self.record_history();
+        let (can, nothing) = match undo {
+            true => (self.history.can_undo(), "Nothing to undo"),
+            false => (self.history.can_redo(), "Nothing to redo"),
+        };
+        if !can {
+            self.notify(nothing);
+            return;
+        }
+        let song = self
+            .project
+            .get_song_mut(self.active_song)
+            .expect("the active song should exist");
+        let jump = if undo {
+            self.history.undo(song)
+        } else {
+            self.history.redo(song)
+        };
+        let jump = jump.expect("checked above");
+        self.has_changes = true;
+        self.changed_patterns.extend(&jump.patterns);
+        self.active_pattern = jump.patterns[0];
+        if let Some(line) = jump.line {
+            self.cursor.line = line;
+        }
+        if let Some(track) = jump.track {
+            self.cursor.track = track;
+        }
+        self.clamp_cursor_to_active_pattern();
+    }
+
     fn send_all_to_engine(&mut self) {
         self.changed_patterns.clear();
         self.sequence_changed = false;
@@ -1452,6 +1516,7 @@ impl AppState {
     }
 
     fn send_changes_to_engine(&mut self) {
+        self.record_history();
         let song = self
             .project
             .get_song(self.active_song)
@@ -1491,6 +1556,7 @@ impl AppState {
         self.cursor = EditCursor::default();
         self.active_sequence_index = 0;
         self.send_all_to_engine();
+        self.reset_history();
     }
 }
 
@@ -1894,6 +1960,70 @@ mod tests {
         assert_eq!(state.notification.as_deref(), Some("Track buffer is empty"));
         state.paste_block();
         assert_eq!(state.notification.as_deref(), Some("Block buffer is empty"));
+    }
+
+    #[test]
+    fn undo_puts_back_what_a_frame_changed() {
+        let mut state = state();
+        number_track(&mut state, 0, 8);
+        state.update();
+        // cut is a copy and a clear in one frame, so one step
+        state.cursor = EditCursor {
+            track: 0,
+            line: 5,
+            ..EditCursor::default()
+        };
+        state.cut_track();
+        state.update();
+        state.cursor.line = 0;
+        state.undo();
+        assert_eq!(notes(&state, 0), [1, 2, 3, 4, 5, 6, 7, 8]);
+        assert_eq!((state.cursor.line, state.cursor.track), (0, 0));
+        state.redo();
+        assert_eq!(notes(&state, 0), [0; 8]);
+        state.undo();
+        state.undo();
+        assert_eq!(state.active_pattern().unwrap().line_count(), 64);
+        state.undo();
+        assert_eq!(state.notification.as_deref(), Some("Nothing to undo"));
+        while state.history.can_redo() {
+            state.redo();
+        }
+        state.redo();
+        assert_eq!(state.notification.as_deref(), Some("Nothing to redo"));
+    }
+
+    #[test]
+    fn undo_goes_to_the_block_it_changed() {
+        let mut state = state();
+        state.new_block();
+        state.update();
+        state.active_pattern = PatternId(0);
+        state.cursor.line = 3;
+        state.cursor.track = 2;
+        state.enter_note(2, 3, OctamedicNote { value: 13 });
+        state.update();
+        state.active_pattern = PatternId(1);
+        state.cursor = EditCursor::default();
+        state.undo();
+        assert_eq!(state.active_pattern, PatternId(0));
+        assert_eq!((state.cursor.line, state.cursor.track), (3, 2));
+    }
+
+    #[test]
+    fn a_new_block_clears_the_history_but_playing_doesnt() {
+        let mut state = state();
+        number_track(&mut state, 0, 4);
+        state.update();
+        state.play_song(0, 0);
+        state.update();
+        state.undo();
+        assert_eq!(notes(&state, 0).len(), 64);
+        state.redo();
+        state.new_block();
+        state.update();
+        state.undo();
+        assert_eq!(state.notification.as_deref(), Some("Nothing to undo"));
     }
 
     #[test]

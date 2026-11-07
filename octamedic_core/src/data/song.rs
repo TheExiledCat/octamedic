@@ -112,6 +112,16 @@ impl OctamedicSong {
             .map(Arc::make_mut);
     }
 
+    /// Puts `pattern` in as block `pattern_id`, handing back the one that was there.
+    pub fn replace_shared_pattern(
+        &mut self,
+        pattern_id: PatternId,
+        pattern: Arc<OctamedicPattern>,
+    ) -> Option<Arc<OctamedicPattern>> {
+        let slot = self.patterns.get_mut(pattern_id.0 as usize)?;
+        return Some(std::mem::replace(slot, pattern));
+    }
+
     pub fn ensure_pattern(&mut self, pattern_id: PatternId) -> &mut OctamedicPattern {
         let index = pattern_id.0 as usize;
         if index >= self.patterns.len() {
