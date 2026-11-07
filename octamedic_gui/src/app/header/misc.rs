@@ -13,7 +13,6 @@ use rustuition::{
 use crate::{
     app::{
         fonts,
-        prompt::Prompt,
         state::{AppState, screen_palette},
     },
     framework::{
@@ -64,7 +63,6 @@ const CONFIRM: Rect = Rect::new(0, 33, 118, 12);
 const CLEAR_ALL_CHOICE: usize = 0;
 const CLEAR_SONG_CHOICE: usize = 1;
 const QUIT_CHOICE: usize = 2;
-const UNSAVED_PROMPT: &str = "Song has unsaved changes";
 
 // within the button's frame
 const HOST_TO_BUFFER_PARTS: [i32; 3] = [4, 14, 23];
@@ -169,11 +167,7 @@ impl Misc {
             QUIT_CHOICE => AppState::request_exit,
             _ => return,
         };
-        if state.is_saved() {
-            action(state);
-        } else {
-            state.open_prompt(Prompt::yes_no(UNSAVED_PROMPT, action));
-        }
+        state.confirm_if_unsaved(action);
     }
 }
 
@@ -336,6 +330,7 @@ mod tests {
     use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
 
     use super::*;
+    use crate::app::prompt::Prompt;
 
     fn confirm_quit(state: &mut AppState) {
         let mut misc = Misc::new();

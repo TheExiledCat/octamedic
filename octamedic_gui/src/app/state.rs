@@ -49,6 +49,8 @@ const MAX_SEQUENCE_ENTRIES: usize = 256;
 const MAX_DEBUG_LINES: usize = 256;
 const MULTIPLE_ERRORS: &str = "Multiple errors have occurred";
 
+const UNSAVED_PROMPT: &str = "Song has unsaved changes";
+
 // C up to the next C, laid out like a piano keyboard
 const BOTTOM_OCTAVE_KEYS: [char; 13] = [
     'z', 's', 'x', 'd', 'c', 'v', 'g', 'b', 'h', 'n', 'j', 'm', ',',
@@ -506,6 +508,16 @@ impl AppState {
 
     pub fn request_exit(&mut self) {
         self.exit_requested = true;
+    }
+
+    /// Runs `action` now if the song is saved, otherwise once the unsaved changes prompt gets a
+    /// yes.
+    pub fn confirm_if_unsaved(&mut self, action: impl FnOnce(&mut AppState) + 'static) {
+        if self.is_saved() {
+            action(self);
+        } else {
+            self.open_prompt(Prompt::yes_no(UNSAVED_PROMPT, action));
+        }
     }
 
     pub fn play_song(&mut self, sequence_index: usize, row: usize) {
@@ -1324,12 +1336,35 @@ impl AppState {
 
 #[cfg(test)]
 mod tests {
+    use ggez::input::keyboard::KeyCode;
     use octamedic_core::data::pattern::{DEFAULT_LINES, MAX_LINES};
 
     use super::*;
+    use crate::{app::prompt, framework::event::Event};
 
     fn state() -> AppState {
         return AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+    }
+
+    #[test]
+    fn confirming_takes_a_closure() {
+        let mut saved = state();
+        let name = String::from("kept");
+        saved.confirm_if_unsaved(move |state| state.set_song_name(&name));
+        assert_eq!(saved.song().name(), "kept");
+
+        let mut unsaved = state();
+        unsaved.set_song_name("changed");
+        let name = String::from("kept");
+        unsaved.confirm_if_unsaved(move |state| state.set_song_name(&name));
+        assert_eq!(unsaved.song().name(), "changed");
+        let yes = Event::Key {
+            key: KeyCode::Y,
+            mods: KeyMods::empty(),
+            repeat: false,
+        };
+        assert!(prompt::handle_event(&mut unsaved, &yes));
+        assert_eq!(unsaved.song().name(), "kept");
     }
 
     #[test]

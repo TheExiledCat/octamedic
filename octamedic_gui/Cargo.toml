@@ -19,5 +19,9 @@ toml = "0.5"
 # what ggez decodes images with already, for the pointer's pixels
 image = { version = "0.24", default-features = false, features = ["png"] }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# to answer the app delegate's applicationShouldTerminate:, cpal builds it already
+objc2 = "0.6.4"
+
 [lints]
 workspace = true
