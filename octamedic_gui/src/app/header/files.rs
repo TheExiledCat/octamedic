@@ -421,6 +421,7 @@ fn write_song(state: &mut AppState, path: PathBuf, bytes: &[u8]) {
         state.notify("Can't save it");
         return;
     }
+    state.mark_saved();
     let folder = state.browser.path().to_path_buf();
     let _ = state.browser.open(folder);
     let file_name = path
@@ -480,6 +481,21 @@ mod tests {
         files.dir.set_text(text);
         files.dir.set_focused(false);
         files.update(state);
+    }
+
+    #[test]
+    fn saving_the_song_marks_it_saved_and_an_instrument_doesnt() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        let temp = std::env::temp_dir().join(format!("octamedic-saved-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp);
+        std::fs::create_dir_all(&temp).unwrap();
+        state.browser.open(&temp).unwrap();
+        state.set_song_name("changed");
+        write_instrument(&mut state, temp.join("sample.raw"), &[0]);
+        assert!(!state.is_saved());
+        write_song(&mut state, temp.join("song.mmd1"), &[0]);
+        assert!(state.is_saved());
+        let _ = std::fs::remove_dir_all(&temp);
     }
 
     #[test]

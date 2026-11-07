@@ -112,13 +112,14 @@ impl OctamedicSong {
             .map(Arc::make_mut);
     }
 
-    pub fn ensure_pattern(&mut self, pattern_id: PatternId) -> &mut OctamedicPattern {
-        let index = pattern_id.0 as usize;
-        if index >= self.patterns.len() {
-            self.patterns
-                .resize_with(index + 1, || Arc::new(OctamedicPattern::new()));
-        }
-        return Arc::make_mut(&mut self.patterns[index]);
+    /// Puts `pattern` in as block `pattern_id`, handing back the one that was there.
+    pub fn replace_shared_pattern(
+        &mut self,
+        pattern_id: PatternId,
+        pattern: Arc<OctamedicPattern>,
+    ) -> Option<Arc<OctamedicPattern>> {
+        let slot = self.patterns.get_mut(pattern_id.0 as usize)?;
+        return Some(std::mem::replace(slot, pattern));
     }
 
     /// Inserts `pattern` as block `index`, shifting every later block (and the sequence entries
@@ -280,10 +281,10 @@ mod tests {
     fn converting_volume_commands() {
         let mut song = OctamedicSong::new("test");
         song.patterns.push(Arc::new(OctamedicPattern::new()));
-        let cell = &mut song.ensure_pattern(PatternId(0)).lines[0].tracks[0];
+        let cell = &mut song.get_pattern_mut(PatternId(0)).unwrap().lines[0].tracks[0];
         cell.command_id = CommandId(SET_VOLUME);
         cell.command_value = 0x40;
-        let tempo = &mut song.ensure_pattern(PatternId(0)).lines[1].tracks[0];
+        let tempo = &mut song.get_pattern_mut(PatternId(0)).unwrap().lines[1].tracks[0];
         tempo.command_id = CommandId(0x0F);
         tempo.command_value = 0x40;
         // decimal 40 is hex 28, and only volume commands change. block 1 has none

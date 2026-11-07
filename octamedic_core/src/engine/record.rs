@@ -218,7 +218,7 @@ mod tests {
         tempo.primary_tempo = 25;
         tempo.ticks_per_line = 1;
         *song.tempo_mut() = tempo;
-        let pattern = song.ensure_pattern(PatternId(0));
+        let pattern = song.get_pattern_mut(PatternId(0)).unwrap();
         pattern.lines.truncate(4);
         let cell = pattern.track_mut(0, 0).unwrap();
         cell.note = OctamedicNote { value: 13 };
@@ -330,7 +330,10 @@ mod tests {
     fn max_duration() {
         let mut song = song();
         let line = song.get_pattern(&PatternId(0)).unwrap().lines[0].clone();
-        song.ensure_pattern(PatternId(0)).lines.resize(10_000, line);
+        song.get_pattern_mut(PatternId(0))
+            .unwrap()
+            .lines
+            .resize(10_000, line);
         let recording = Recorder {
             max_duration: Duration::from_secs(2),
             ..recorder()
@@ -385,7 +388,10 @@ mod tests {
         tempo.ticks_per_line = 6;
         *song.tempo_mut() = tempo;
         let line = song.get_pattern(&PatternId(0)).unwrap().lines[0].clone();
-        song.ensure_pattern(PatternId(0)).lines.resize(16, line);
+        song.get_pattern_mut(PatternId(0))
+            .unwrap()
+            .lines
+            .resize(16, line);
         let recording = Recorder {
             sample_rate: 48000,
             ..Recorder::default()

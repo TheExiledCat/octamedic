@@ -114,7 +114,7 @@ mod tests {
     use super::*;
     use crate::data::{
         instrument::{InstrumentId, OctamedicSample, SampleOctaves},
-        pattern::PatternId,
+        pattern::{OctamedicPattern, PatternId},
         song::SongId,
     };
 
@@ -147,7 +147,8 @@ mod tests {
     fn blocks_take_four_bytes_a_note() {
         let mut song = OctamedicSong::new("");
         let before = song.module_bytes();
-        let block = song.ensure_pattern(PatternId(1));
+        let id = song.insert_pattern(1, OctamedicPattern::new());
+        let block = song.get_pattern(&id).unwrap();
         let notes = block.line_count() * block.track_count();
         assert_eq!(
             song.module_bytes() - before,

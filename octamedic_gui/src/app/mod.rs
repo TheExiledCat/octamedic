@@ -12,6 +12,7 @@ pub mod files;
 pub mod fonts;
 pub mod footer;
 pub mod header;
+pub mod history;
 pub mod icon;
 pub mod keybinds;
 pub mod main;
