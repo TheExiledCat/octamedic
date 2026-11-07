@@ -26,8 +26,7 @@ fn output_dialog(state: &AppState, devices: Vec<OutputDevice>) -> Dialog {
     let names: Vec<&str> = names.iter().map(String::as_str).collect();
     // a device that's gone shows as the default
     let chosen = state
-        .output_device
-        .as_deref()
+        .output_device()
         .and_then(|id| devices.iter().position(|device| device.id == id))
         .map_or(0, |index| index + 1);
     let mut dialog = Dialog::new("Output")
@@ -39,7 +38,9 @@ fn output_dialog(state: &AppState, devices: Vec<OutputDevice>) -> Dialog {
     return dialog.on_submit(move |state, result| {
         let picked = *result.get(device);
         // left alone, a device that's missing from the list stays
-        if picked != chosen || state.audio_failed() {
+        let reopen =
+            picked != chosen || state.audio_failed() || (state.using_fallback() && picked != 0);
+        if reopen {
             let id = picked
                 .checked_sub(1)
                 .and_then(|index| devices.get(index))
@@ -97,10 +98,22 @@ mod tests {
     #[test]
     fn a_missing_device_stays_when_only_mono_changes() {
         let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
-        state.output_device = Some("unplugged".to_owned());
+        state.config_mut().output.device = Some("unplugged".to_owned());
         let mut dialog = output_dialog(&state, devices());
         submit(&mut dialog, &mut state);
-        assert_eq!(state.output_device.as_deref(), Some("unplugged"));
+        assert_eq!(state.output_device(), Some("unplugged"));
+    }
+
+    #[test]
+    fn mono_with_active_fallback_keeps_saved_device() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        state.config_mut().output.device = Some("headphones".to_owned());
+        state.set_using_fallback(true);
+        let mut dialog = output_dialog(&state, devices());
+        submit(&mut dialog, &mut state);
+        assert!(dialog.is_closed());
+        assert_eq!(state.output_device(), Some("headphones"));
+        assert!(state.using_fallback());
     }
 
     #[test]
@@ -110,7 +123,7 @@ mod tests {
         let mut dialog = output_dialog(&state, devices());
         submit(&mut dialog, &mut state);
         assert!(dialog.is_closed());
-        assert_eq!(state.output_device, None);
+        assert_eq!(state.output_device(), None);
         assert!(state.mono());
     }
 }

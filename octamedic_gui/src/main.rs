@@ -9,10 +9,14 @@ use ggez::{
     event,
     winit::{dpi::PhysicalPosition, monitor::MonitorHandle, window::Window},
 };
-use octamedic_core::data::project::OctamedicProject;
+use octamedic_core::{amiga::clock::VideoStandard, data::project::OctamedicProject};
 use rustuition::screen::Screen;
 
-use crate::app::{DEFAULT_VIDEO, app::App, files, icon, screen};
+use crate::app::{
+    app::App,
+    config::{Config, LoadedConfig},
+    files, icon, screen,
+};
 
 mod app;
 mod crash_log;
@@ -44,18 +48,31 @@ fn main() {
     if let Err(error) = files::initialize() {
         errors.push(format!("Couldn't create OctaMEDIC's folders: {error}"));
     }
+    let LoadedConfig {
+        config,
+        path: config_path,
+        error: config_error,
+    } = Config::load();
+    if let Some(error) = config_error {
+        errors.push(error);
+    }
     let project = load_project().unwrap_or_else(|error| {
         errors.push(error);
         OctamedicProject::new()
     });
     // only comes back if the window couldn't open
-    let Err(error) = run(project, &errors);
+    let Err(error) = run(project, config, config_path, &errors);
     crash_log::log_error(&error.to_string(), &errors);
     std::process::exit(1);
 }
 
-fn run(project: OctamedicProject, errors: &[String]) -> GameResult<Infallible> {
-    let [width, height] = screen(DEFAULT_VIDEO).window_size(WINDOW_SCALE);
+fn run(
+    project: OctamedicProject,
+    config: Config,
+    config_path: Option<PathBuf>,
+    errors: &[String],
+) -> GameResult<Infallible> {
+    let [width, height] = screen(config.video).window_size(WINDOW_SCALE);
     let mode = WindowMode {
         maximized: false,
         fullscreen_type: ggez::conf::FullscreenType::Windowed,
@@ -76,15 +93,15 @@ fn run(project: OctamedicProject, errors: &[String]) -> GameResult<Infallible> {
         .build()?;
     #[cfg(target_os = "macos")]
     macos::ask_before_quitting();
-    open_window(&mut ctx, mode)?;
-    let app = App::new(&mut ctx, project, errors.to_vec())?;
+    open_window(&mut ctx, mode, config.video)?;
+    let app = App::new(&mut ctx, project, config, config_path, errors.to_vec())?;
     icon::set_window_icons(ctx.gfx.window())?;
     event::run(ctx, event_loop, app);
 }
 
 // sizes are in physical pixels, so a 2x display (Retina) needs twice as many for the same size
-fn open_window(ctx: &mut Context, mode: WindowMode) -> GameResult {
-    let screen = screen(DEFAULT_VIDEO);
+fn open_window(ctx: &mut Context, mode: WindowMode, video: VideoStandard) -> GameResult {
+    let screen = screen(video);
     let window = ctx.gfx.window();
     let most = WINDOW_SCALE * window.scale_factor() as f32;
     let [frame_width, frame_height] = frame_size(window);
