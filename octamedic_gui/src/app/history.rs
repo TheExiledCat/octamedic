@@ -16,6 +16,9 @@ pub struct History {
     undo: VecDeque<Step>,
     redo: Vec<Step>,
     bytes: usize,
+    // what `position` is with nothing to undo, which moves on as the oldest steps are dropped
+    bottom: u64,
+    next_id: u64,
     // the blocks at the last record, sharing the song's Arcs. The engine holds them too, so an
     // edit copies a block on write whether this is here or not
     baseline: Vec<Arc<OctamedicPattern>>,
@@ -30,7 +33,10 @@ pub struct Jump {
 }
 
 // everything changed between two records, undone and redone together
-struct Step(Vec<(PatternId, PatternChange)>);
+struct Step {
+    id: u64,
+    changes: Vec<(PatternId, PatternChange)>,
+}
 
 enum PatternChange {
     // a highlight only needs its line, it's flipped back
@@ -38,7 +44,8 @@ enum PatternChange {
         cells: Vec<CellChange>,
         highlights: Vec<u16>,
     },
-    // for a change of size or name, or when most of the block changed and this is smaller
+    // for a change of size, or when most of the block changed and this is smaller. It keeps the
+    // name the block has now when swapped in, as names aren't undone
     Whole(Arc<OctamedicPattern>),
 }
 
@@ -54,7 +61,26 @@ impl History {
         self.undo.clear();
         self.redo.clear();
         self.bytes = 0;
+        self.bottom = self.new_id();
         self.baseline = patterns.to_vec();
+    }
+
+    /// Tells the blocks apart as they've been: it's the same again only after undoing or redoing
+    /// back to the same step, so it can tell whether the blocks are back to how they were saved.
+    pub fn position(&self) -> u64 {
+        return self.undo.back().map_or(self.bottom, |step| step.id);
+    }
+
+    fn new_id(&mut self) -> u64 {
+        self.next_id += 1;
+        return self.next_id;
+    }
+
+    /// Takes the blocks as they are now without making a step, for a change undo leaves alone.
+    pub fn accept(&mut self, patterns: &[Arc<OctamedicPattern>]) {
+        if patterns.len() == self.baseline.len() {
+            self.baseline = patterns.to_vec();
+        }
     }
 
     /// Makes a step of whatever changed since the last record, and drops the redo. A change in
@@ -77,13 +103,17 @@ impl History {
         if changes.is_empty() {
             return;
         }
-        let step = Step(changes);
+        let step = Step {
+            id: self.new_id(),
+            changes,
+        };
         self.bytes -= self.redo.drain(..).map(|step| step.bytes()).sum::<usize>();
         self.bytes += step.bytes();
         self.undo.push_back(step);
         while self.bytes > HISTORY_BYTES && self.undo.len() > 1 {
             let oldest = self.undo.pop_front().expect("there's more than one");
             self.bytes -= oldest.bytes();
+            self.bottom = oldest.id;
         }
     }
 
@@ -111,16 +141,16 @@ impl History {
 
     fn swap(&mut self, mut step: Step, song: &mut OctamedicSong) -> (Step, Jump) {
         self.bytes -= step.bytes();
-        for (id, change) in &mut step.0 {
+        for (id, change) in &mut step.changes {
             change.swap(*id, song);
             if let Some(current) = song.get_shared_pattern(id) {
                 self.baseline[id.0 as usize] = current;
             }
         }
         self.bytes += step.bytes();
-        let (line, track) = step.0[0].1.first_position();
+        let (line, track) = step.changes[0].1.first_position();
         let jump = Jump {
-            patterns: step.0.iter().map(|(id, _)| *id).collect(),
+            patterns: step.changes.iter().map(|(id, _)| *id).collect(),
             line,
             track,
         };
@@ -130,8 +160,8 @@ impl History {
 
 impl Step {
     fn bytes(&self) -> usize {
-        let entries = self.0.capacity() * size_of::<(PatternId, PatternChange)>();
-        let changes: usize = self.0.iter().map(|(_, change)| change.bytes()).sum();
+        let entries = self.changes.capacity() * size_of::<(PatternId, PatternChange)>();
+        let changes: usize = self.changes.iter().map(|(_, change)| change.bytes()).sum();
         return size_of::<Self>() + entries + changes;
     }
 }
@@ -139,8 +169,7 @@ impl Step {
 impl PatternChange {
     fn between(previous: Arc<OctamedicPattern>, current: &OctamedicPattern) -> Option<Self> {
         let same_shape = previous.line_count() == current.line_count()
-            && previous.track_count() == current.track_count()
-            && previous.name == current.name;
+            && previous.track_count() == current.track_count();
         if !same_shape {
             return Some(Self::Whole(previous));
         }
@@ -188,9 +217,14 @@ impl PatternChange {
                 }
             }
             Self::Whole(other) => {
-                if let Some(current) = song.replace_shared_pattern(id, other.clone()) {
-                    *other = current;
+                let Some(current) = song.replace_shared_pattern(id, other.clone()) else {
+                    return;
+                };
+                if other.name != current.name {
+                    let swapped_in = song.get_pattern_mut(id).expect("just put there");
+                    swapped_in.name = current.name.clone();
                 }
+                *other = current;
             }
         }
     }
@@ -284,7 +318,7 @@ mod tests {
         set_note(&mut song, 0, 0, 1);
         set_note(&mut song, 5, 2, 1);
         history.record(song.patterns());
-        let PatternChange::Cells { cells, .. } = &history.undo[0].0[0].1 else {
+        let PatternChange::Cells { cells, .. } = &history.undo[0].changes[0].1 else {
             panic!("expected cells");
         };
         assert_eq!(cells.len(), 2);
@@ -302,7 +336,7 @@ mod tests {
             .set_line_count(4);
         history.record(song.patterns());
         assert!(matches!(
-            history.undo.back().unwrap().0[0].1,
+            history.undo.back().unwrap().changes[0].1,
             PatternChange::Whole(_)
         ));
         history.undo(&mut song);
@@ -310,6 +344,46 @@ mod tests {
         assert_eq!(note(&song, 7, 0), 9);
         history.redo(&mut song);
         assert_eq!(song.get_pattern(&PatternId(0)).unwrap().line_count(), 4);
+    }
+
+    #[test]
+    fn names_arent_undone() {
+        let mut song = song();
+        let mut history = History::default();
+        history.reset(song.patterns());
+        song.get_pattern_mut(PatternId(0)).unwrap().name = "first".into();
+        history.record(song.patterns());
+        assert!(!history.can_undo());
+        song.get_pattern_mut(PatternId(0))
+            .unwrap()
+            .set_line_count(4);
+        history.record(song.patterns());
+        song.get_pattern_mut(PatternId(0)).unwrap().name = "second".into();
+        history.accept(song.patterns());
+        history.undo(&mut song);
+        let pattern = song.get_pattern(&PatternId(0)).unwrap();
+        assert_eq!((pattern.line_count(), pattern.name.as_str()), (8, "second"));
+    }
+
+    #[test]
+    fn position_comes_back_with_the_same_blocks() {
+        let mut song = song();
+        let mut history = History::default();
+        history.reset(song.patterns());
+        let saved = history.position();
+        set_note(&mut song, 0, 0, 1);
+        history.record(song.patterns());
+        assert_ne!(history.position(), saved);
+        history.undo(&mut song);
+        assert_eq!(history.position(), saved);
+        // a different edit from the same place isn't the saved one
+        set_note(&mut song, 1, 0, 1);
+        history.record(song.patterns());
+        history.undo(&mut song);
+        history.redo(&mut song);
+        assert_ne!(history.position(), saved);
+        history.reset(song.patterns());
+        assert_ne!(history.position(), saved);
     }
 
     #[test]

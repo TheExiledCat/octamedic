@@ -237,9 +237,13 @@ Nothing calls into the history when it edits: once a frame, before the changes g
 that differ. Blocks are `Arc`s the engine holds too, so the old one costs nothing extra to keep
 around, and a block that wasn't touched is skipped by pointer. Everything changed in one frame is
 one step, so CUT is a single undo. A step holds the other version of its cells, which makes undo
-and redo the same swap; a highlight keeps just its line, and a change of size or name keeps the
-whole old block. Undo goes to the block and puts the cursor on the first cell it changed. The
-history is capped at 1 MiB, dropping the oldest steps. Steps know their block by number, so the
+and redo the same swap; a highlight keeps just its line, and a change of size keeps the whole old
+block. Block names aren't undone: `AppState::edit_pattern_untracked` makes an edit the history
+takes as it is, without a step. Undo goes to the block and puts the cursor on the first cell it changed, unless
+it's playing, when the editor follows the engine's block. The history is capped at 1 MiB, dropping
+the oldest steps. Undoing back to where the song was loaded or saved makes it saved again:
+`is_saved` compares `History::position` with the one `mark_saved` kept, and block edits don't set
+`has_changes`, which is left for the changes undo can't take back. Steps know their block by number, so the
 history starts over when the number of blocks changes, a song is loaded or cleared, and when
 Shift-clicking HEX or DEC rewrites the volume commands.
 

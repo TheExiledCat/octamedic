@@ -532,7 +532,10 @@ impl KeyActions for StatusBar {
 
 #[cfg(test)]
 mod tests {
-    use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
+    use octamedic_core::{
+        data::{pattern::OctamedicPattern, project::OctamedicProject},
+        engine::handle::EngineHandle,
+    };
     use rustuition::{rect::Point, target::Framebuffer};
 
     use super::*;
@@ -676,9 +679,11 @@ mod tests {
     fn block_keys_clamp() {
         let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
         let mut status = StatusBar::new();
-        state.next_pattern();
-        state.next_pattern();
-        state.select_block(0);
+        for end in 1..=2 {
+            state
+                .song_mut()
+                .insert_pattern(end, OctamedicPattern::new());
+        }
         let mut block = |key, mods| {
             press(&mut status, &mut state, key, mods);
             return state.active_pattern.0;

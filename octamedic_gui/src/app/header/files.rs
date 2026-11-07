@@ -304,6 +304,7 @@ fn write_instrument(state: &mut AppState, path: PathBuf, bytes: &[u8]) {
         state.notify("Can't save it");
         return;
     }
+    state.mark_saved();
     let folder = state.browser.path().to_path_buf();
     let _ = state.browser.open(folder);
     let file_name = path

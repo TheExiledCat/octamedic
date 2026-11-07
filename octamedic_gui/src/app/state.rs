@@ -228,10 +228,12 @@ pub struct AppState {
     timer_resumed: Option<Instant>,
     time: Duration,
     playback_start_time: Option<Instant>,
+    // changes undo can't take back. The blocks are compared by `saved_position` instead
     has_changes: bool,
     changed_patterns: HashSet<PatternId>,
     sequence_changed: bool,
     history: History,
+    saved_position: u64,
 }
 
 // the song's colours, as the screen shows them
@@ -309,9 +311,11 @@ impl AppState {
             changed_patterns: HashSet::new(),
             sequence_changed: false,
             history: History::default(),
+            saved_position: 0,
         };
         state.send_all_to_engine();
         state.reset_history();
+        state.saved_position = state.history.position();
         return state;
     }
 
@@ -411,10 +415,10 @@ impl AppState {
         self.active_sequence_index = 0;
         self.active_instrument = InstrumentId(1);
         self.muted_tracks = [false; SONG_TRACKS];
-        self.has_changes = false;
         self.restart_timer();
         self.send_all_to_engine();
         self.reset_history();
+        self.mark_saved();
     }
 
     pub fn song(&self) -> &OctamedicSong {
@@ -437,10 +441,15 @@ impl AppState {
         return self.song().get_pattern(&self.active_pattern);
     }
 
+    // not through song_mut: an edit can be undone, so `is_saved` goes by the history for these
     pub fn active_pattern_mut(&mut self) -> Option<&mut OctamedicPattern> {
         let id = self.active_pattern;
         self.changed_patterns.insert(id);
-        return self.song_mut().get_pattern_mut(id);
+        return self
+            .project
+            .get_song_mut(self.active_song)
+            .expect("the active song should exist")
+            .get_pattern_mut(id);
     }
 
     pub fn toggle_highlight(&mut self, line: usize) {
@@ -502,7 +511,15 @@ impl AppState {
     }
 
     pub fn is_saved(&self) -> bool {
-        return !self.has_changes;
+        return !self.has_changes
+            && self.changed_patterns.is_empty()
+            && self.history.position() == self.saved_position;
+    }
+
+    pub fn mark_saved(&mut self) {
+        self.record_history();
+        self.has_changes = false;
+        self.saved_position = self.history.position();
     }
 
     pub fn open_prompt(&mut self, prompt: Prompt) {
@@ -830,14 +847,13 @@ impl AppState {
         self.line_add = self.line_add.saturating_sub(1).max(1);
     }
 
+    // both stop at the ends, like OctaMED, rather than making a block
     pub fn next_pattern(&mut self) {
-        self.active_pattern.0 = self.active_pattern.0.saturating_add(1);
-        self.ensure_pattern(self.active_pattern);
+        self.select_block(self.active_pattern.0 as usize + 1);
     }
 
     pub fn prev_pattern(&mut self) {
-        self.active_pattern.0 = self.active_pattern.0.saturating_sub(1);
-        self.ensure_pattern(self.active_pattern);
+        self.select_block((self.active_pattern.0 as usize).saturating_sub(1));
     }
 
     pub fn select_block(&mut self, index: usize) {
@@ -863,9 +879,20 @@ impl AppState {
     }
 
     pub fn set_block_name(&mut self, name: &str) {
+        self.edit_pattern_untracked(|pattern| pattern.name = name.to_owned());
+    }
+
+    // for edits undo leaves alone, like the block's name
+    pub fn edit_pattern_untracked(&mut self, edit: impl FnOnce(&mut OctamedicPattern)) {
+        self.record_history();
         if let Some(pattern) = self.active_pattern_mut() {
-            pattern.name = name.to_owned();
+            edit(pattern);
         }
+        let song = self
+            .project
+            .get_song(self.active_song)
+            .expect("the active song should exist");
+        self.history.accept(song.patterns());
     }
 
     pub fn set_song_name(&mut self, name: &str) {
@@ -1199,12 +1226,8 @@ impl AppState {
     pub fn slide_volume(&mut self) {
         let EditCursor { line, track, .. } = self.cursor;
         let hex = self.song().flags.volumes_hex;
-        let id = self.active_pattern;
-        let Some(pattern) = self.song_mut().get_pattern_mut(id) else {
-            return;
-        };
-        if pattern.slide_volume(line, track, hex) {
-            self.changed_patterns.insert(id);
+        if let Some(pattern) = self.active_pattern_mut() {
+            pattern.slide_volume(line, track, hex);
         }
     }
 
@@ -1440,14 +1463,6 @@ impl AppState {
         self.active_sequence_index = index.min(last);
     }
 
-    fn ensure_pattern(&mut self, id: PatternId) {
-        if self.song().get_pattern(&id).is_some() {
-            return;
-        }
-        self.song_mut().ensure_pattern(id);
-        self.changed_patterns.insert(id);
-    }
-
     fn record_history(&mut self) {
         let song = self
             .project
@@ -1493,8 +1508,11 @@ impl AppState {
             self.history.redo(song)
         };
         let jump = jump.expect("checked above");
-        self.has_changes = true;
         self.changed_patterns.extend(&jump.patterns);
+        // playing follows the engine's block, which would take it straight back
+        if self.is_playing() {
+            return;
+        }
         self.active_pattern = jump.patterns[0];
         if let Some(line) = jump.line {
             self.cursor.line = line;
@@ -1670,11 +1688,19 @@ mod tests {
         assert_eq!(state.song().sequence().len(), 1);
     }
 
+    fn add_blocks(state: &mut AppState, count: usize) {
+        for _ in 0..count {
+            let end = state.song().patterns().len();
+            state
+                .song_mut()
+                .insert_pattern(end, OctamedicPattern::new());
+        }
+    }
+
     #[test]
     fn sequence_edit_selects_block() {
         let mut state = state();
-        state.next_pattern();
-        state.next_pattern();
+        add_blocks(&mut state, 2);
         state.insert_sequence(PatternId(2));
         assert_eq!(state.active_pattern, PatternId(2));
         state.decrement_sequence_pattern();
@@ -1687,7 +1713,7 @@ mod tests {
     #[test]
     fn sequence_jump_selects_block() {
         let mut state = state();
-        state.next_pattern();
+        add_blocks(&mut state, 1);
         state.insert_sequence(PatternId(1));
         state.set_sequence(0);
         assert_eq!(state.active_pattern, PatternId(0));
@@ -1788,11 +1814,15 @@ mod tests {
     }
 
     #[test]
-    fn new_pattern_created() {
+    fn next_and_prev_block_stop_at_the_ends() {
         let mut state = state();
         state.next_pattern();
+        assert_eq!(state.active_pattern, PatternId(0));
+        assert_eq!(state.song().patterns().len(), 1);
+        add_blocks(&mut state, 1);
+        state.next_pattern();
+        state.next_pattern();
         assert_eq!(state.active_pattern, PatternId(1));
-        assert!(state.active_pattern().is_some());
         state.prev_pattern();
         state.prev_pattern();
         assert_eq!(state.active_pattern, PatternId(0));
@@ -2008,6 +2038,47 @@ mod tests {
         state.undo();
         assert_eq!(state.active_pattern, PatternId(0));
         assert_eq!((state.cursor.line, state.cursor.track), (3, 2));
+    }
+
+    #[test]
+    fn undoing_back_to_the_save_is_saved() {
+        let mut state = state();
+        assert!(state.is_saved());
+        state.enter_note(0, 0, OctamedicNote { value: 13 });
+        assert!(!state.is_saved());
+        state.update();
+        state.undo();
+        state.update();
+        assert!(state.is_saved());
+        state.redo();
+        state.mark_saved();
+        state.update();
+        assert!(state.is_saved());
+        state.undo();
+        state.update();
+        assert!(!state.is_saved());
+        // undo can't take back the tempo, so that stays unsaved
+        state.redo();
+        state.set_tempo(OctamedicTempo::new());
+        state.update();
+        assert!(!state.is_saved());
+    }
+
+    #[test]
+    fn undo_while_playing_stays_on_the_playing_block() {
+        let mut state = state();
+        add_blocks(&mut state, 1);
+        state.update();
+        state.enter_note(0, 3, OctamedicNote { value: 13 });
+        state.update();
+        state.active_pattern = PatternId(1);
+        state.engine.status().set_play_mode(PlayMode::Pattern);
+        state.undo();
+        assert_eq!(state.active_pattern, PatternId(1));
+        assert_eq!(state.cursor.line, 0);
+        state.engine.status().set_play_mode(PlayMode::Paused);
+        state.redo();
+        assert_eq!((state.active_pattern, state.cursor.line), (PatternId(0), 3));
     }
 
     #[test]

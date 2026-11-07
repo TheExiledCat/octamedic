@@ -265,7 +265,7 @@ impl KeyActions for MainView {
 #[cfg(test)]
 mod tests {
     use octamedic_core::{
-        data::{pattern::PatternId, project::OctamedicProject},
+        data::{pattern::OctamedicPattern, project::OctamedicProject},
         engine::handle::EngineHandle,
     };
     use rustuition::rect::Point;
@@ -371,7 +371,11 @@ mod tests {
     #[test]
     fn keypad_edits_the_sequence() {
         let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
-        state.song_mut().ensure_pattern(PatternId(2));
+        for index in 1..=2 {
+            state
+                .song_mut()
+                .insert_pattern(index, OctamedicPattern::new());
+        }
         let mut view = MainView::new();
         let mut press = |state: &mut AppState, key| {
             let event = Event::Key {
