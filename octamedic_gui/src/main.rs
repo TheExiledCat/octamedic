@@ -12,7 +12,7 @@ use ggez::{
 use octamedic_core::{amiga::clock::VideoStandard, data::project::OctamedicProject};
 use rustuition::screen::Screen;
 
-use crate::app::{app::App, files, icon, screen, settings::Settings};
+use crate::app::{app::App, config::Config, files, icon, screen};
 
 mod app;
 mod crash_log;
@@ -42,8 +42,8 @@ fn main() {
     if let Err(error) = files::initialize() {
         errors.push(format!("Couldn't create OctaMEDIC's folders: {error}"));
     }
-    let (settings, settings_error) = Settings::load();
-    if let Some(error) = settings_error {
+    let (config, config_error) = Config::load();
+    if let Some(error) = config_error {
         errors.push(error);
     }
     let project = load_project().unwrap_or_else(|error| {
@@ -51,13 +51,13 @@ fn main() {
         OctamedicProject::new()
     });
     // only comes back if the window couldn't open
-    let Err(error) = run(project, settings, &errors);
+    let Err(error) = run(project, config, &errors);
     crash_log::log_error(&error.to_string(), &errors);
     std::process::exit(1);
 }
 
-fn run(project: OctamedicProject, settings: Settings, errors: &[String]) -> GameResult<Infallible> {
-    let [width, height] = screen(settings.video).window_size(WINDOW_SCALE);
+fn run(project: OctamedicProject, config: Config, errors: &[String]) -> GameResult<Infallible> {
+    let [width, height] = screen(config.video).window_size(WINDOW_SCALE);
     let mode = WindowMode {
         maximized: false,
         fullscreen_type: ggez::conf::FullscreenType::Windowed,
@@ -76,8 +76,8 @@ fn run(project: OctamedicProject, settings: Settings, errors: &[String]) -> Game
         // vsync queues frames and the pointer ends up trailing the mouse, so App paces itself
         .window_setup(WindowSetup::default().title("OctaMEDIC").vsync(false))
         .build()?;
-    open_window(&mut ctx, mode, settings.video)?;
-    let app = App::new(&mut ctx, project, settings, errors.to_vec())?;
+    open_window(&mut ctx, mode, config.video)?;
+    let app = App::new(&mut ctx, project, config, errors.to_vec())?;
     icon::set_window_icons(ctx.gfx.window())?;
     event::run(ctx, event_loop, app);
 }

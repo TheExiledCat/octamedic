@@ -25,12 +25,12 @@ use rustuition::palette::{Color, IntuitionColorPalette};
 use crate::{
     app::{
         DEFAULT_VIDEO,
+        config::{Config, OutputConfig},
         cursor::EditCursor,
         files::browser::Browser,
         mode::{HeaderMode, MainMode},
         prompt::Prompt,
         screen_filters::ScreenFilters,
-        settings::{OutputSettings, Settings},
     },
     framework::widgets::Dialog,
 };
@@ -194,8 +194,8 @@ pub struct AppState {
     video: VideoStandard,
     // the engine's device's id, None for the default. set_output_device changes it
     pub output_device: Option<String>,
-    // where settings are saved when they change. None in tests
-    pub settings_path: Option<PathBuf>,
+    // where config is saved when it changes. None in tests
+    pub config_path: Option<PathBuf>,
     // the last try at opening it didn't work, so the engine is disconnected
     audio_failed: bool,
     mono: bool,
@@ -264,7 +264,7 @@ impl AppState {
             mouse_mods: KeyMods::NONE,
             video: DEFAULT_VIDEO,
             output_device: None,
-            settings_path: None,
+            config_path: None,
             audio_failed: false,
             mono: false,
             queued_sequence_index: None,
@@ -498,7 +498,7 @@ impl AppState {
     pub fn set_video(&mut self, video: VideoStandard) {
         self.video = video;
         self.engine.set_machine(video.clock());
-        self.save_settings();
+        self.save_config();
     }
 
     pub fn audio_failed(&self) -> bool {
@@ -523,7 +523,7 @@ impl AppState {
             }
             self.notify(error);
         }
-        self.save_settings();
+        self.save_config();
     }
 
     /// Starts the engine on the output device and sends it everything, or gives back why it
@@ -554,31 +554,31 @@ impl AppState {
     pub fn set_mono(&mut self, mono: bool) {
         self.mono = mono;
         self.engine.set_mono(mono);
-        self.save_settings();
+        self.save_config();
     }
 
-    pub fn apply_settings(&mut self, settings: &Settings) {
-        self.video = settings.video;
-        self.output_device = match settings.output.device.as_deref() {
+    pub fn apply_config(&mut self, config: &Config) {
+        self.video = config.video;
+        self.output_device = match config.output.device.as_deref() {
             Some("Default") | Some("") => None,
             other => other.map(ToOwned::to_owned),
         };
-        self.mono = settings.output.mono;
+        self.mono = config.output.mono;
     }
 
-    pub fn save_settings(&mut self) {
-        let Some(path) = self.settings_path.clone() else {
+    pub fn save_config(&mut self) {
+        let Some(path) = self.config_path.clone() else {
             return;
         };
-        let settings = Settings {
+        let config = Config {
             video: self.video,
-            output: OutputSettings {
+            output: OutputConfig {
                 device: self.output_device.clone(),
                 mono: self.mono,
             },
         };
-        if let Err(error) = settings.save_to_path(&path) {
-            self.debug(format!("Couldn't save settings: {error}"));
+        if let Err(error) = config.save_to_path(&path) {
+            self.debug(format!("Couldn't save config: {error}"));
         }
     }
 
@@ -1721,40 +1721,40 @@ mod tests {
     }
 
     #[test]
-    fn apply_settings_updates_state() {
+    fn apply_config_updates_state() {
         let mut state = state();
-        let settings = Settings {
+        let config = Config {
             video: VideoStandard::Ntsc,
-            output: OutputSettings {
+            output: OutputConfig {
                 device: Some("USB Audio".to_owned()),
                 mono: true,
             },
         };
-        state.apply_settings(&settings);
+        state.apply_config(&config);
         assert_eq!(state.video(), VideoStandard::Ntsc);
         assert_eq!(state.output_device.as_deref(), Some("USB Audio"));
         assert!(state.mono());
     }
 
     #[test]
-    fn state_saves_settings_when_changed() {
+    fn state_saves_config_when_changed() {
         let folder =
-            std::env::temp_dir().join(format!("octamedic-state-settings-{}", std::process::id()));
+            std::env::temp_dir().join(format!("octamedic-state-config-{}", std::process::id()));
         let path = folder.join("config.toml");
         let mut state = state();
-        state.settings_path = Some(path.clone());
+        state.config_path = Some(path.clone());
 
         state.set_video(VideoStandard::Ntsc);
-        let (loaded, _) = Settings::load_from_path(&path);
+        let (loaded, _) = Config::load_from_path(&path);
         assert_eq!(loaded.video, VideoStandard::Ntsc);
 
         state.output_device = Some("DAC".to_owned());
-        state.save_settings();
-        let (loaded, _) = Settings::load_from_path(&path);
+        state.save_config();
+        let (loaded, _) = Config::load_from_path(&path);
         assert_eq!(loaded.output.device.as_deref(), Some("DAC"));
 
         state.set_mono(true);
-        let (loaded, _) = Settings::load_from_path(&path);
+        let (loaded, _) = Config::load_from_path(&path);
         assert!(loaded.output.mono);
 
         let _ = std::fs::remove_dir_all(&folder);
