@@ -1,3 +1,5 @@
+use std::ops::Range;
+
 pub use mmd::mmd::module::MAX_TRACKS;
 use mmd::{
     mmd::module::{OctamedMMD0Block, OctamedMMD0BlockLine, OctamedMMD1Block},
@@ -191,6 +193,42 @@ impl OctamedicPattern {
     pub fn clear(&mut self) {
         for line in &mut self.lines {
             line.tracks.fill(OctamedicPatternTrack::new());
+        }
+    }
+
+    /// The cells in `tracks` on `lines` as a block of their own, as many tracks wide and lines long
+    /// as there are of them in the block.
+    pub fn copy_range(&self, tracks: Range<usize>, lines: Range<usize>) -> OctamedicPattern {
+        let tracks = tracks.start.min(self.track_count())..tracks.end.min(self.track_count());
+        let lines = lines.start.min(self.line_count())..lines.end.min(self.line_count());
+        let lines = self.lines[lines]
+            .iter()
+            .map(|line| OctamedicPatternLine {
+                tracks: line.tracks[tracks.clone()].to_vec(),
+                highlighted: false,
+            })
+            .collect();
+        return OctamedicPattern {
+            lines,
+            name: String::new(),
+        };
+    }
+
+    /// Writes `from` over the block from `track` and `line`, right and down. Whatever runs off the
+    /// block is left out.
+    pub fn paste_range(&mut self, track: usize, line: usize, from: &OctamedicPattern) {
+        for (to, from) in self.lines.iter_mut().skip(line).zip(&from.lines) {
+            for (cell, &from) in to.tracks.iter_mut().skip(track).zip(&from.tracks) {
+                *cell = from;
+            }
+        }
+    }
+
+    pub fn clear_range(&mut self, tracks: Range<usize>, lines: Range<usize>) {
+        for line in self.lines.iter_mut().take(lines.end).skip(lines.start) {
+            for cell in line.tracks.iter_mut().take(tracks.end).skip(tracks.start) {
+                *cell = OctamedicPatternTrack::new();
+            }
         }
     }
 
@@ -610,5 +648,53 @@ mod tests {
         // nothing to slide between
         assert!(!pattern.clone().slide_volume(11, 1, false));
         assert!(!pattern.clone().slide_volume(15, 0, false));
+    }
+
+    // track t, line l holds note 10 * t + l + 1, so where a cell came from shows
+    fn grid(lines: usize, tracks: usize) -> OctamedicPattern {
+        let mut pattern = OctamedicPattern {
+            lines: vec![OctamedicPatternLine::new(tracks); lines],
+            name: String::new(),
+        };
+        for (l, line) in pattern.lines.iter_mut().enumerate() {
+            for (t, cell) in line.tracks.iter_mut().enumerate() {
+                cell.note.value = (10 * t + l + 1) as u8;
+            }
+        }
+        return pattern;
+    }
+
+    #[test]
+    fn copying_a_range() {
+        let range = grid(6, 4).copy_range(1..3, 2..4);
+        assert_eq!((range.line_count(), range.track_count()), (2, 2));
+        assert_eq!(notes(&range, 0), [13, 14]);
+        assert_eq!(notes(&range, 1), [23, 24]);
+        // clamped to the block
+        let edge = grid(6, 4).copy_range(3..9, 5..9);
+        assert_eq!((edge.line_count(), edge.track_count()), (1, 1));
+        assert_eq!(notes(&edge, 0), [36]);
+    }
+
+    #[test]
+    fn pasting_a_range() {
+        let range = grid(6, 4).copy_range(0..2, 0..2);
+        let mut pattern = OctamedicPattern::new();
+        pattern.set_line_count(4);
+        pattern.paste_range(1, 1, &range);
+        assert_eq!(notes(&pattern, 1), [0, 1, 2, 0]);
+        assert_eq!(notes(&pattern, 2), [0, 11, 12, 0]);
+        // past the last line and track is left out
+        pattern.paste_range(3, 3, &range);
+        assert_eq!(notes(&pattern, 3), [0, 0, 0, 1]);
+    }
+
+    #[test]
+    fn clearing_a_range() {
+        let mut pattern = grid(4, 3);
+        pattern.clear_range(1..3, 1..3);
+        assert_eq!(notes(&pattern, 0), [1, 2, 3, 4]);
+        assert_eq!(notes(&pattern, 1), [11, 0, 0, 14]);
+        assert_eq!(notes(&pattern, 2), [21, 0, 0, 24]);
     }
 }
