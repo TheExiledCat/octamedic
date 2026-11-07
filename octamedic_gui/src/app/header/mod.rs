@@ -112,7 +112,7 @@ impl Gadget<AppState, Event> for Header {
         } else {
             painter.line_in(
                 inside,
-                &Line::from("Not Implemented"),
+                &Line::from("Not implemented yet"),
                 Pen::BACKGROUND,
                 Center,
             );

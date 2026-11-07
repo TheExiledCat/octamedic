@@ -182,7 +182,7 @@ impl Gadget<AppState, Event> for MainView {
 
                 painter.line_in(
                     editor,
-                    &Line::from("Not implemented"),
+                    &Line::from("Not implemented yet"),
                     Pen::SHINE,
                     Align::Center,
                 );
