@@ -23,6 +23,7 @@ use rustuition::{
 
 use crate::{
     app::{
+        block_range::Cell,
         cursor::EditCursor,
         fonts, pens,
         state::{AppState, PlayStart},
@@ -143,6 +144,7 @@ pub struct BlockEditor {
     meters: [VuMeter; SCOPE_CHANNELS],
     clickable: Clickable,
     area: Rect,
+    dragging_range: bool,
 }
 
 impl BlockEditor {
@@ -212,6 +214,7 @@ impl BlockEditor {
             meters: array::from_fn(|_| VuMeter::default()),
             clickable: Clickable::default(),
             area: Rect::default(),
+            dragging_range: false,
         };
     }
 
@@ -233,6 +236,107 @@ impl BlockEditor {
             }
         }
         return click.handled();
+    }
+
+    fn drag_range(&mut self, state: &mut AppState, event: &Event) -> bool {
+        match *event {
+            Event::MouseDown {
+                pos,
+                button: MouseButton::Right,
+            } => {
+                let Some(cell) = self.cell_at(state, pos, false) else {
+                    return false;
+                };
+                self.dragging_range = true;
+                state.start_range(cell);
+                return true;
+            }
+            Event::MouseMove { pos } if self.dragging_range => {
+                // the button was let go where the release didn't reach the editor
+                self.dragging_range = state.right_button_held;
+                if let Some(cell) = self
+                    .cell_at(state, pos, true)
+                    .filter(|_| self.dragging_range)
+                {
+                    state.extend_range(cell);
+                }
+                return false;
+            }
+            Event::MouseUp {
+                pos,
+                button: MouseButton::Right,
+            } if self.dragging_range => {
+                self.dragging_range = false;
+                if let Some(cell) = self.cell_at(state, pos, true) {
+                    state.extend_range(cell);
+                }
+                return true;
+            }
+            _ => return false,
+        }
+    }
+
+    // the cell under `pos`. With `nearest`, the closest one when it's off the tracks or the
+    // block, since a drag can go past them
+    fn cell_at(&self, state: &AppState, pos: Point, nearest: bool) -> Option<Cell> {
+        let pattern = state.active_pattern()?;
+        let layout = Layout::new(self.area, pattern.track_count());
+        let row = (pos.y - self.area.y).div_euclid(CHAR_HEIGHT);
+        let line = state.cursor.line as i32 + row - center_row(self.area);
+        let column = (pos.x - layout.x).div_euclid(layout.char_width) - LINE_NUMBER_CHARS;
+        let index = column.div_euclid(TRACK_CHARS);
+        let last_line = pattern.line_count() as i32 - 1;
+        let last_index = layout.tracks as i32 - 1;
+        let on_a_cell = self.area.contains(pos)
+            && (0..=last_index).contains(&index)
+            && (0..=last_line).contains(&line);
+        if !on_a_cell && !nearest {
+            return None;
+        }
+        return Some(Cell {
+            track: self.first_track + index.clamp(0, last_index) as usize,
+            line: line.clamp(0, last_line) as usize,
+        });
+    }
+
+    // OctaMED fills the range's cells red, which mixes the text over it to rose
+    fn render_range(
+        &self,
+        state: &AppState,
+        pattern: &OctamedicPattern,
+        layout: &Layout,
+        area: Rect,
+        highlighted: &[bool],
+        painter: &mut Painter,
+    ) {
+        let Some(range) = state.active_range() else {
+            return;
+        };
+        // the range's tracks that are showing, as indices into the visible ones
+        let tracks = range.tracks();
+        let first = tracks.start.max(self.first_track) - self.first_track;
+        let end = tracks.end.min(self.first_track + layout.tracks);
+        if self.first_track + first >= end {
+            return;
+        }
+        let x = layout.track_x(first);
+        let width = (end - self.first_track - first) as i32 * TRACK_CHARS * layout.char_width;
+        for row in 0..area.h / CHAR_HEIGHT {
+            let line = line_at(state.cursor.line, row, area);
+            if !line.is_some_and(|line| range.lines().contains(&line)) {
+                continue;
+            }
+            let (fill, text) = if highlighted[row as usize] {
+                (pens::highlight(pens::RED), pens::highlight(pens::ROSE))
+            } else {
+                (pens::RED, pens::ROSE)
+            };
+            let rect = Rect::new(x, row_rect(area, row).y, width, CHAR_HEIGHT);
+            painter.fill(rect, fill);
+            painter.clipped(rect, |painter| {
+                self.render_row(pattern, state.cursor.line, row, layout, area, text, painter);
+            });
+        }
     }
 
     fn scroll_to(&mut self, track: usize, tracks: usize, visible: usize) {
@@ -539,7 +643,8 @@ impl Gadget<AppState, Event> for BlockEditor {
     }
 
     fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
-        if self.dispatch(state, event) || self.click(state, event) {
+        if self.drag_range(state, event) || self.dispatch(state, event) || self.click(state, event)
+        {
             return true;
         }
         if let Some(digit) = alt_digit(event) {
@@ -597,6 +702,7 @@ impl Gadget<AppState, Event> for BlockEditor {
             };
             self.render_row(pattern, cursor.line, row, &layout, area, pen, painter);
         }
+        self.render_range(state, pattern, &layout, area, &highlighted, painter);
         // one font pixel wide
         let width = layout.char_width / CHAR_WIDTH;
         for track in 1..layout.tracks {
@@ -944,6 +1050,63 @@ mod tests {
             "{:?}",
             fills.0
         );
+    }
+
+    #[test]
+    fn right_drag_makes_a_range() {
+        let (mut editor, mut state) = (BlockEditor::new(), state());
+        let area = Rect::new(0, 77, 640, 120);
+        let mut fills = Fills::default();
+        editor.render(&state, area, &mut Painter::new(&mut fills, &state.palette));
+        // 16px chars, the tracks 9 apart after the line numbers' 4, and line 0 on the middle row
+        let at = |track: i32, line: i32| Point::new(64 + 144 * track + 10, 77 + 8 * (7 + line) + 4);
+        let right = MouseButton::Right;
+        let line_numbers = Event::MouseDown {
+            pos: Point::new(10, 133),
+            button: right,
+        };
+        assert!(!editor.handle_event(&mut state, &line_numbers));
+        let press = Event::MouseDown {
+            pos: at(1, 2),
+            button: right,
+        };
+        assert!(editor.handle_event(&mut state, &press));
+        state.right_button_held = true;
+        let moved = Event::MouseMove { pos: at(2, 4) };
+        assert!(!editor.handle_event(&mut state, &moved));
+        let release = Event::MouseUp {
+            pos: at(2, 4),
+            button: right,
+        };
+        assert!(editor.handle_event(&mut state, &release));
+        let range = state.active_range().unwrap();
+        assert_eq!((range.tracks(), range.lines()), (1..3, 2..5));
+
+        let mut fills = Fills::default();
+        editor.render(&state, area, &mut Painter::new(&mut fills, &state.palette));
+        let first_row = Rect::new(64 + 144, 77 + 8 * 9, 2 * 144, 8);
+        assert!(fills.0.contains(&first_row), "{:?}", fills.0);
+    }
+
+    #[test]
+    fn a_drag_let_go_elsewhere_stops() {
+        let (mut editor, mut state) = (BlockEditor::new(), state());
+        let area = Rect::new(0, 77, 640, 120);
+        let mut fills = Fills::default();
+        editor.render(&state, area, &mut Painter::new(&mut fills, &state.palette));
+        let press = Event::MouseDown {
+            pos: Point::new(74, 133),
+            button: MouseButton::Right,
+        };
+        editor.handle_event(&mut state, &press);
+        // let go where the editor didn't hear it
+        let moved = Event::MouseMove {
+            pos: Point::new(400, 180),
+        };
+        editor.handle_event(&mut state, &moved);
+        let range = state.active_range().unwrap();
+        assert_eq!((range.tracks(), range.lines()), (0..1, 0..1));
+        assert!(!editor.dragging_range);
     }
 
     #[test]

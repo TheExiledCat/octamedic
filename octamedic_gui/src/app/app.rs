@@ -316,6 +316,9 @@ impl EventHandler for App {
             return Ok(());
         }
         if let Some(button) = mouse_button(button) {
+            if button == event::MouseButton::Right {
+                self.state.right_button_held = true;
+            }
             self.mouse_event(ctx, x, y, |pos| Event::MouseDown { pos, button });
         }
         return Ok(());
@@ -329,6 +332,9 @@ impl EventHandler for App {
         y: f32,
     ) -> GameResult {
         if let Some(button) = mouse_button(button) {
+            if button == event::MouseButton::Right {
+                self.state.right_button_held = false;
+            }
             self.mouse_event(ctx, x, y, |pos| Event::MouseUp { pos, button });
         }
         return Ok(());
