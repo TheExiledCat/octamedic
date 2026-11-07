@@ -322,7 +322,7 @@ impl KeyActions for MainView {
 
     fn perform(&mut self, action: MainAction, state: &mut AppState) {
         match action {
-            MainAction::Quit => state.request_exit(),
+            MainAction::Quit => state.confirm_if_unsaved(AppState::request_exit),
             MainAction::ToggleVideo => state.set_video(state.video().other()),
             MainAction::ScreenFilters => open_filters_dialog(state),
             MainAction::Play(start) => state.start(start),
@@ -394,6 +394,25 @@ mod tests {
         );
         let shift_alt = KeyMods::SHIFT | KeyMods::ALT;
         assert_eq!(press(&mut state, space, shift_alt), Some(PlayStart::Song));
+    }
+
+    #[test]
+    fn ctrl_q_asks_about_unsaved_changes() {
+        let ctrl_q = Event::Key {
+            key: KeyCode::Q,
+            mods: KeyMods::CTRL,
+            repeat: false,
+        };
+        let mut view = MainView::new();
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        state.set_song_name("changed");
+        assert!(view.handle_event(&mut state, &ctrl_q));
+        assert!(!state.exit_requested);
+        assert!(state.prompt.is_some());
+
+        let mut saved = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        assert!(view.handle_event(&mut saved, &ctrl_q));
+        assert!(saved.exit_requested);
     }
 
     #[test]

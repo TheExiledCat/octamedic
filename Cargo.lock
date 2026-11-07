@@ -2061,6 +2061,7 @@ dependencies = [
  "ggez",
  "image",
  "mmd",
+ "objc2 0.6.4",
  "octamedic_core",
  "octamedic_util",
  "rustuition",
