@@ -90,7 +90,8 @@ The VOL page's OUTPUT button opens the output dialog (`app/output.rs`): which so
 `AppState::open_audio`, which sends it the song, mutes and mono; that stops playing. If the new
 device can't be opened it goes back to the old one, and the notification bar says why. If the
 engine has no device at all (it couldn't open one at startup, say), OK tries again even on the same
-device. Neither setting is saved between runs yet.
+device. Both output settings (device and mono) as well as the video standard (PAL/NTSC) are saved in
+`config.toml` between runs (`app/config.rs`).
 
 The mode buttons set two modes: `HeaderMode` (which panel the header shows) and `MainMode` (what
 fills the screen below). Each button's `ModeBinding` in `app/mode/buttons.rs` says which. Header
