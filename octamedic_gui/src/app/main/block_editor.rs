@@ -187,9 +187,13 @@ impl BlockEditor {
                 "Paste block",
             )
             .bind(Key::amiga(KeyCode::O), VolumeSlide, "Volume slide")
-            .bind(Key::amiga(KeyCode::Z), Undo, "Undo")
-            .bind(Key::new(KeyCode::Z, AMIGA | KeyMods::SHIFT), Redo, "Redo")
-            .bind(Key::amiga(KeyCode::Y), Redo, "Redo");
+            .bind(Key::ctrl(KeyCode::Z), Undo, "Undo")
+            .bind(Key::ctrl(KeyCode::Y), Redo, "Redo")
+            .bind(
+                Key::new(KeyCode::Z, KeyMods::CTRL | KeyMods::SHIFT),
+                Redo,
+                "Redo",
+            );
         return Self {
             keys,
             first_track: 0,
@@ -1325,6 +1329,26 @@ mod tests {
         assert!(!editor.handle_event(&mut state, &with_super));
         state.cursor.column = 1;
         assert!(!editor.handle_event(&mut state, &held));
+    }
+
+    #[test]
+    fn ctrl_z_and_ctrl_y_undo_and_redo() {
+        let (mut editor, mut state) = (BlockEditor::new(), state());
+        state.enter_note(0, 0, OctamedicNote { value: 13 });
+        state.update();
+        let note = |state: &AppState| state.active_pattern().unwrap().lines[0].tracks[0].note;
+        press(&mut editor, &mut state, KeyCode::Z, KeyMods::CTRL);
+        assert_eq!(note(&state).value, 0);
+        press(&mut editor, &mut state, KeyCode::Y, KeyMods::CTRL);
+        assert_eq!(note(&state).value, 13);
+        press(&mut editor, &mut state, KeyCode::Z, KeyMods::CTRL);
+        press(
+            &mut editor,
+            &mut state,
+            KeyCode::Z,
+            KeyMods::CTRL | KeyMods::SHIFT,
+        );
+        assert_eq!(note(&state).value, 13);
     }
 
     #[test]

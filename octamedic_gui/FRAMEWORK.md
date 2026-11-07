@@ -231,7 +231,8 @@ of them), it fills the lines between with volume commands going evenly from the 
 the second's, rounded, read as hex or decimal like VOL says (`OctamedicPattern::slide_volume`). The
 RANGE panel's SLIDE: VOL does the same.
 
-Amiga+Z undoes a change to the blocks and Amiga+Shift+Z or Amiga+Y redoes it (`app/history.rs`).
+Ctrl+Z undoes a change to the blocks and Ctrl+Y or Ctrl+Shift+Z redoes it (`app/history.rs`). OctaMED
+has no undo, and its Ctrl keys don't use Z or Y.
 Nothing calls into the history when it edits: once a frame, before the changes go to the engine,
 `History::record` compares each block with the one it kept from the last frame and keeps the cells
 that differ. Blocks are `Arc`s the engine holds too, so the old one costs nothing extra to keep
