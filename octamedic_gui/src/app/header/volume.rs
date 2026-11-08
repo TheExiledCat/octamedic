@@ -10,7 +10,13 @@ use rustuition::{
 };
 
 use crate::{
-    app::{fonts, output::open_output_dialog, pens, state::AppState},
+    app::{
+        fonts,
+        header::labels::{Words, draw_words},
+        output::open_output_dialog,
+        pens,
+        state::AppState,
+    },
     framework::{
         event::{Event, MouseButton},
         widgets::{self, Button, Textbox},
@@ -18,20 +24,27 @@ use crate::{
 };
 
 // from the panel's top left
-const TITLE: [i32; 2] = [4, 3];
-const TRACKS: [i32; 2] = [10, 9];
+const TITLE_TOP: i32 = 3;
+const TITLE_WORDS: Words = &[
+    (4, "THE RELATIVE VOLUMES OF TRACKS"),
+    (231, "0"),
+    (240, "-1"),
+    (256, "5"),
+    (263, ":"),
+];
+const TRACKS: [i32; 2] = [10, 10];
 const TRACK_BOX: [i32; 2] = [20, 11];
 const TRACK_COLUMNS: usize = 8;
-const TRACK_TEXT: [i32; 2] = [3, 2];
-const MASTER_LABEL: [[i32; 2]; 2] = [[173, 11], [173, 17]];
-const MASTER_ARROW: [i32; 2] = [174, 23];
-const INDEX: Rect = Rect::new(10, 32, 20, 10);
-const INDEX_TEXT: [i32; 2] = [3, 1];
-const COLON: [i32; 2] = [33, 35];
-const TRACK_VOLUME: Rect = Rect::new(42, 32, 28, 10);
-const MASTER_VOLUME: Rect = Rect::new(159, 32, 28, 10);
+const TRACK_TEXT: [i32; 2] = [2, 2];
+const MASTER_LABEL: [[i32; 2]; 2] = [[172, 12], [172, 18]];
+const MASTER_ARROW: [i32; 2] = [174, 24];
+const INDEX: Rect = Rect::new(10, 33, 20, 11);
+const INDEX_TEXT: [i32; 2] = [2, 2];
+const COLON: [i32; 2] = [33, 37];
+const TRACK_VOLUME: Rect = Rect::new(42, 33, 28, 11);
+const MASTER_VOLUME: Rect = Rect::new(159, 33, 28, 11);
 const STEP_WIDTH: i32 = 20;
-const DIVIDER: Rect = Rect::new(269, 0, 2, 43);
+const DIVIDER: Rect = Rect::new(269, 0, 2, 45);
 // at the top right of the divider, 90% of the 179px there
 const INPUT: Rect = Rect::new(280, 0, 161, 11);
 const OUTPUT: Rect = Rect::new(280, 13, 161, 11);
@@ -148,11 +161,12 @@ impl Gadget<AppState, Event> for Volume {
 
     fn render(&mut self, state: &AppState, area: Rect, painter: &mut Painter) {
         let label = |text: &'static str| Line::from(Span::new(text).font(fonts::LABEL));
-        let [x, y] = TITLE;
-        painter.line(
-            area.x + x,
-            area.y + y,
-            &label("THE RELATIVE VOLUMES OF TRACKS 0-15:"),
+        let title_at = [area.x, area.y + TITLE_TOP];
+        draw_words(
+            painter,
+            fonts::LABEL,
+            title_at,
+            TITLE_WORDS,
             Pen::BACKGROUND,
         );
         let hex = state.song().flags.volumes_hex;
@@ -229,7 +243,7 @@ fn routing_button(label: &'static str) -> Button {
 fn volume_box() -> Textbox {
     return widgets::textbox()
         .font(fonts::INTERFACE)
-        .padding(1)
+        .padding(0)
         .max_length(2)
         .select_on_focus();
 }

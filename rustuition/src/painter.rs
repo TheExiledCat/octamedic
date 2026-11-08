@@ -238,7 +238,9 @@ impl<'a> Painter<'a> {
         }
     }
 
-    fn bevel(&mut self, rect: Rect, thickness: i32, top: Pen, bottom: Pen) -> Rect {
+    /// Draws a bevel with `top` along the top and right, `bottom` along the bottom and left, and
+    /// returns what's inside it.
+    pub fn bevel(&mut self, rect: Rect, thickness: i32, top: Pen, bottom: Pen) -> Rect {
         let Rect { x, y, w, h } = rect;
         let side = 2 * thickness;
         self.fill(Rect::new(x, y, side, h), bottom);

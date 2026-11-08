@@ -114,7 +114,7 @@ What's there: `fill` / `fill_translucent`, `outline` (1px box), `rect` (border o
 `shape.rs`), text with `text` (Topaz), `text_in_font` and `text_bold` (bold the Amiga way, drawn
 again 1px to the right), and `line` / `line_in` for styled text. `frame` is the raised bevel:
 shine top and right, shadow left and bottom, meeting on a slant. `frame_inverted` is the sunk in
-one. Borders are `thickness` lines tall at top and bottom and twice that many pixels wide at the
+one, and `bevel` draws one in any two pens. Borders are `thickness` lines tall at top and bottom and twice that many pixels wide at the
 sides, so they look even on tall pixels. `fill_color` fills with a colour from outside the palette, like
 the Amiga's sprites have. `clipped` runs some drawing clipped to a rect, and `clip` is where
 drawing goes now, the whole target outside `clipped`.

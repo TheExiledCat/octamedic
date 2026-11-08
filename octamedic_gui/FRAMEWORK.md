@@ -21,12 +21,15 @@ adds on top, in `src/framework/`, and how OctaMED's screens in `src/app/` are pu
 - `app/fonts.rs`: OctaMED's own fonts, redrawn by hand in `assets/fonts/` since the originals
   aren't around anywhere. `INTERFACE` (OctaMED's own 8x8, for numbers and names like the status
   row: its 1, 2, 4, 7, - and = differ from Topaz, which it falls back on for the rest), `PANEL` (gadget labels like `FILES`, 6 lines, capitals
-  only), `SMALL` (the status row flags like `CHRD`, 5 lines), `LABEL` (play panel labels), `TITLE`,
+  only), `SMALL` (the status row flags like `CHRD`, 5 lines), `LABEL` (play panel labels, with the
+  6px wide `-` of `label.txt`), `NARROW_LABEL` (`LABEL` with 1px between letters and the narrow X
+  of `narrow.txt`), `COLOR_LETTERS` (`PANEL` with the title bar's R, for MISC's R G B), `TITLE`,
   `AUTHOR`, `EDITOR` (16px wide block editor chars), `TRACKS` (the track digits of TRK ON: and
   SELECT:), `TRACKS_BOLD` (TRKS:'s, which OctaMED drew bolder and wider rather than just bold),
   `TALL` (SET and CLR), `BIG` (the EDIT panel's OCTAVE digits, EDIT ON and SPC, and RANGE's
   CHORD), `TIMER_LABEL` (`BIG` with the title bar's own M and R) and `LABEL_SMALL_DOT` (`LABEL`
-  with the 1px full stop of L.ALT and R.ALT). Letters and
+  with the 1px full stop of L.ALT and R.ALT), and `QUIT_LABEL` and `CONFIRM_LABEL` for MISC's
+  QUIT and CONFIRM. Letters and
   digits always come from a font; only symbols like arrows are pictures. `cargo test` checks the
   files parse.
 - `app/pens.rs`: OctaMED's pens past rustuition's four, `RED`, `ROSE`, `PINK` and `BLUSH`. The
@@ -123,7 +126,9 @@ and the last one with a sound (instrument 1 if none has one), and FLUSH empties 
 name, and every value 0, volume included. Changing the active instrument lets go of any of its boxes
 being typed in, so what's typed next can't land in the new instrument. The rest of it is ghosted.
 The rest of MISC and the SLIST screen (`main/song_list.rs`) are laid out like OctaMED with their
-buttons ghosted, ready to be hooked up. `main/list_scroller.rs` is the slider with arrows that the
+buttons ghosted, ready to be hooked up. MISC's labels are placed letter by letter where OctaMED
+squeezed them in unevenly, its colour sliders are solid like PLAY's, and the picked colour gets a
+sunk in frame in pens 5 and 6, the way OctaMED flips the frame's top bitplane. `main/list_scroller.rs` is the slider with arrows that the
 FILES and SLIST lists share. The wheel scrolls it too, with the pointer over the list or the
 slider, through its own `WheelLines`, so whoever draws the list sets its `list_area` as well as
 `lines_that_fit`.
