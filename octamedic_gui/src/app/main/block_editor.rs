@@ -40,8 +40,8 @@ use crate::{
 const SCOPE_OFFSET: i32 = 2;
 const SCOPE_SAMPLES: usize = 42;
 
-const METER_OFFSET: i32 = 45;
-const METER_WIDTH: i32 = 10;
+const METER_OFFSET: i32 = 44;
+const METER_WIDTH: i32 = 12;
 
 // 3 digits and a space
 const LINE_NUMBER_CHARS: i32 = 4;
@@ -1055,8 +1055,8 @@ mod tests {
         let layout = Layout::new(area, 4);
         // two pixels a sample, starting 4 pixels into the track, from the highlighted line down
         assert_eq!(scope_area(&layout, area, 0), Rect::new(68, 132, 84, 65));
-        // 90 pixels in, from the editor's middle down
-        assert_eq!(meter_area(&layout, area, 1), Rect::new(298, 137, 20, 60));
+        // 88 pixels in, from the editor's middle down
+        assert_eq!(meter_area(&layout, area, 1), Rect::new(296, 137, 24, 60));
     }
 
     #[test]
