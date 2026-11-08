@@ -220,9 +220,13 @@ impl IntoBytes for Byte {
     }
 }
 
+// the Amiga's text is Latin-1, a byte a char, so a char past it is written as '?'
 impl IntoBytes for String {
     fn as_bytes(&self) -> Vec<u8> {
-        let mut bytes = String::as_bytes(self).to_vec();
+        let mut bytes: Vec<u8> = self
+            .chars()
+            .map(|c| u8::try_from(c).unwrap_or(b'?'))
+            .collect();
         bytes.push(0);
         return bytes;
     }

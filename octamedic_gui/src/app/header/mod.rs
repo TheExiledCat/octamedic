@@ -5,6 +5,7 @@ pub mod labels;
 pub mod misc;
 pub mod play;
 pub mod range;
+pub mod transpose;
 pub mod volume;
 use rustuition::{
     gadget::Gadget,
@@ -17,7 +18,7 @@ use crate::{
     app::{
         header::{
             block::Block, files::Files, instrument::Instrument, misc::Misc, play::Play,
-            range::Range, volume::Volume,
+            range::Range, transpose::Transpose, volume::Volume,
         },
         mode::{HeaderMode, buttons::ModeButtons},
         state::AppState,
@@ -41,6 +42,7 @@ pub struct HeaderPanels {
     pub volume: Volume,
     pub block: Block,
     pub range: Range,
+    pub transpose: Transpose,
 }
 
 impl HeaderPanels {
@@ -53,6 +55,7 @@ impl HeaderPanels {
             volume: Volume::new(),
             block: Block::new(),
             range: Range::new(),
+            transpose: Transpose::new(),
         };
     }
 
@@ -65,7 +68,8 @@ impl HeaderPanels {
             HeaderMode::Volume => Some(&mut self.volume),
             HeaderMode::Block => Some(&mut self.block),
             HeaderMode::Range => Some(&mut self.range),
-            HeaderMode::Edit | HeaderMode::Transpose => None,
+            HeaderMode::Transpose => Some(&mut self.transpose),
+            HeaderMode::Edit => None,
         };
     }
 }

@@ -174,7 +174,7 @@ impl OctamedMMDWriter {
             }
             self.layout.alloc(
                 Slot::Annotation,
-                (e.annotation.len() as u32) + 1, // + NUL
+                (e.annotation.chars().count() as u32) + 1, // + NUL
             );
             self.layout.alloc(
                 Slot::InstrumentInfos,
@@ -191,7 +191,7 @@ impl OctamedMMDWriter {
             }
             self.layout.alloc(
                 Slot::SongName,
-                (e.song_name.len() as u32) + 1, // + NUL
+                (e.song_name.chars().count() as u32) + 1, // + NUL
             );
             // todo: mmd_dump, info, rexx and midi are written as null pointers for now
         }

@@ -436,7 +436,13 @@ fn write_song(state: &mut AppState, path: PathBuf, bytes: &[u8]) {
 
 fn load_song(state: &mut AppState, path: &std::path::Path) {
     match load_module(path) {
-        Ok(project) => state.load_project(project),
+        Ok(project) => {
+            let text = project.annotation.lines().next().unwrap_or("").to_owned();
+            state.load_project(project);
+            if !text.is_empty() {
+                state.notify(text);
+            }
+        }
         Err(error) => state.notify(error.to_string()),
     }
 }
@@ -698,6 +704,23 @@ mod tests {
                 "{format:?}"
             );
         }
+    }
+
+    #[test]
+    fn loading_a_song_shows_its_text() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        let mut project = OctamedicProject::new();
+        project.annotation = "by me".into();
+        let bytes = OctamedMMDWriter::new()
+            .write_module(&project.to_module())
+            .unwrap();
+        let temp = std::env::temp_dir().join(format!("octamedic-text-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&temp);
+        std::fs::create_dir_all(&temp).unwrap();
+        std::fs::write(temp.join("song.mmd1"), bytes).unwrap();
+        load_song(&mut state, &temp.join("song.mmd1"));
+        assert_eq!(state.notification.as_deref(), Some("by me"));
+        let _ = std::fs::remove_dir_all(&temp);
     }
 
     #[test]

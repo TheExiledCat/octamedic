@@ -503,7 +503,7 @@ fn expansion_to_octamed(
         expanded_instruments_array_length: UWord(external_instruments.len() as u16),
         extpanded_instruments_struct_size: UWord(OctamedMMD0ExternalInstrument::V4_SIZE as u16),
         annotation_text_char_array_ptr: Offset(0),
-        annotation_text_length: ULong((project.annotation.len() as u32) + 1),
+        annotation_text_length: ULong((project.annotation.chars().count() as u32) + 1),
         instrument_info_ptr: Offset(0),
         instrument_info_array_length: UWord(instrument_infos.len() as u16),
         instrument_info_struct_size: UWord((INSTRUMENT_NAME_LENGTH + 1) as u16),
@@ -515,7 +515,7 @@ fn expansion_to_octamed(
         // so writing it non-null would come back as all-zero instead of falling back to defaults
         notation_info_ptr: Offset(0),
         song_name_char_array_ptr: Offset(0),
-        song_name_length: ULong((song.name().len() as u32) + 1),
+        song_name_length: ULong((song.name().chars().count() as u32) + 1),
         // not parsed yet, so nothing to carry over
         mmd_dump_ptr: Offset(0),
         mmd_info_ptr: Offset(0),
@@ -708,6 +708,22 @@ mod tests {
             assert_eq!(reloaded.annotation, original.annotation, "{name}");
             assert_eq!(reloaded.split_channels, original.split_channels, "{name}");
         }
+    }
+
+    #[test]
+    fn annotations_are_latin_1() {
+        let mut original = OctamedicProject::new();
+        original.annotation = "café ✓".into();
+        let bytes = OctamedMMDWriter::new()
+            .write_module(&original.to_module())
+            .unwrap();
+        let reparsed = OctamedMMDParser::new()
+            .parse_module(&mut Cursor::new(bytes), Offset(0))
+            .unwrap();
+        assert_eq!(
+            OctamedicProject::from_module(&reparsed).annotation,
+            "café ?"
+        );
     }
 
     // notation_info_ptr is written null on purpose: the parser doesn't read notation info back

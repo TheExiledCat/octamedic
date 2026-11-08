@@ -26,6 +26,7 @@ pub mod screen_filters;
 pub mod state;
 pub mod status_bar;
 pub mod title_bar;
+pub mod transpose;
 pub mod window_shape;
 
 pub const DEFAULT_VIDEO: VideoStandard = VideoStandard::Pal;

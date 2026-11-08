@@ -1,6 +1,7 @@
 use std::{
     collections::{HashSet, VecDeque},
     path::PathBuf,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -888,6 +889,13 @@ impl AppState {
     pub fn set_tempo(&mut self, tempo: OctamedicTempo) {
         *self.song_mut().tempo_mut() = tempo;
         self.engine.set_tempo(tempo);
+    }
+
+    pub fn replace_pattern(&mut self, id: PatternId, pattern: OctamedicPattern) {
+        let song = self.song_and_history().0;
+        if song.replace_shared_pattern(id, Arc::new(pattern)).is_some() {
+            self.changed_patterns.insert(id);
+        }
     }
 
     pub fn set_block_name(&mut self, name: &str) {
