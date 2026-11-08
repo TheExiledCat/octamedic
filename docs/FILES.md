@@ -5,37 +5,8 @@ documentation) covers, and how OctaMED's own files and samples work.
 
 ## config.toml and crash.log
 
-Both are in the config folder (`files::get_config_directory_root`): `%LOCALAPPDATA%\octamedic` on
-Windows, `~/.config/octamedic` on Linux and `~/Library/Application Support/octamedic` on macOS.
-
-`config.toml` keeps the settings that aren't the song's between runs (`app/config.rs`):
-
-```toml
-video = "pal"          # or "ntsc"
-
-[output]
-device = "alsa:pulse"  # cpal's id for the device, left out for the default one
-mono = false
-
-[[filters]]            # the screen filters (Ctrl+F11) in the order they run
-kind = "curvature"     # scanlines, chroma, vhs_wobble, color, curvature, vignette or noise
-enabled = true
-amount = 0.04          # each setting by its name in the dialog, lowercase
-
-[[filters]]
-kind = "vignette"
-enabled = false
-strength = 0.6
-size = 0.3
-roundness = 0.4
-```
-
-The filters are saved whenever they're changed in the dialog. A kind it doesn't know is left out
-and a setting that's missing keeps its default.
-
-Anything missing takes its default, and a missing file is written with the defaults. A file that
-can't be read or parsed (a video standard other than pal or ntsc, say) is renamed to
-`config.toml.bak` so it isn't lost, the defaults are used, and the startup errors say why.
+Both are in the config folder (`files::get_config_directory_root`). [CONFIG.md](CONFIG.md) has where
+that is and every setting in `config.toml`; it's loaded and saved by `app/config.rs`.
 
 `crash.log` is written when the GUI panics or can't open its window (`crash_log.rs`): the error, a
 backtrace for a panic, and the startup errors before it. Only the last crash is kept.

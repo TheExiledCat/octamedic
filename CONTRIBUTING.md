@@ -34,7 +34,7 @@ over X11, because under WSLg's Wayland the window closes straight away.
 On Windows the GUI doesn't open a console, even from `cargo run`, so nothing it prints shows up.
 Errors from starting up go in the debug console (Ctrl+`), and a panic, or an error that stops the
 window opening, goes in `crash.log` in the config folder (`%LOCALAPPDATA%\octamedic`). The settings
-kept between runs are in `config.toml` there; [docs/FILES.md](docs/FILES.md) has both.
+kept between runs are in `config.toml` there; [docs/CONFIG.md](docs/CONFIG.md) has every setting.
 
 On a Mac, `octamedic_gui/macos/bundle.sh` turns a release build into `OctaMEDIC.app`, the same
 way the release workflow does. How to run it is at the top of the script.
@@ -81,6 +81,7 @@ don't mind.
   rustuition (keys, OctaMED's fonts and pens) and how its screens fit together.
 - `mmd/format.md` is the original MMD format documentation. The parsers in
   `mmd/src/mmd/parser.rs` are what we actually go by.
+- [docs/CONFIG.md](docs/CONFIG.md): `config.toml`, the settings kept between runs.
 - [docs/FILES.md](docs/FILES.md): the rest of the files: how instruments get loaded (WAV, FLAC,
   MP3, raw), multi-octave samples, and how synth sounds are stored on their own.
 
