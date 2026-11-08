@@ -694,10 +694,10 @@ mod tests {
     fn shift_slash_on_the_keypad_switches_track_0() {
         let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
         let mut status = StatusBar::new();
-        press(&mut status, &mut state, KeyCode::NumpadDivide, KeyMods::SHIFT);
-        assert!(state.is_track_muted(0));
-        press(&mut status, &mut state, KeyCode::NumpadDivide, KeyMods::NONE);
-        assert!(state.is_track_muted(2));
+        let mut slash = |mods| press(&mut status, &mut state, KeyCode::NumpadDivide, mods);
+        slash(KeyMods::SHIFT);
+        slash(KeyMods::NONE);
+        assert!(state.is_track_muted(0) && state.is_track_muted(2));
     }
 
     #[test]
