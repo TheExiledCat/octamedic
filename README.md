@@ -1,6 +1,8 @@
-# OctaMEDIC Pro V4
+# OctaMEDIC Pro
 
-A faithful clone of OctaMED Professional v4, the Amiga tracker, for Windows, Linux and macOS.
+A faithful, standalone clone of OctaMED Professional v4, the Amiga tracker, for Windows, Linux and
+macOS. It's a program of its own, written from scratch: you don't need an Amiga, an emulator,
+Kickstart ROMs or a copy of OctaMED to run it.
 
 ![OctaMEDIC](octamedic.png)
 
