@@ -8,6 +8,7 @@ use rustuition::{
 use crate::{
     app::{
         fonts,
+        header::labels::{Words, placed_at},
         mode::{HeaderMode, MainMode},
         state::AppState,
     },
@@ -24,6 +25,8 @@ const COLUMNS: usize = 3;
 const ROWS: usize = 5;
 
 const PICTURE_BLOCKS: i32 = 4;
+// its Y sits a pixel closer than the font has it
+const PLAY_LETTERS: Words = &[(4, "PLA"), (33, "Y")];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModeBinding {
@@ -73,6 +76,7 @@ impl ModeButtons {
                         MusicSymbol::Sharp,
                         MusicSymbol::HalfNote,
                     ])),
+                    ModeBinding::Play => Button::new(placed_at(fonts::PANEL, 2, PLAY_LETTERS)),
                     _ => Button::new(label).align(Align::Left).font(fonts::PANEL),
                 };
                 button.on_click(move |state, _| {

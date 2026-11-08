@@ -6,7 +6,7 @@ use rustuition::{
 };
 
 use crate::{
-    app::{fonts, state::AppState},
+    app::{fonts, header::labels::draw_words, state::AppState},
     framework::{event::Event, widgets::Button},
 };
 
@@ -69,7 +69,9 @@ impl TitleBar {
     pub fn new() -> Self {
         return Self {
             timer: Button::new("00:00")
+                .font(fonts::INTERFACE)
                 .border(2)
+                .padding_xy(1, 0)
                 .on_click(|state, _| state.restart_timer()),
         };
     }
@@ -89,7 +91,13 @@ impl Gadget<AppState, Event> for TitleBar {
     fn render(&mut self, state: &AppState, area: Rect, painter: &mut Painter) {
         painter.fill(area, Pen::BACKGROUND);
         let [x, y] = TIMER_LABEL;
-        painter.text_in_font(area.x + x, area.y + y, "TIMER", Pen::SHINE, fonts::PANEL);
+        draw_words(
+            painter,
+            fonts::TIMER_LABEL,
+            [area.x + x, area.y + y],
+            &[(0, "TIMER")],
+            Pen::SHINE,
+        );
         let timer = Rect::new(area.x + TIMER.x, area.y + TIMER.y, TIMER.w, TIMER.h);
         self.timer.render(state, timer, painter);
         let [x, y] = TITLE_POSITION;

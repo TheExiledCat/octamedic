@@ -13,8 +13,8 @@ const VU_COLORS: [u32; 30] = [
 
 const VU_EDGES: [u32; 2] = [0xAAAAAA, 0xBBBBBB];
 
-// edges are a tenth of the width
-const VU_EDGE_SHARE: i32 = 10;
+// edges are a sixth of the width
+const VU_EDGE_SHARE: i32 = 6;
 
 pub const MAX_LEVEL: u8 = 128;
 
@@ -188,11 +188,11 @@ mod tests {
     fn full_meter_bands() {
         let mut meter = VuMeter::default();
         meter.set(MAX_LEVEL);
-        let bands: Vec<(Rect, Rgba)> = meter.bands(Rect::new(0, 60, 20, 60)).collect();
+        let bands: Vec<(Rect, Rgba)> = meter.bands(Rect::new(0, 60, 24, 60)).collect();
         assert_eq!(bands.len(), VU_COLORS.len());
-        assert_eq!(bands[0], (Rect::new(2, 60, 16, 1), rgb(0xFF2211)));
-        assert_eq!(bands[3], (Rect::new(2, 65, 16, 2), rgb(0xFF5511)));
-        assert_eq!(bands[29], (Rect::new(2, 117, 16, 3), rgb(0x008800)));
+        assert_eq!(bands[0], (Rect::new(4, 60, 16, 1), rgb(0xFF2211)));
+        assert_eq!(bands[3], (Rect::new(4, 65, 16, 2), rgb(0xFF5511)));
+        assert_eq!(bands[29], (Rect::new(4, 117, 16, 3), rgb(0x008800)));
     }
 
     #[test]
@@ -210,11 +210,11 @@ mod tests {
     fn meter_fill() {
         let mut meter = VuMeter::default();
         meter.set(64);
-        let bands: Vec<(Rect, Rgba)> = meter.bands(Rect::new(0, 0, 20, 54)).collect();
+        let bands: Vec<(Rect, Rgba)> = meter.bands(Rect::new(0, 0, 24, 54)).collect();
         assert_eq!(bands[0].0.y, 27);
-        let silent: Vec<(Rect, Rgba)> = VuMeter::default().bands(Rect::new(0, 0, 20, 54)).collect();
+        let silent: Vec<(Rect, Rgba)> = VuMeter::default().bands(Rect::new(0, 0, 24, 54)).collect();
         assert_eq!(silent.len(), 1);
-        assert_eq!(silent[0].0, Rect::new(2, 53, 16, 1));
+        assert_eq!(silent[0].0, Rect::new(4, 53, 16, 1));
     }
 
     #[test]

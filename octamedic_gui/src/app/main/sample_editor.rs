@@ -37,7 +37,7 @@ use crate::{
     framework::{
         event::{Event, MouseButton},
         keymap::{Action, Key, KeyActions, Keymap},
-        widgets::{self, Button, Textbox, symbols::picture},
+        widgets::{self, Button, Textbox, symbols::draw_rows},
     },
 };
 
@@ -232,21 +232,14 @@ const HOOKED_UP: &[&str] = &[
 
 const LOOP_ARROWS: [Rect; 2] = [on_row(3, 440, 14), on_row(3, 454, 14)];
 const TO_ZERO: [Rect; 2] = [on_row(3, 468, 26), on_row(3, 494, 26)];
-// an arrow to the nearest zero crossing, left and right
-const LEFT_TO_ZERO: &[&str] = &[
-    "....##....###.",
-    "..####...##.##",
-    "######...##.##",
-    "..####...##.##",
-    "....##....###.",
+// an arrow to the nearest zero crossing, left and right, with a 0 on its far side
+const TO_ZERO_ARROWS: [&[&str]; 2] = [
+    &["....##", "..####", "######", "..####", "....##"],
+    &["##....", "####..", "######", "####..", "##...."],
 ];
-const RIGHT_TO_ZERO: &[&str] = &[
-    ".###....##....",
-    "##.##...####..",
-    "##.##...######",
-    "##.##...####..",
-    ".###....##....",
-];
+// the arrow's and the 0's left, left button first, in a 14x5 picture centred in the button
+const TO_ZERO_PLACES: [[i32; 2]; 2] = [[0, 9], [8, 0]];
+const TO_ZERO_SIZE: [i32; 2] = [14, 5];
 
 const OCTAVES: [Rect; 2] = [on_row(3, 522, 58), on_row(3, 580, 58)];
 const OCTAVE_ARROW: [i32; 2] = [9, 5];
@@ -497,6 +490,18 @@ fn label_font(label: &str, width: i32) -> Font {
     return fonts::NARROW_LABEL;
 }
 
+fn to_zero_label(side: usize) -> impl Fn(ContentArea, Pen, &mut Painter) {
+    return move |area, pen, painter| {
+        let [width, height] = TO_ZERO_SIZE;
+        let inside = area.inside;
+        let x = inside.x + (inside.w - width + 1) / 2;
+        let y = inside.y + (inside.h - height + 1) / 2;
+        let [arrow, zero] = TO_ZERO_PLACES[side];
+        draw_rows(TO_ZERO_ARROWS[side], x + arrow, y, pen, painter);
+        painter.text_in_font(x + zero, y, "0", pen, fonts::SMALL);
+    };
+}
+
 fn octave_label(direction: Direction) -> impl Fn(ContentArea, Pen, &mut Painter) {
     return move |area, pen, painter| {
         let [width, height] = OCTAVE_ARROW;
@@ -628,8 +633,8 @@ impl SampleEditor {
             .map(|(rect, direction)| (Button::new(Triangle::arrow(direction)), rect));
         let to_zero = TO_ZERO
             .into_iter()
-            .zip([LEFT_TO_ZERO, RIGHT_TO_ZERO])
-            .map(|(rect, rows)| (Button::new(picture(rows)), rect));
+            .zip([0, 1])
+            .map(|(rect, side)| (Button::new(to_zero_label(side)), rect));
         let octaves = OCTAVES
             .into_iter()
             .zip([Up, Down])

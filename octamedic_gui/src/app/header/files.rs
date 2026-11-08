@@ -110,6 +110,7 @@ impl Files {
 impl Gadget<AppState, Event> for Files {
     // a folder that can't be opened leaves the browser where it was, so DIR goes back to its path
     fn update(&mut self, state: &mut AppState) {
+        state.typing |= self.dir.is_focused() || self.file.is_focused();
         if let Some(dir) = finished_edit(&self.dir, &mut self.dir_was_focused) {
             if !dir.is_empty() {
                 let _ = state.browser.open(dir);

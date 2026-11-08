@@ -7,23 +7,45 @@ use rustuition::{
     painter::{CHAR_HEIGHT, CHAR_WIDTH},
 };
 
-// topaz with OctaMED's own slashes
+// topaz, with OctaMED's own glyphs where they differ
 pub const INTERFACE: Font = Font::new(|| &INTERFACE_FONT);
 
 // gadget labels
 pub const PANEL: Font = Font::new(|| &PANEL_FONT);
+
+// PANEL with the title bar's own R, for the colour sliders' R G B
+pub const COLOR_LETTERS: Font = Font::new(|| &COLOR_LETTERS_FONT);
 
 // status row flags, CHRD etc
 pub const SMALL: Font = Font::new(|| &SMALL_FONT);
 
 // play panel labels like PLAY SONG
 pub const LABEL: Font = Font::new(|| &LABEL_FONT);
-// LABEL with 1px between letters, for the ones OctaMED squeezed in like SAVE FORMAT:
+// LABEL with 1px between letters and a narrower X, for the ones OctaMED squeezed in like SAVE FORMAT:
 pub const NARROW_LABEL: Font = Font::new(|| &NARROW_LABEL_FONT);
+// LABEL with a 1px full stop, as in L.ALT and R.ALT
+pub const LABEL_SMALL_DOT: Font = Font::new(|| &LABEL_SMALL_DOT_FONT);
 
 pub const TITLE: Font = Font::new(|| &TITLE_FONT);
 
 pub const AUTHOR: Font = Font::new(|| &AUTHOR_FONT);
+
+// the track digits of TRK ON: and SELECT:
+pub const TRACKS: Font = Font::new(|| &TRACKS_FONT);
+// TRKS:'s bolder ones, only the digits of 4, 8, 12 and 16
+pub const TRACKS_BOLD: Font = Font::new(|| &TRACKS_BOLD_FONT);
+
+// the tall SET and CLR beside the track digits
+pub const TALL: Font = Font::new(|| &TALL_FONT);
+
+// the EDIT panel's OCTAVE digits, EDIT ON and SPC, and CHORD
+pub const BIG: Font = Font::new(|| &BIG_FONT);
+// BIG with the title bar's own M and R, for TIMER
+pub const TIMER_LABEL: Font = Font::new(|| &TIMER_LABEL_FONT);
+
+// MISC's QUIT and CONFIRM
+pub const QUIT_LABEL: Font = Font::new(|| &QUIT_LABEL_FONT);
+pub const CONFIRM_LABEL: Font = Font::new(|| &CONFIRM_LABEL_FONT);
 
 // 16px wide block editor chars for blocks with few tracks, double width topaz otherwise
 pub const EDITOR: Font = Font::new(|| &EDITOR_FONT);
@@ -37,14 +59,75 @@ const TITLE_GLYPHS: &str = include_str!("../../assets/fonts/title.txt");
 const AUTHOR_GLYPHS: &str = include_str!("../../assets/fonts/author.txt");
 const EDITOR_GLYPHS: &str = include_str!("../../assets/fonts/editor.txt");
 const INTERFACE_GLYPHS: &str = include_str!("../../assets/fonts/interface.txt");
+const TRACKS_GLYPHS: &str = include_str!("../../assets/fonts/tracks.txt");
+const TRACKS_BOLD_GLYPHS: &str = include_str!("../../assets/fonts/tracks_bold.txt");
+const TALL_GLYPHS: &str = include_str!("../../assets/fonts/tall.txt");
+const BIG_GLYPHS: &str = include_str!("../../assets/fonts/big.txt");
+const SMALL_DOT_GLYPHS: &str = include_str!("../../assets/fonts/small_dot.txt");
+const TIMER_GLYPHS: &str = include_str!("../../assets/fonts/timer.txt");
+const LABEL_GLYPHS: &str = include_str!("../../assets/fonts/label.txt");
+const QUIT_GLYPHS: &str = include_str!("../../assets/fonts/quit.txt");
+const CONFIRM_GLYPHS: &str = include_str!("../../assets/fonts/confirm.txt");
+const NARROW_GLYPHS: &str = include_str!("../../assets/fonts/narrow.txt");
 
-static PANEL_FONT: LazyLock<BitmapFont> = LazyLock::new(|| {
-    BitmapFont::new("panel", 6)
+static PANEL_FONT: LazyLock<BitmapFont> = LazyLock::new(|| panel_font("panel"));
+
+fn panel_font(name: &'static str) -> BitmapFont {
+    return BitmapFont::new(name, 6)
         .bearing(1)
         .space(4)
         .capitals_only()
-        .with_glyphs(PANEL_GLYPHS)
+        .with_glyphs(PANEL_GLYPHS);
+}
+
+static COLOR_LETTERS_FONT: LazyLock<BitmapFont> =
+    LazyLock::new(|| panel_font("color letters").with_glyphs(TIMER_GLYPHS));
+
+static TRACKS_FONT: LazyLock<BitmapFont> = LazyLock::new(|| {
+    BitmapFont::new("tracks", 7)
+        .bearing(1)
+        .capitals_only()
+        .with_glyphs(TRACKS_GLYPHS)
 });
+
+static TRACKS_BOLD_FONT: LazyLock<BitmapFont> = LazyLock::new(|| {
+    BitmapFont::new("tracks bold", 7)
+        .bearing(1)
+        .with_glyphs(TRACKS_BOLD_GLYPHS)
+});
+
+static TALL_FONT: LazyLock<BitmapFont> = LazyLock::new(|| {
+    BitmapFont::new("tall", 7)
+        .bearing(1)
+        .capitals_only()
+        .with_glyphs(TALL_GLYPHS)
+});
+
+static QUIT_LABEL_FONT: LazyLock<BitmapFont> = LazyLock::new(|| {
+    BitmapFont::new("quit label", 7)
+        .capitals_only()
+        .with_glyphs(QUIT_GLYPHS)
+});
+
+static CONFIRM_LABEL_FONT: LazyLock<BitmapFont> = LazyLock::new(|| {
+    BitmapFont::new("confirm label", 6)
+        .bearing(1)
+        .capitals_only()
+        .with_glyphs(CONFIRM_GLYPHS)
+});
+
+static BIG_FONT: LazyLock<BitmapFont> = LazyLock::new(|| big_font("big"));
+
+static TIMER_LABEL_FONT: LazyLock<BitmapFont> =
+    LazyLock::new(|| big_font("timer label").with_glyphs(TIMER_GLYPHS));
+
+fn big_font(name: &'static str) -> BitmapFont {
+    return BitmapFont::new(name, 6)
+        .bearing(1)
+        .space(3)
+        .capitals_only()
+        .with_glyphs(BIG_GLYPHS);
+}
 
 static SMALL_FONT: LazyLock<BitmapFont> = LazyLock::new(|| {
     BitmapFont::new("small", 5)
@@ -73,20 +156,18 @@ static EDITOR_FONT: LazyLock<BitmapFont> = LazyLock::new(|| {
         .with_fallback(Font::TOPAZ, Glyph::widened)
 });
 
-static LABEL_FONT: LazyLock<BitmapFont> = LazyLock::new(|| {
-    let font = BitmapFont::new("label", 5).space(6).capitals_only();
-    return SMALL.bitmap().glyphs().fold(font, |font, (c, glyph)| {
-        let (left, right) = label_margins(c);
-        font.with_glyph(c, glyph.trimmed().with_margins(left, right))
-    });
-});
+static LABEL_FONT: LazyLock<BitmapFont> = LazyLock::new(|| label_font("label"));
+
+static LABEL_SMALL_DOT_FONT: LazyLock<BitmapFont> =
+    LazyLock::new(|| label_font("label small dot").with_glyphs(SMALL_DOT_GLYPHS));
 
 static NARROW_LABEL_FONT: LazyLock<BitmapFont> = LazyLock::new(|| {
     let font = BitmapFont::new("narrow label", 5).space(5).capitals_only();
-    return SMALL.bitmap().glyphs().fold(font, |font, (c, glyph)| {
+    let narrow = SMALL.bitmap().glyphs().fold(font, |font, (c, glyph)| {
         let left = if c.is_ascii_digit() { 1 } else { 0 };
         font.with_glyph(c, glyph.trimmed().with_margins(left, 1))
     });
+    return narrow.with_glyphs(NARROW_GLYPHS);
 });
 
 static INTERFACE_FONT: LazyLock<BitmapFont> = LazyLock::new(|| {
@@ -95,6 +176,15 @@ static INTERFACE_FONT: LazyLock<BitmapFont> = LazyLock::new(|| {
         .with_glyphs(INTERFACE_GLYPHS)
         .with_fallback(Font::TOPAZ, Glyph::clone)
 });
+
+fn label_font(name: &'static str) -> BitmapFont {
+    let font = BitmapFont::new(name, 5).space(6).capitals_only();
+    let font = SMALL.bitmap().glyphs().fold(font, |font, (c, glyph)| {
+        let (left, right) = label_margins(c);
+        font.with_glyph(c, glyph.trimmed().with_margins(left, right))
+    });
+    return font.with_glyphs(LABEL_GLYPHS);
+}
 
 // matched against CONT. SONG, VOL: and E1 on the real thing
 fn label_margins(c: char) -> (u32, u32) {
@@ -126,11 +216,25 @@ mod tests {
     #[test]
     fn font_files_parse() {
         assert!(parse_glyphs(PANEL_GLYPHS, 6).unwrap().len() >= 26);
-        assert_eq!(parse_glyphs(INTERFACE_GLYPHS, 8).unwrap().len(), 3);
+        assert_eq!(parse_glyphs(INTERFACE_GLYPHS, 8).unwrap().len(), 8);
         assert!(parse_glyphs(TITLE_GLYPHS, 9).is_ok());
         assert!(parse_glyphs(AUTHOR_GLYPHS, 5).is_ok());
-        assert_eq!(parse_glyphs(SMALL_GLYPHS, 5).unwrap().len(), 43);
+        assert_eq!(parse_glyphs(SMALL_GLYPHS, 5).unwrap().len(), 44);
         assert!(parse_glyphs(EDITOR_GLYPHS, 8).is_ok());
+        for (glyphs, height) in [
+            (TRACKS_GLYPHS, 7),
+            (TRACKS_BOLD_GLYPHS, 7),
+            (TALL_GLYPHS, 7),
+            (BIG_GLYPHS, 6),
+            (TIMER_GLYPHS, 6),
+            (SMALL_DOT_GLYPHS, 5),
+        ] {
+            assert!(parse_glyphs(glyphs, height).is_ok());
+        }
+        assert_eq!(parse_glyphs(QUIT_GLYPHS, 7).unwrap().len(), 4);
+        assert_eq!(parse_glyphs(CONFIRM_GLYPHS, 6).unwrap().len(), 7);
+        assert!(parse_glyphs(NARROW_GLYPHS, 5).is_ok());
+        assert!(parse_glyphs(LABEL_GLYPHS, 5).is_ok());
     }
 
     #[test]

@@ -13,6 +13,7 @@ use rustuition::{
 use crate::{
     app::{
         fonts,
+        header::labels::{Words, draw_words, placed, placed_at},
         state::{AppState, screen_palette},
     },
     framework::{
@@ -22,7 +23,6 @@ use crate::{
 };
 
 // from the panel's top left
-const COLOR_SECTION: Rect = Rect::new(0, 2, 182, 42);
 const SLIDERS: Rect = Rect::new(0, 2, 160, 30);
 const COLOR_BOXES: Rect = Rect::new(0, 32, 160, 12);
 const RES: Rect = Rect::new(160, 2, 22, 21);
@@ -38,23 +38,52 @@ const VALUE: Rect = Rect::new(148, 0, 12, ROW_HEIGHT);
 const CHANNEL_LETTERS: [&str; 3] = ["R", "G", "B"];
 
 const COLOR_BOX_WIDTH: i32 = 20;
+const COLOR_HANDLE_LENGTH: i32 = 9;
 
 // from the sections' top left. none of them do anything yet. the cramped ones are in the narrow
 // font, like on the real thing
-const PREFS_BUTTONS: [(&str, Rect, Font); 10] = [
-    ("PTKEY", Rect::new(0, 0, 37, 11), fonts::NARROW_LABEL),
-    ("ADD", Rect::new(82, 0, 32, 11), fonts::LABEL),
-    ("REM", Rect::new(114, 0, 32, 11), fonts::LABEL),
-    ("OPEN", Rect::new(60, 11, 43, 11), fonts::LABEL),
-    ("CLOSE", Rect::new(103, 11, 43, 11), fonts::LABEL),
-    ("LOADGFX", Rect::new(0, 22, 57, 11), fonts::NARROW_LABEL),
-    ("MOUSE2", Rect::new(57, 22, 54, 11), fonts::NARROW_LABEL),
-    ("SAVE PREFS", Rect::new(0, 33, 76, 11), fonts::NARROW_LABEL),
-    ("NO16", Rect::new(76, 33, 35, 11), fonts::NARROW_LABEL),
-    ("DEP2", Rect::new(111, 33, 35, 11), fonts::NARROW_LABEL),
+const PREFS_BUTTONS: [(Font, Words, Rect); 10] = [
+    (
+        fonts::NARROW_LABEL,
+        &[(4, "P"), (10, "T"), (16, "K"), (22, "EY")],
+        Rect::new(0, 0, 37, 11),
+    ),
+    (fonts::LABEL, &[(5, "ADD")], Rect::new(82, 0, 32, 11)),
+    (fonts::LABEL, &[(5, "REM")], Rect::new(114, 0, 32, 11)),
+    (fonts::LABEL, &[(7, "OPEN")], Rect::new(60, 11, 43, 11)),
+    (
+        fonts::NARROW_LABEL,
+        &[(6, "CLOSE")],
+        Rect::new(103, 11, 43, 11),
+    ),
+    (
+        fonts::NARROW_LABEL,
+        &[(6, "LOADGFX")],
+        Rect::new(0, 22, 57, 11),
+    ),
+    (
+        fonts::LABEL,
+        &[(4, "MOUSE"), (45, "2")],
+        Rect::new(57, 22, 54, 11),
+    ),
+    (
+        fonts::NARROW_LABEL,
+        &[(6, "SAVE"), (38, "PREFS")],
+        Rect::new(0, 33, 76, 11),
+    ),
+    (
+        fonts::NARROW_LABEL,
+        &[(5, "NO1"), (26, "6")],
+        Rect::new(76, 33, 35, 11),
+    ),
+    (
+        fonts::NARROW_LABEL,
+        &[(5, "DEP2")],
+        Rect::new(111, 33, 35, 11),
+    ),
 ];
 const HOST_TO_BUFFER: Rect = Rect::new(0, 11, 37, 11);
-const PREFS_LABELS: [(&str, [i32; 2]); 2] = [("PATHS:", [39, 3]), ("WB:", [39, 14])];
+const PREFS_LABELS: [(i32, Words); 2] = [(3, &[(39, "PATHS:")]), (14, &[(39, "WB"), (56, ":")])];
 const CLEAR_ALL: Rect = Rect::new(0, 0, 118, 11);
 const CLEAR_SONG: Rect = Rect::new(0, 11, 118, 11);
 const QUIT: Rect = Rect::new(0, 22, 118, 11);
@@ -64,12 +93,21 @@ const CLEAR_ALL_CHOICE: usize = 0;
 const CLEAR_SONG_CHOICE: usize = 1;
 const QUIT_CHOICE: usize = 2;
 
+// OctaMED sinks the picked colour's frame in pens 5 and 6 rather than the usual 1 and 2
+const SELECTED_TOP: Pen = Pen(6);
+const SELECTED_BOTTOM: Pen = Pen(5);
+
+const CLEAR_ALL_WORDS: Words = &[(28, "CLEAR"), (71, "ALL")];
+const QUIT_WORDS: Words = &[(41, "Q"), (52, "U"), (63, "I"), (70, "T")];
+const CONFIRM_WORDS: Words = &[(30, "CONFIRM")];
+
 // within the button's frame
-const HOST_TO_BUFFER_PARTS: [i32; 3] = [4, 14, 23];
+const HOST_TO_BUFFER_PARTS: [i32; 3] = [3, 14, 22];
 const HOST_TO_BUFFER_Y: i32 = 2;
 const ARROW_SIZE: [i32; 2] = [6, 5];
-// CONFIRM's arrows: black rows 2 wider each line down, with a shine down their right side
-const CONFIRM_ARROW_INSET: i32 = 4;
+// CONFIRM's arrows: black rows 2 wider each line down, with a shine down their right side.
+// The left one is inset from the left edge, the right one from the right
+const CONFIRM_ARROW_INSETS: [i32; 2] = [6, 4];
 const CONFIRM_ARROW_ROWS: i32 = 4;
 const CONFIRM_ARROW_WIDTH: i32 = 14;
 const CONFIRM_ARROW_SHINE: i32 = 2;
@@ -100,6 +138,7 @@ impl Misc {
         return Self {
             sliders: std::array::from_fn(|_| {
                 Slider::new(SliderDirection::Horizontal, false, steps)
+                    .fixed_handle(COLOR_HANDLE_LENGTH)
             }),
             values: std::array::from_fn(|_| {
                 Button::new("0")
@@ -116,16 +155,22 @@ impl Misc {
             undo: Button::new(stacked_text(&UNDO_LINES)),
             prefs: PREFS_BUTTONS
                 .into_iter()
-                .map(|(label, rect, font)| (label_button(label, font), rect))
+                .map(|(font, words, rect)| (unhooked(Button::new(placed(font, words))), rect))
                 .chain([(unhooked(Button::new(host_to_buffer)), HOST_TO_BUFFER)])
                 .collect(),
             danger_buttons: vec![
-                (Button::new("CLEAR ALL").font(fonts::LABEL), CLEAR_ALL),
+                (
+                    Button::new(placed(fonts::LABEL, CLEAR_ALL_WORDS)),
+                    CLEAR_ALL,
+                ),
                 (
                     Button::new("CLEAR SONG ONLY").font(fonts::LABEL),
                     CLEAR_SONG,
                 ),
-                (Button::new("QUIT").font(fonts::PANEL), QUIT),
+                (
+                    Button::new(placed_at(fonts::QUIT_LABEL, 2, QUIT_WORDS)),
+                    QUIT,
+                ),
                 (Button::new(confirm), CONFIRM),
             ],
             selected_color: 0,
@@ -243,7 +288,13 @@ impl Gadget<AppState, Event> for Misc {
         for (channel, letter) in CHANNEL_LETTERS.iter().enumerate() {
             let row = Self::row(area, channel);
             let [x, y] = LETTER;
-            painter.text_in_font(row.x + x, row.y + y, letter, Pen::BACKGROUND, fonts::PANEL);
+            painter.text_in_font(
+                row.x + x,
+                row.y + y,
+                letter,
+                Pen::BACKGROUND,
+                fonts::COLOR_LETTERS,
+            );
             self.sliders[channel].render(state, SLIDER.within(row), painter);
             self.values[channel].render(state, VALUE.within(row), painter);
         }
@@ -251,7 +302,7 @@ impl Gadget<AppState, Event> for Misc {
             let color_box = Self::color_box(area, pen);
             self.color_buttons[pen].render(state, color_box, painter);
             if pen == self.selected_color {
-                painter.frame_inverted(color_box, 1);
+                painter.bevel(color_box, 1, SELECTED_TOP, SELECTED_BOTTOM);
             }
         }
         self.res.render(state, RES.within(area), painter);
@@ -261,14 +312,9 @@ impl Gadget<AppState, Event> for Misc {
         for (button, rect) in &mut self.prefs {
             button.render(state, rect.within(prefs), painter);
         }
-        for (label, [x, y]) in PREFS_LABELS {
-            painter.text_in_font(
-                prefs.x + x,
-                prefs.y + y,
-                label,
-                Pen::BACKGROUND,
-                fonts::LABEL,
-            );
+        for (top, words) in PREFS_LABELS {
+            let at = [prefs.x, prefs.y + top];
+            draw_words(painter, fonts::LABEL, at, words, Pen::BACKGROUND);
         }
         let project = PROJECT_SECTION.within(area);
         for (button, rect) in &mut self.danger_buttons {
@@ -279,11 +325,6 @@ impl Gadget<AppState, Event> for Misc {
 
 fn unhooked(button: Button) -> Button {
     return button.enabled(false);
-}
-
-// no padding at the sides, so the widest still fit
-fn label_button(label: &'static str, font: Font) -> Button {
-    return unhooked(Button::new(label).font(font).padding_xy(0, 1));
 }
 
 // H, an arrow pointing right, B
@@ -303,14 +344,12 @@ fn host_to_buffer(area: ContentArea, pen: Pen, painter: &mut Painter) {
 
 // CONFIRM between two arrows pointing up
 fn confirm(area: ContentArea, pen: Pen, painter: &mut Painter) {
+    placed(fonts::CONFIRM_LABEL, CONFIRM_WORDS)(area, pen, painter);
     let inside = area.inside;
-    let width = fonts::PANEL.width("CONFIRM");
-    let text_x = inside.x + (inside.w - width) / 2;
-    let text_y = inside.y + (inside.h - fonts::PANEL.height()) / 2;
-    painter.text_in_font(text_x, text_y, "CONFIRM", pen, fonts::PANEL);
+    let [left_inset, right_inset] = CONFIRM_ARROW_INSETS;
     let lefts = [
-        inside.x + CONFIRM_ARROW_INSET,
-        inside.right() - CONFIRM_ARROW_INSET - CONFIRM_ARROW_WIDTH - CONFIRM_ARROW_SHINE,
+        inside.x + left_inset,
+        inside.right() - right_inset - CONFIRM_ARROW_WIDTH - CONFIRM_ARROW_SHINE,
     ];
     let top = inside.y + (inside.h - CONFIRM_ARROW_ROWS) / 2;
     for left in lefts {

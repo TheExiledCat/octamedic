@@ -114,7 +114,7 @@ What's there: `fill` / `fill_translucent`, `outline` (1px box), `rect` (border o
 `shape.rs`), text with `text` (Topaz), `text_in_font` and `text_bold` (bold the Amiga way, drawn
 again 1px to the right), and `line` / `line_in` for styled text. `frame` is the raised bevel:
 shine top and right, shadow left and bottom, meeting on a slant. `frame_inverted` is the sunk in
-one. Borders are `thickness` lines tall at top and bottom and twice that many pixels wide at the
+one, and `bevel` draws one in any two pens. Borders are `thickness` lines tall at top and bottom and twice that many pixels wide at the
 sides, so they look even on tall pixels. `fill_color` fills with a colour from outside the palette, like
 the Amiga's sprites have. `clipped` runs some drawing clipped to a rect, and `clip` is where
 drawing goes now, the whole target outside `clipped`.
@@ -218,7 +218,8 @@ padding (`padding(n)` or `padding_xy(x, y)`) and cut to what fits; a label too l
 moves into it.
 
 `Slider` is a proportional gadget with a dotted track, horizontal or vertical, optionally
-reversed; `solid()` draws the track solid and the handle flat instead. `SteppedSlider` (`gadgets/stepped_slider.rs`) is a slider with two arrow buttons after
+reversed, drawn like Kickstart 2.0's new look prop gadgets; `solid()` draws Kickstart 1.3's
+instead, a solid track and a flat handle. `SteppedSlider` (`gadgets/stepped_slider.rs`) is a slider with two arrow buttons after
 it that step its value by one and keep stepping while held; its `update(state, current)` hands
 back a new value when it's dragged or stepped, from `min` to `max`. `Grid::new(columns, rows,
 gadgets)` lays gadgets out in rows and passes events and drawing to them.

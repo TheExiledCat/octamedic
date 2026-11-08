@@ -10,7 +10,7 @@ use crate::{
         fonts,
         header::{
             finished_edit,
-            labels::{Picture, Words, draw_words, picture, placed},
+            labels::{Picture, Words, draw_words, picture, placed, placed_at},
         },
         state::AppState,
     },
@@ -78,6 +78,13 @@ const SPLIT: Rect = Rect::new(360, 34, 44, 11);
 const JOIN: Rect = Rect::new(404, 34, 44, 11);
 
 const TRACK_COUNTS: [usize; 4] = [4, 8, 12, 16];
+// the 1 of 12 and 16 sits closer to the digit after it than the font's spacing
+const TRACK_COUNT_LABELS: [Words; 4] = [
+    &[(9, "4")],
+    &[(11, "8")],
+    &[(7, "1"), (15, "2")],
+    &[(7, "1"), (15, "6")],
+];
 
 // where the boxes' numbers start past their frames
 const LINES_PADDING: i32 = 0;
@@ -147,7 +154,8 @@ impl Block {
             ins_track: narrow(&[(6, "INS.TRK")]),
             del_track: narrow(&[(5, "DEL.TRK")]),
             // 5-8 channel mode (8/12/16 tracks) isn't supported yet, so there's nothing to pick
-            track_counts: TRACK_COUNT_DIGITS.map(|digits| unhooked(Button::new(picture(digits)))),
+            track_counts: TRACK_COUNT_LABELS
+                .map(|digits| unhooked(Button::new(placed_at(fonts::TRACKS_BOLD, 2, digits)))),
 
             lines_box: number_box(LINES_PADDING),
             lines_box_was_focused: false,
@@ -249,64 +257,13 @@ const DOUBLE_ARROW_RIGHT: Picture = Picture {
     ],
 };
 
-// TRKS: has its own big digits
-const TRACK_COUNT_DIGITS: [&Picture; 4] = [
-    &Picture {
-        at: [9, 2],
-        rows: &[
-            "....###...###..",
-            "...###....###..",
-            "..###.....###..",
-            ".###......###..",
-            "###############",
-            "..........###..",
-            "..........###..",
-        ],
-    },
-    &Picture {
-        at: [11, 2],
-        rows: &[
-            ".###########.",
-            "###.......###",
-            "###.......###",
-            ".###########.",
-            "###.......###",
-            "###.......###",
-            ".###########.",
-        ],
-    },
-    &Picture {
-        at: [7, 2],
-        rows: &[
-            "..###....#########.",
-            ".####...###.....###",
-            "#####...........###",
-            "..###.........###..",
-            "..###.......###....",
-            "..###.....###......",
-            "#######..##########",
-        ],
-    },
-    &Picture {
-        at: [7, 2],
-        rows: &[
-            "..###....#########.",
-            ".####...###.....###",
-            "#####...###........",
-            "..###...##########.",
-            "..###...###.....###",
-            "..###...###.....###",
-            "#######..#########.",
-        ],
-    },
-];
-
 fn step_button(arrow: &'static Picture) -> Button {
     return Button::new(picture(arrow)).repeat(DEFAULT_REPEAT_DELAY, DEFAULT_REPEAT_INTERVAL);
 }
 
 impl Gadget<AppState, Event> for Block {
     fn update(&mut self, state: &mut AppState) {
+        state.typing |= self.lines_box.is_focused() || self.expand_factor.is_focused();
         let clipboard: [(&mut Button, fn(&mut AppState)); 9] = [
             (&mut self.cut_track, AppState::cut_track),
             (&mut self.copy_track, AppState::copy_track),

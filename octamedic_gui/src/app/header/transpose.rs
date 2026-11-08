@@ -3,7 +3,7 @@ use octamedic_util::base32;
 use rustuition::{
     font::Font,
     gadget::Gadget,
-    gadgets::slider::SliderDirection,
+    gadgets::{button::ContentArea, slider::SliderDirection},
     painter::{Align, Painter, Pen},
     rect::Rect,
 };
@@ -11,7 +11,7 @@ use rustuition::{
 use crate::{
     app::{
         fonts,
-        header::labels::{Picture, Words, draw_words, picture, placed},
+        header::labels::{Picture, Words, draw_words, picture, placed, placed_with_picture},
         main::block_editor::note_text,
         state::AppState,
         transpose::Affect,
@@ -111,48 +111,31 @@ const EXCHANGE_ARROW: Picture = Picture {
         "....##..##....",
     ],
 };
-const HALF_STEP_UP_LABEL: Picture = Picture {
-    at: [7, 2],
+const HALF_STEP_UP_ARROW: Picture = Picture {
+    at: [29, 2],
     rows: &[
-        ".........................##...",
-        ".##.......##..####......####..",
-        "###......##......##....######.",
-        ".##.....##.....###....########",
-        ".##....##.....##.........##...",
-        "####..##......#####......##...",
+        "...##...", "..####..", ".######.", "########", "...##...", "...##...",
     ],
 };
-const HALF_STEP_DOWN_LABEL: Picture = Picture {
-    at: [7, 2],
+
+const HALF_STEP_DOWN_ARROW: Picture = Picture {
+    at: [29, 2],
     rows: &[
-        ".........................##...",
-        ".##.......##..####.......##...",
-        "###......##......##...########",
-        ".##.....##.....###.....######.",
-        ".##....##.....##........####..",
-        "####..##......#####......##...",
+        "...##...", "...##...", "########", ".######.", "..####..", "...##...",
     ],
 };
-const OCTAVE_UP_LABEL: Picture = Picture {
-    at: [9, 2],
+
+const OCTAVE_UP_ARROW: Picture = Picture {
+    at: [33, 2],
     rows: &[
-        "...........................##...",
-        ".####....####..######.....####..",
-        "##..##..##.......##......######.",
-        "##..##..##.......##.....########",
-        "##..##..##.......##........##...",
-        ".####....####....##........##...",
+        "...##...", "..####..", ".######.", "########", "...##...", "...##...",
     ],
 };
-const OCTAVE_DOWN_LABEL: Picture = Picture {
-    at: [9, 2],
+
+const OCTAVE_DOWN_ARROW: Picture = Picture {
+    at: [33, 2],
     rows: &[
-        "...........................##...",
-        ".####....####..######......##...",
-        "##..##..##.......##.....########",
-        "##..##..##.......##......######.",
-        "##..##..##.......##.......####..",
-        ".####....####....##........##...",
+        "...##...", "...##...", "########", ".######.", "..####..", "...##...",
     ],
 };
 
@@ -194,14 +177,14 @@ impl Transpose {
             note_change: Button::new(picture(&CHANGE_ARROW)),
             note_exchange: Button::new(picture(&EXCHANGE_ARROW)),
             steps: [
-                (Button::new(picture(&HALF_STEP_UP_LABEL)), 1, HALF_STEP_UP),
+                (Button::new(half_step(&HALF_STEP_UP_ARROW)), 1, HALF_STEP_UP),
                 (
-                    Button::new(picture(&HALF_STEP_DOWN_LABEL)),
+                    Button::new(half_step(&HALF_STEP_DOWN_ARROW)),
                     -1,
                     HALF_STEP_DOWN,
                 ),
-                (Button::new(picture(&OCTAVE_UP_LABEL)), 12, OCTAVE_UP),
-                (Button::new(picture(&OCTAVE_DOWN_LABEL)), -12, OCTAVE_DOWN),
+                (Button::new(octave(&OCTAVE_UP_ARROW)), 12, OCTAVE_UP),
+                (Button::new(octave(&OCTAVE_DOWN_ARROW)), -12, OCTAVE_DOWN),
             ],
             delete: label(&[(7, "DEL")]),
             instrument_boxes: std::array::from_fn(|_| number_box("00")),
@@ -214,7 +197,6 @@ impl Transpose {
                 PLAY_TRANSPOSE_ARROW,
                 PLAY_TRANSPOSE_ARROW_WIDTH,
             )
-            .solid()
             .fixed_handle(PLAY_TRANSPOSE_HANDLE),
             play_transpose_value: number_box("00").align(Align::Right),
             text: widgets::textbox()
@@ -335,6 +317,14 @@ impl Transpose {
     }
 }
 
+fn half_step(arrow: &'static Picture) -> impl Fn(ContentArea, Pen, &mut Painter) {
+    return placed_with_picture(fonts::LABEL, &[(7, "1/"), (21, "2")], arrow);
+}
+
+fn octave(arrow: &'static Picture) -> impl Fn(ContentArea, Pen, &mut Painter) {
+    return placed_with_picture(fonts::LABEL, &[(9, "OCT")], arrow);
+}
+
 impl Default for Transpose {
     fn default() -> Self {
         Self::new()
@@ -343,6 +333,7 @@ impl Default for Transpose {
 
 impl Gadget<AppState, Event> for Transpose {
     fn update(&mut self, state: &mut AppState) {
+        state.typing |= self.text.is_focused();
         self.update_choices();
         self.update_notes(state);
         self.update_instruments(state);
