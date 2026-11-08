@@ -99,6 +99,33 @@ impl Framebuffer {
         return self.pixels.as_flattened();
     }
 
+    /// A copy `across` times as wide and `down` times as tall, each pixel a block of them, so
+    /// filters that bend the picture have finer pixels to work with.
+    pub fn scaled(&self, [across, down]: [i32; 2]) -> Self {
+        let (across, down) = (across.max(1), down.max(1));
+        let mut scaled = Self::new(self.width * across, self.height * down);
+        for (y, row) in scaled
+            .pixels
+            .chunks_mut(scaled.width.max(1) as usize)
+            .enumerate()
+        {
+            let from = (y as i32 / down * self.width) as usize;
+            for (x, pixel) in row.iter_mut().enumerate() {
+                *pixel = self.pixels[from + x / across as usize];
+            }
+        }
+        return scaled;
+    }
+
+    /// The pixels as r, g, b, a bytes, every alpha opaque, the way GPU textures usually take them.
+    pub fn to_rgba(&self) -> Vec<u8> {
+        let mut rgba = Vec::with_capacity(self.pixels.len() * 4);
+        for &[r, g, b] in &self.pixels {
+            rgba.extend_from_slice(&[r, g, b, u8::MAX]);
+        }
+        return rgba;
+    }
+
     /// The pixel at `x`, `y`, or `None` off the edge.
     pub fn pixel(&self, x: i32, y: i32) -> Option<[u8; 3]> {
         if !self.bounds().contains(Point::new(x, y)) {
@@ -227,6 +254,27 @@ mod batched_canvas {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rgba_is_opaque() {
+        let mut buffer = Framebuffer::new(1, 1);
+        buffer.fill(buffer.bounds(), Rgba::rgb(1, 2, 3));
+        assert_eq!(buffer.to_rgba(), [1, 2, 3, 255]);
+    }
+
+    #[test]
+    fn scaled_makes_each_pixel_a_block() {
+        let mut buffer = Framebuffer::new(2, 1);
+        buffer.fill(Rect::new(1, 0, 1, 1), Rgba::rgb(255, 0, 0));
+        let scaled = buffer.scaled([2, 2]);
+        assert_eq!((scaled.width(), scaled.height()), (4, 2));
+        let taller = buffer.scaled([1, 3]);
+        assert_eq!((taller.width(), taller.height()), (2, 3));
+        assert_eq!(taller.pixel(1, 2), Some([255, 0, 0]));
+        assert_eq!(scaled.pixel(1, 1), Some([0, 0, 0]));
+        assert_eq!(scaled.pixel(2, 0), Some([255, 0, 0]));
+        assert_eq!(scaled.pixel(3, 1), Some([255, 0, 0]));
+    }
 
     #[test]
     fn framebuffer_fill() {

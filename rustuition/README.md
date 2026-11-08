@@ -123,9 +123,12 @@ drawing goes now, the whole target outside `clipped`.
 
 Filters (`filters.rs`) change a finished `Framebuffer` after everything's been painted. There's
 `Scanlines` (darkens every `spacing`th line), `ChromaticAberration` (red moves one way, blue the
-other), `VhsWobble` (lines shift sideways in a rolling wave with some jitter) and `ColorAdjust`
-(hue, saturation, brightness, contrast and warmth, like a monitor's knobs). A closure taking
-`&mut Framebuffer` is a filter too, and a list of them runs in order:
+other), `VhsWobble` (lines shift sideways in a rolling wave with some jitter), `ColorAdjust`
+(hue, saturation, brightness, contrast and warmth, like a monitor's knobs), `Curvature` (bulges
+the picture like a CRT's glass, black past the corners), `Vignette` (darkens towards the edges,
+its Roundness going from the screen's rectangle to an ellipse) and `Noise` (static, different
+every frame). A closure taking `&mut Framebuffer` is a filter too, and a list of them runs in
+order:
 
 ```rust
 let wobble = VhsWobble { frame: frame_count, ..VhsWobble::default() };
@@ -134,7 +137,11 @@ filters.as_slice().apply(&mut screen);
 ```
 
 They work at the framebuffer's own resolution, so on a 640x256 screen a scanline is a whole line.
-`pixels_mut` and `row_mut` give your own filters the pixels.
+A filter that bends the picture says so with `wants_finer_pixels`, since at the screen's own
+resolution it drops and doubles pixels; give it a bigger copy from `Framebuffer::scaled` first.
+`Curvature` and `Vignette` work out where each pixel comes from and how dark it gets once per
+screen size and settings, and reuse that every frame after. `pixels_mut` and `row_mut` give your
+own filters the pixels.
 
 `FilterParams` lists a filter's settings as `Param`s (name, range, step, default) and gets and sets
 them by index, so one dialog can edit any filter. `AdjustableFilter` is a filter with params, for
@@ -283,7 +290,8 @@ they have a value.
 kept in its range.
 `ReorderableList` (`gadgets/reorderable_list.rs`) is a list of rows, each picking one of the same
 options from a dropdown, with up and down arrows to put them in order and an On button.
-`can_add`, `can_remove` and `editable` add Add, Del and Edit buttons, and `on_event` gets a
+`can_add`, `can_remove` and `editable` add Add, Del and Edit buttons, `can_toggle_all` a Toggle all
+button above the rows (all off when they're all on, all on otherwise), and `on_event` gets a
 `ListEvent` for every change as it's made, so whatever the list stands for can follow it, like an
 effects chain.
 

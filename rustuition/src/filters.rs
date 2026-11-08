@@ -1,5 +1,7 @@
 //! Filters run over a finished [`Framebuffer`], after everything's been painted.
 
+use std::sync::{Arc, Mutex, PoisonError};
+
 use crate::target::Framebuffer;
 
 /// Changes a finished frame, like scanlines over it. Closures taking `&mut Framebuffer` are
@@ -9,6 +11,12 @@ pub trait Filter {
 
     /// Moves on a frame, for filters that animate. Call it once a frame.
     fn advance_frame(&mut self) {}
+
+    /// Whether it bends the picture, so it drops or doubles pixels at the screen's own resolution
+    /// and looks better given a [`Framebuffer::scaled`] copy.
+    fn wants_finer_pixels(&self) -> bool {
+        return false;
+    }
 }
 
 /// One of a filter's settings, a number from `min` to `max` in steps of `step`.
@@ -397,13 +405,21 @@ impl ColorAdjust {
 }
 
 impl Filter for ColorAdjust {
+    // a screen has few colours in long runs, so the last one worked out usually does again
     fn apply(&self, frame: &mut Framebuffer) {
         let turn = self.hue.to_radians().sin_cos();
+        let mut last: Option<([u8; 3], [u8; 3])> = None;
         for pixel in frame.pixels_mut() {
+            if let Some((_, after)) = last.filter(|(before, _)| before == pixel) {
+                *pixel = after;
+                continue;
+            }
+            let before = *pixel;
             let rgb = pixel.map(|channel| channel as f32 / u8::MAX as f32);
             let adjusted = self.adjust(rgb, turn);
             *pixel =
                 adjusted.map(|channel| (channel.clamp(0.0, 1.0) * u8::MAX as f32).round() as u8);
+            last = Some((before, *pixel));
         }
     }
 }
@@ -439,6 +455,326 @@ impl FilterParams for ColorAdjust {
     }
 }
 
+const CURVATURE_PARAMS: &[Param] = &[Param {
+    name: "Amount",
+    min: 0.0,
+    max: 0.25,
+    step: 0.01,
+    default: 0.04,
+}];
+
+// where each pixel of the bent picture comes from, for pixels past the tube's edge
+const OUTSIDE: u32 = u32::MAX;
+
+/// Bulges the picture out like the curved glass of a CRT, the corners pulled in furthest. What
+/// falls outside the tube is black.
+#[derive(Clone, Debug)]
+pub struct Curvature {
+    /// How far the corners are pulled in, 0.0 for a flat screen.
+    pub amount: f32,
+    // which pixel each one is taken from, worked out once per screen size and amount
+    sources: Prepared<(i32, i32, u32), Vec<u32>>,
+}
+
+impl Default for Curvature {
+    fn default() -> Self {
+        return Self {
+            amount: CURVATURE_PARAMS[0].default,
+            sources: Prepared::default(),
+        };
+    }
+}
+
+impl Curvature {
+    fn sources(&self, width: i32, height: i32) -> Vec<u32> {
+        // each way bends more the further out it is the other way, so the edges bow
+        let columns: Vec<(f32, f32)> = (0..width)
+            .map(|x| centred(x, width))
+            .map(|dx| (dx, 1.0 + self.amount * dx * dx))
+            .collect();
+        let mut sources = Vec::with_capacity((width * height) as usize);
+        for y in 0..height {
+            let dy = centred(y, height);
+            let row_bend = 1.0 + self.amount * dy * dy;
+            for &(dx, column_bend) in &columns {
+                let from_x = uncentred(dx * row_bend, width);
+                let from_y = uncentred(dy * column_bend, height);
+                let inside = (0..width).contains(&from_x) && (0..height).contains(&from_y);
+                sources.push(if inside {
+                    (from_y * width + from_x) as u32
+                } else {
+                    OUTSIDE
+                });
+            }
+        }
+        return sources;
+    }
+}
+
+impl FilterParams for Curvature {
+    fn params(&self) -> &'static [Param] {
+        return CURVATURE_PARAMS;
+    }
+
+    fn param(&self, index: usize) -> f32 {
+        return if index == 0 { self.amount } else { 0.0 };
+    }
+
+    fn set_param(&mut self, index: usize, value: f32) {
+        if let Some(param) = CURVATURE_PARAMS.get(index) {
+            self.amount = param.clamp(value);
+        }
+    }
+}
+
+impl Filter for Curvature {
+    fn wants_finer_pixels(&self) -> bool {
+        return true;
+    }
+
+    fn apply(&self, frame: &mut Framebuffer) {
+        if self.amount <= 0.0 {
+            return;
+        }
+        let (width, height) = (frame.width(), frame.height());
+        let key = (width, height, self.amount.to_bits());
+        let sources = self.sources.get(key, || self.sources(width, height));
+        let original = frame.pixels().to_vec();
+        for (pixel, &source) in frame.pixels_mut().iter_mut().zip(sources.iter()) {
+            *pixel = if source == OUTSIDE {
+                [0; 3]
+            } else {
+                original[source as usize]
+            };
+        }
+    }
+}
+
+const VIGNETTE_PARAMS: &[Param] = &[
+    Param {
+        name: "Strength",
+        min: 0.0,
+        max: 1.0,
+        step: 0.05,
+        default: 0.6,
+    },
+    // short of 1.0, past which the corners would go straight from untouched to dark
+    Param {
+        name: "Size",
+        min: 0.0,
+        max: 0.9,
+        step: 0.05,
+        default: 0.3,
+    },
+    Param {
+        name: "Roundness",
+        min: 0.0,
+        max: 1.0,
+        step: 0.05,
+        default: 0.4,
+    },
+];
+
+// the superellipse exponent at roundness 0; at 1 it's 2, a plain ellipse
+const SQUAREST_VIGNETTE: f32 = 10.0;
+// a shade that leaves a pixel as it is
+const FULL_SHADE: u16 = 256;
+
+/// Darkens towards the edges, like an old tube. Its shape goes from the screen's own rectangle with
+/// rounded corners to an ellipse as `roundness` goes up.
+#[derive(Clone, Debug)]
+pub struct Vignette {
+    /// How dark the edges get, 1.0 for black.
+    pub strength: f32,
+    /// How much of the middle stays as it is, 0.0 for none, 0.9 for nearly out to the edges.
+    pub size: f32,
+    /// 0.0 for nearly square corners, 1.0 for an ellipse.
+    pub roundness: f32,
+    // each pixel's shade, worked out once per screen size and settings
+    shades: Prepared<(i32, i32, [u32; 3]), Vec<u16>>,
+}
+
+impl Default for Vignette {
+    fn default() -> Self {
+        return Self {
+            strength: VIGNETTE_PARAMS[0].default,
+            size: VIGNETTE_PARAMS[1].default,
+            roundness: VIGNETTE_PARAMS[2].default,
+            shades: Prepared::default(),
+        };
+    }
+}
+
+impl FilterParams for Vignette {
+    fn params(&self) -> &'static [Param] {
+        return VIGNETTE_PARAMS;
+    }
+
+    fn param(&self, index: usize) -> f32 {
+        return match index {
+            0 => self.strength,
+            1 => self.size,
+            2 => self.roundness,
+            _ => 0.0,
+        };
+    }
+
+    fn set_param(&mut self, index: usize, value: f32) {
+        let Some(param) = VIGNETTE_PARAMS.get(index) else {
+            return;
+        };
+        let value = param.clamp(value);
+        match index {
+            0 => self.strength = value,
+            1 => self.size = value,
+            _ => self.roundness = value,
+        }
+    }
+}
+
+impl Vignette {
+    // each pixel's shade out of FULL_SHADE. The superellipse distance (|dx|^n + |dy|^n)^(1/n) is 1.0
+    // all along the edges' middles out and a little more in the corners
+    fn shades(&self, width: i32, height: i32) -> Vec<u16> {
+        let exponent = SQUAREST_VIGNETTE - (SQUAREST_VIGNETTE - 2.0) * self.roundness;
+        let part = |position: i32, size: i32| centred(position, size).abs().powf(exponent);
+        let columns: Vec<f32> = (0..width).map(|x| part(x, width)).collect();
+        let mut shades = Vec::with_capacity((width * height) as usize);
+        for y in 0..height {
+            let row_part = part(y, height);
+            for column_part in &columns {
+                let distance = (column_part + row_part).powf(1.0 / exponent);
+                shades.push((self.keep(distance) * FULL_SHADE as f32).round() as u16);
+            }
+        }
+        return shades;
+    }
+
+    // what's left of a pixel `distance` from the middle, where 1.0 is the middle of an edge.
+    // smoothstep, so the dark comes in gently and levels off at the edges
+    fn keep(&self, distance: f32) -> f32 {
+        let fade = ((distance - self.size) / (1.0 - self.size).max(f32::EPSILON)).clamp(0.0, 1.0);
+        return 1.0 - self.strength * fade * fade * (3.0 - 2.0 * fade);
+    }
+}
+
+impl Filter for Vignette {
+    fn apply(&self, frame: &mut Framebuffer) {
+        if self.strength <= 0.0 {
+            return;
+        }
+        let (width, height) = (frame.width(), frame.height());
+        let settings = [self.strength, self.size, self.roundness].map(f32::to_bits);
+        let shades = self
+            .shades
+            .get((width, height, settings), || self.shades(width, height));
+        for (pixel, &shade) in frame.pixels_mut().iter_mut().zip(shades.iter()) {
+            *pixel = pixel.map(|channel| (channel as u16 * shade / FULL_SHADE) as u8);
+        }
+    }
+}
+
+const NOISE_PARAMS: &[Param] = &[Param {
+    name: "Amount",
+    min: 0.0,
+    max: 0.5,
+    step: 0.02,
+    default: 0.08,
+}];
+
+/// Static: every pixel goes a random bit lighter or darker, different each frame.
+/// [`Filter::advance_frame`] moves `frame` on.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Noise {
+    /// The most a pixel changes, out of 1.0.
+    pub amount: f32,
+    pub frame: u32,
+}
+
+impl Default for Noise {
+    fn default() -> Self {
+        return Self {
+            amount: NOISE_PARAMS[0].default,
+            frame: 0,
+        };
+    }
+}
+
+impl FilterParams for Noise {
+    fn params(&self) -> &'static [Param] {
+        return NOISE_PARAMS;
+    }
+
+    fn param(&self, index: usize) -> f32 {
+        return if index == 0 { self.amount } else { 0.0 };
+    }
+
+    fn set_param(&mut self, index: usize, value: f32) {
+        if let Some(param) = NOISE_PARAMS.get(index) {
+            self.amount = param.clamp(value);
+        }
+    }
+}
+
+impl Filter for Noise {
+    fn advance_frame(&mut self) {
+        self.frame = self.frame.wrapping_add(1);
+    }
+
+    fn apply(&self, frame: &mut Framebuffer) {
+        let most = (self.amount * u8::MAX as f32) as i32;
+        if most == 0 {
+            return;
+        }
+        for (index, pixel) in frame.pixels_mut().iter_mut().enumerate() {
+            // the hash's top 16 bits, -32768 to 32767, scaled to -most to most
+            let change = ((hash(index as u32, self.frame) >> 16) as i32 - 32768) * most / 32768;
+            *pixel = pixel.map(|channel| (channel as i32 + change).clamp(0, 255) as u8);
+        }
+    }
+}
+
+/// Something a filter works out from the screen size and its settings, kept until either changes.
+#[derive(Debug)]
+struct Prepared<K, V>(Mutex<Option<(K, Arc<V>)>>);
+
+impl<K, V> Default for Prepared<K, V> {
+    fn default() -> Self {
+        return Self(Mutex::new(None));
+    }
+}
+
+// a copy works it out again when it's first used
+impl<K, V> Clone for Prepared<K, V> {
+    fn clone(&self) -> Self {
+        return Self::default();
+    }
+}
+
+impl<K: PartialEq, V> Prepared<K, V> {
+    fn get(&self, key: K, prepare: impl FnOnce() -> V) -> Arc<V> {
+        let mut slot = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some((kept, value)) = slot.as_ref() {
+            if *kept == key {
+                return Arc::clone(value);
+            }
+        }
+        let value = Arc::new(prepare());
+        *slot = Some((key, Arc::clone(&value)));
+        return value;
+    }
+}
+
+// -1.0 at the left or top edge to 1.0 at the right or bottom, through a pixel's middle
+fn centred(position: i32, size: i32) -> f32 {
+    return (position as f32 + 0.5) / size.max(1) as f32 * 2.0 - 1.0;
+}
+
+// the pixel at `centred` position `d`
+fn uncentred(d: f32, size: i32) -> i32 {
+    return ((d + 1.0) * 0.5 * size as f32).floor() as i32;
+}
+
 // large odd numbers that spread nearby inputs far apart: the golden ratio as a u32, and two
 // mixing constants from MurmurHash3
 const GOLDEN_RATIO: u32 = 0x9E37_79B9;
@@ -447,13 +783,18 @@ const MURMUR_MIX_2: u32 = 0x2C1B_3C6D;
 const FIRST_SHIFT: u32 = 15;
 const SECOND_SHIFT: u32 = 12;
 
-// hash function, -1.0..1.0, full deterministic
-fn noise(line: u32, frame: u32) -> f32 {
-    let mut hash = line.wrapping_mul(GOLDEN_RATIO) ^ frame.wrapping_mul(MURMUR_MIX_1);
+// the same every time for the same index and frame, but all over the place from one to the next
+fn hash(index: u32, frame: u32) -> u32 {
+    let mut hash = index.wrapping_mul(GOLDEN_RATIO) ^ frame.wrapping_mul(MURMUR_MIX_1);
     hash ^= hash >> FIRST_SHIFT;
     hash = hash.wrapping_mul(MURMUR_MIX_2);
     hash ^= hash >> SECOND_SHIFT;
-    return hash as f32 / u32::MAX as f32 * 2.0 - 1.0;
+    return hash;
+}
+
+// -1.0..1.0
+fn noise(index: u32, frame: u32) -> f32 {
+    return hash(index, frame) as f32 / u32::MAX as f32 * 2.0 - 1.0;
 }
 
 #[cfg(test)]
@@ -516,12 +857,91 @@ mod tests {
     }
 
     #[test]
+    fn curvature_pulls_the_corners_in() {
+        let mut frame = Framebuffer::new(20, 20);
+        frame.fill(Rect::new(0, 0, 20, 20), Rgba::rgb(255, 255, 255));
+        Curvature {
+            amount: 0.3,
+            ..Curvature::default()
+        }
+        .apply(&mut frame);
+        assert_eq!(frame.pixel(0, 0), Some([0; 3]));
+        assert_eq!(frame.pixel(10, 10), Some([255; 3]));
+        let mut flat = grey(4, 4);
+        Curvature {
+            amount: 0.0,
+            ..Curvature::default()
+        }
+        .apply(&mut flat);
+        assert_eq!(flat, grey(4, 4));
+    }
+
+    #[test]
+    fn vignette_darkens_towards_the_edges() {
+        let mut frame = grey(20, 20);
+        Vignette {
+            strength: 1.0,
+            size: 0.0,
+            roundness: 1.0,
+            ..Vignette::default()
+        }
+        .apply(&mut frame);
+        let [corner, edge, between, middle] =
+            [(0, 0), (0, 10), (5, 10), (10, 10)].map(|(x, y)| frame.pixel(x, y).unwrap()[0]);
+        assert!(corner <= edge && edge < between && between < middle);
+        assert!(edge < 10 && middle >= 95);
+    }
+
+    #[test]
+    fn roundness_goes_from_the_rectangle_to_an_ellipse() {
+        // a point out along the diagonal against one just as far out straight to the side: the
+        // squarer it is, the closer the two are
+        let gap = |roundness: f32| {
+            let mut frame = grey(40, 40);
+            Vignette {
+                strength: 1.0,
+                size: 0.5,
+                roundness,
+                ..Vignette::default()
+            }
+            .apply(&mut frame);
+            let shade = |x, y| frame.pixel(x, y).unwrap()[0] as i32;
+            shade(33, 20) - shade(33, 33)
+        };
+        assert!(gap(0.0) < gap(1.0));
+        assert!(gap(0.0) >= 0);
+    }
+
+    #[test]
+    fn noise_changes_pixels_by_up_to_the_amount_and_each_frame() {
+        let noise = Noise {
+            amount: 0.1,
+            frame: 0,
+        };
+        let mut first = grey(16, 16);
+        noise.apply(&mut first);
+        assert_ne!(first, grey(16, 16));
+        assert!(
+            first
+                .pixels()
+                .iter()
+                .all(|pixel| (74..=126).contains(&pixel[0]))
+        );
+        let mut later = grey(16, 16);
+        Noise { frame: 1, ..noise }.apply(&mut later);
+        assert_ne!(later, first);
+    }
+
+    #[test]
     fn params_by_index_are_clamped() {
         let mut filters: Vec<Box<dyn AdjustableFilter>> = vec![
             Box::new(Scanlines::default()),
             Box::new(ChromaticAberration::default()),
             Box::new(VhsWobble::default()),
             Box::new(ColorAdjust::default()),
+            Box::new(Curvature::default()),
+            Box::new(Vignette::default()),
+            Box::new(Noise::default()),
         ];
         for filter in &mut filters {
             for (index, param) in filter.params().iter().enumerate() {

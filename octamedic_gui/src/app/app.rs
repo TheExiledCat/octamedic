@@ -44,6 +44,9 @@ const CURSOR: &[u8] = include_bytes!("../../assets/cursor.png");
 
 // the pointer sprite's pixels are twice as wide as the screen's
 const CURSOR_SCALE: [f32; 2] = [2.0, 1.0];
+// the most a filter that bends the picture gets the screen enlarged each way. More than the window
+// shows would only be squeezed out again
+const MAX_FILTER_SCALE: i32 = 2;
 
 pub struct App {
     state: AppState,
@@ -200,7 +203,9 @@ impl App {
         self.dispatch(event(self.pointer));
     }
 
-    // painted in memory instead of straight onto the GPU, so the filters get the finished pixels
+    // painted in memory instead of straight onto the GPU, so the filters get the finished pixels.
+    // Curvature gets them enlarged as far as the window shows, so it doesn't drop whole rows and
+    // columns
     fn filtered_screen(&mut self, ctx: &Context, area: Rect) -> Image {
         let mut frame = Framebuffer::new(area.w, area.h);
         {
@@ -209,30 +214,29 @@ impl App {
             self.dialogs.render(&self.state, area, &mut painter);
         }
         self.cursor_pixels.paint(&mut frame, self.pointer);
-        self.state.screen_filters.apply(&mut frame);
-        let rgba: Vec<u8> = frame
-            .pixels()
-            .iter()
-            .flat_map(|&[r, g, b]| [r, g, b, u8::MAX])
-            .collect();
+        let shown = [
+            self.viewport.w / area.w as f32,
+            self.viewport.h / area.h as f32,
+        ];
+        let finer = shown.map(|scale| (scale.floor() as i32).clamp(1, MAX_FILTER_SCALE));
+        let frame = self.state.screen_filters.apply(frame, finer);
         return Image::from_pixels(
             ctx,
-            &rgba,
+            &frame.to_rgba(),
             ImageFormat::Rgba8UnormSrgb,
-            area.w as u32,
-            area.h as u32,
+            frame.width() as u32,
+            frame.height() as u32,
         );
     }
 
-    fn render_screen(&mut self, ctx: &mut Context) -> GameResult {
-        let mut canvas = Canvas::from_image(ctx, self.screen.clone(), Color::BLACK);
-        canvas.set_sampler(Sampler::nearest_clamp());
+    // the picture to show: the screen, or with filters on a bigger filtered copy of it
+    fn render_screen(&mut self, ctx: &mut Context) -> GameResult<Image> {
         let area = screen(self.video).rect();
         if self.state.screen_filters.is_active() {
-            let filtered = self.filtered_screen(ctx, area);
-            canvas.draw(&filtered, DrawParam::new());
-            return canvas.finish(ctx);
+            return Ok(self.filtered_screen(ctx, area));
         }
+        let mut canvas = Canvas::from_image(ctx, self.screen.clone(), Color::BLACK);
+        canvas.set_sampler(Sampler::nearest_clamp());
         {
             let mut target = BatchedCanvas::new(&ctx.gfx, &mut canvas, area);
             let mut painter = Painter::new(&mut target, &self.state.palette);
@@ -245,7 +249,8 @@ impl App {
             .dest([x as f32, y as f32])
             .scale(CURSOR_SCALE);
         canvas.draw(&self.cursor, cursor);
-        return canvas.finish(ctx);
+        canvas.finish(ctx)?;
+        return Ok(self.screen.clone());
     }
 }
 
@@ -272,16 +277,15 @@ impl EventHandler for App {
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
-        self.render_screen(ctx)?;
+        let picture = self.render_screen(ctx)?;
         let mut frame = Canvas::from_frame(ctx, Color::BLACK);
         frame.set_sampler(Sampler::nearest_clamp());
         let Viewport { x, y, w, h } = self.viewport;
-        let screen = screen(self.video);
         frame.draw(
-            &self.screen,
+            &picture,
             DrawParam::new()
                 .dest([x, y])
-                .scale([w / screen.width as f32, h / screen.height as f32]),
+                .scale([w / picture.width() as f32, h / picture.height() as f32]),
         );
         frame.finish(ctx)?;
         self.wait_for_next_frame();
