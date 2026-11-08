@@ -860,10 +860,10 @@ fn delete(state: &mut AppState, whole_cell: bool) {
             *cell = cleared;
         }
     });
-    if whole_cell || cursor.column == 0 {
-        state.advance_after_note();
-    } else {
+    if !whole_cell && cursor.column >= FIRST_COMMAND_COLUMN {
         state.advance_after_digit();
+    } else {
+        state.advance_after_note();
     }
 }
 
@@ -900,7 +900,11 @@ fn enter_digit(state: &mut AppState, key: char) -> bool {
         return false;
     };
     state.edit_track(cursor.line, cursor.track, |cell| *cell = typed);
-    state.advance_after_digit();
+    if cursor.column >= FIRST_COMMAND_COLUMN {
+        state.advance_after_digit();
+    } else {
+        state.advance_after_note();
+    }
     return true;
 }
 

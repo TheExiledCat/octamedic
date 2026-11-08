@@ -2,6 +2,9 @@ use octamedic_core::data::instrument::InstrumentId;
 
 use crate::app::state::AppState;
 
+// the command and value digits, after the note and instrument
+const COMMAND_COLUMNS: std::ops::RangeInclusive<usize> = 2..=5;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum NoteAdvance {
     Up,
@@ -31,16 +34,16 @@ impl AppState {
         }
     }
 
-    // without a command advance the digits move like notes do
+    // without a command advance the digits move like notes do. With one the cursor stays among
+    // the command digits, stopping at either end
     pub fn advance_after_digit(&mut self) {
-        let tracks = self
-            .active_pattern()
-            .map_or(0, |pattern| pattern.track_count());
-        match self.command_advance {
-            Some(CommandAdvance::Right) => self.cursor.move_columns(1, tracks),
-            Some(CommandAdvance::Left) => self.cursor.move_columns(-1, tracks),
-            None => self.advance_after_note(),
-        }
+        let step = match self.command_advance {
+            Some(CommandAdvance::Right) => 1,
+            Some(CommandAdvance::Left) => -1,
+            None => return self.advance_after_note(),
+        };
+        let column = self.cursor.column.saturating_add_signed(step);
+        self.cursor.column = column.clamp(*COMMAND_COLUMNS.start(), *COMMAND_COLUMNS.end());
     }
 
     pub fn play_line(&self, line: usize) {
@@ -100,9 +103,13 @@ mod tests {
         state.command_advance = Some(CommandAdvance::Right);
         state.advance_after_digit();
         assert_eq!((state.cursor.line, state.cursor.column), (1, 3));
+        state.cursor.column = 5;
+        state.advance_after_digit();
+        assert_eq!(state.cursor.column, 5);
         state.command_advance = Some(CommandAdvance::Left);
-        state.advance_after_digit();
-        state.advance_after_digit();
-        assert_eq!(state.cursor.column, 1);
+        for _ in 0..4 {
+            state.advance_after_digit();
+        }
+        assert_eq!((state.cursor.track, state.cursor.column), (0, 2));
     }
 }

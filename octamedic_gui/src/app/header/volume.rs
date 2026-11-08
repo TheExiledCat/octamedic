@@ -89,6 +89,7 @@ impl Volume {
 
 impl Gadget<AppState, Event> for Volume {
     fn update(&mut self, state: &mut AppState) {
+        state.typing |= self.track_volume.is_focused() || self.master_volume.is_focused();
         let track = self.active_track;
         for (step, button) in STEPS.iter().zip(&mut self.track_steps) {
             if button.clicked().is_some() {

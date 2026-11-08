@@ -263,6 +263,7 @@ fn step_button(arrow: &'static Picture) -> Button {
 
 impl Gadget<AppState, Event> for Block {
     fn update(&mut self, state: &mut AppState) {
+        state.typing |= self.lines_box.is_focused() || self.expand_factor.is_focused();
         let clipboard: [(&mut Button, fn(&mut AppState)); 9] = [
             (&mut self.cut_track, AppState::cut_track),
             (&mut self.copy_track, AppState::copy_track),

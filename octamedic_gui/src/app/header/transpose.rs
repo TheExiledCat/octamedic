@@ -334,6 +334,7 @@ impl Default for Transpose {
 
 impl Gadget<AppState, Event> for Transpose {
     fn update(&mut self, state: &mut AppState) {
+        state.typing |= self.text.is_focused();
         self.update_choices();
         self.update_notes(state);
         self.update_instruments(state);

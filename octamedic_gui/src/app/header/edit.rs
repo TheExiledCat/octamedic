@@ -13,7 +13,7 @@ use crate::{
             range,
         },
         keypad::KeypadMap,
-        state::{AppState, MAX_OCTAVE, SELECTABLE_TRACKS},
+        state::{AppState, MAX_LINE_ADD, MAX_OCTAVE, SELECTABLE_TRACKS},
     },
     framework::{
         event::Event,
@@ -31,7 +31,6 @@ const EDIT_ON: Rect = Rect::new(370, 22, 76, 10);
 const SPC: Rect = Rect::new(368, 33, 44, 12);
 const LINE_ADD: Rect = Rect::new(412, 33, 36, 12);
 const LINE_ADD_DIGITS: usize = 2;
-const MAX_LINE_ADD: u8 = 16;
 
 const OCTAVE_FIRST: Rect = Rect::new(58, 22, 17, 12);
 
@@ -382,6 +381,7 @@ impl Default for Edit {
 
 impl Gadget<AppState, Event> for Edit {
     fn update(&mut self, state: &mut AppState) {
+        state.typing |= self.line_add.is_focused();
         self.update_tracks(state);
         self.update_keypad(state);
         self.update_switches(state);
@@ -521,6 +521,15 @@ mod tests {
         panel.handle_event(&mut state, &event);
         panel.handle_event(&mut state, &Event::text('5'));
         assert_eq!(state.line_add, 5);
+    }
+
+    #[test]
+    fn a_focused_line_add_counts_as_typing() {
+        let (mut panel, mut state) = setup();
+        click(&mut panel, &mut state, LINE_ADD);
+        state.typing = false;
+        panel.update(&mut state);
+        assert!(state.typing);
     }
 
     #[test]

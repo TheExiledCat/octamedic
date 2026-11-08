@@ -11,7 +11,8 @@ pub enum KeypadMap {
 }
 
 // the Amiga keypad's ( and ) have no key on a PC keypad, so what they do on the real thing is left
-// out: tracks 0 and 1 and instruments 1 and 2 without MAP2, tracks A and B with it
+// out: tracks 0 and 1 and instruments 1 and 2 without MAP2, tracks A and B with it. MAP2 has no
+// keys for tracks E and F on the real thing either
 const TRACKS: [(KeyCode, usize); 14] = [
     (KeyCode::NumpadDivide, 0x2),
     (KeyCode::NumpadMultiply, 0x3),

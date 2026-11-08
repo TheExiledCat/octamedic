@@ -47,6 +47,8 @@ pub const MAX_INSTRUMENT: u8 = MAX_INSTRUMENTS as u8;
 
 // the keyboard's bottom row. F1 to F5 only go up to 5, the status bar's octaves box to 9
 pub const MAX_OCTAVE: u8 = 9;
+// the most SPC's box takes, from the manual
+pub const MAX_LINE_ADD: u8 = 16;
 
 const SEMITONES: u8 = SEMITONES_PER_OCTAVE;
 
@@ -879,7 +881,7 @@ impl AppState {
     }
 
     pub fn increase_line_add(&mut self) {
-        self.line_add = self.line_add.saturating_add(1);
+        self.line_add = (self.line_add + 1).min(MAX_LINE_ADD);
     }
 
     pub fn decrease_line_add(&mut self) {
