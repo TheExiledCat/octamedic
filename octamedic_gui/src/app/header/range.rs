@@ -9,7 +9,10 @@ use rustuition::{
 use crate::{
     app::{
         fonts,
-        header::labels::{Picture, Words, draw_pixels, draw_words, picture, placed},
+        header::{
+            edit,
+            labels::{Words, draw_pixels, draw_words, placed, placed_at},
+        },
         state::{AppState, SELECTABLE_TRACKS},
     },
     framework::{
@@ -21,8 +24,8 @@ use crate::{
 // from the panel's top left, measured from OctaMED. The rows are 11px with a 1px gap above the
 // fourth
 const SELECT_FIRST: Rect = Rect::new(48, 0, 22, 11);
-const SET: Rect = Rect::new(400, 0, 24, 11);
-const CLR: Rect = Rect::new(424, 0, 24, 11);
+pub const SET: Rect = Rect::new(400, 0, 24, 11);
+pub const CLR: Rect = Rect::new(424, 0, 24, 11);
 
 const SELECT_TRACK: Rect = Rect::new(0, 11, 105, 11);
 const CUT: Rect = Rect::new(105, 11, 58, 11);
@@ -104,9 +107,9 @@ impl Range {
             field
         };
         return Self {
-            select: std::array::from_fn(|track| Button::new(picture(&SELECT_DIGITS[track]))),
-            set: Button::new(picture(&SET_LABEL)),
-            clr: Button::new(picture(&CLR_LABEL)),
+            select: std::array::from_fn(edit::track_digit),
+            set: Button::new(placed_at(fonts::TALL, 2, &[(4, "SET")])),
+            clr: Button::new(placed_at(fonts::TALL, 2, &[(4, "CLR")])),
             select_track: label(&[(9, "SELECT"), (59, "TRACK")]),
             select_block: label(&[(9, "SELECT"), (59, "BLOCK")]),
             cut: label(&[(19, "CUT")]),
@@ -116,7 +119,7 @@ impl Range {
             clear: label(&[(11, "CLEAR")]),
             cancel: label(&[(7, "CANCEL")]),
             slide_vol: label(&[(7, "VOL")]),
-            chord: Button::new(placed(fonts::PANEL, &[(8, "CHORD")])),
+            chord: Button::new(placed(fonts::PANEL, &[(9, "CHORD")])),
             chord_reset: Button::new(placed(fonts::NARROW_LABEL, &[(4, "RST")])),
             unhooked: vec![
                 unhooked(fonts::LABEL, &[(5, "2")], SPREAD[0]),
@@ -153,7 +156,7 @@ impl Range {
         ];
     }
 
-    fn select_rect(track: usize) -> Rect {
+    pub fn select_rect(track: usize) -> Rect {
         let x = SELECT_FIRST.x + track as i32 * SELECT_FIRST.w;
         return Rect::new(x, SELECT_FIRST.y, SELECT_FIRST.w, SELECT_FIRST.h);
     }
@@ -284,221 +287,6 @@ fn render_range(state: &AppState, area: Rect, painter: &mut Painter) {
 const RANGE_ARROW: [&str; 5] = ["##....", "####..", "######", "####..", "##...."];
 
 // OctaMED's own digits, taller than any of the fonts
-static SELECT_DIGITS: [Picture; SELECTABLE_TRACKS] = [
-    Picture {
-        at: [6, 2],
-        rows: &[
-            "..######..",
-            ".##....##.",
-            "##......##",
-            "##......##",
-            "##......##",
-            ".##....##.",
-            "..######..",
-        ],
-    },
-    Picture {
-        at: [8, 2],
-        rows: &[
-            "..##..", ".###..", "..##..", "..##..", "..##..", "..##..", "######",
-        ],
-    },
-    Picture {
-        at: [6, 2],
-        rows: &[
-            ".########.",
-            "##......##",
-            "........##",
-            "......###.",
-            "....###...",
-            "..###.....",
-            "##########",
-        ],
-    },
-    Picture {
-        at: [6, 2],
-        rows: &[
-            ".########.",
-            "##......##",
-            "........##",
-            "....#####.",
-            "........##",
-            "##......##",
-            ".########.",
-        ],
-    },
-    Picture {
-        at: [6, 2],
-        rows: &[
-            "...##...##",
-            "..##....##",
-            ".##.....##",
-            "##......##",
-            "##########",
-            "........##",
-            "........##",
-        ],
-    },
-    Picture {
-        at: [6, 2],
-        rows: &[
-            "##########",
-            "##........",
-            "#########.",
-            "........##",
-            "........##",
-            "##......##",
-            ".########.",
-        ],
-    },
-    Picture {
-        at: [6, 2],
-        rows: &[
-            ".########.",
-            "##........",
-            "##........",
-            "#########.",
-            "##......##",
-            "##......##",
-            ".########.",
-        ],
-    },
-    Picture {
-        at: [6, 2],
-        rows: &[
-            "##########",
-            "........##",
-            ".......##.",
-            "......##..",
-            ".....##...",
-            "....##....",
-            "...##.....",
-        ],
-    },
-    Picture {
-        at: [6, 2],
-        rows: &[
-            ".########.",
-            "##......##",
-            "##......##",
-            ".########.",
-            "##......##",
-            "##......##",
-            ".########.",
-        ],
-    },
-    Picture {
-        at: [6, 2],
-        rows: &[
-            ".########.",
-            "##......##",
-            "##......##",
-            ".#########",
-            "........##",
-            "##......##",
-            ".########.",
-        ],
-    },
-    Picture {
-        at: [6, 2],
-        rows: &[
-            "..######..",
-            ".##....##.",
-            "##......##",
-            "##########",
-            "##......##",
-            "##......##",
-            "##......##",
-        ],
-    },
-    Picture {
-        at: [6, 2],
-        rows: &[
-            "#########.",
-            "##......##",
-            "##......##",
-            "#########.",
-            "##......##",
-            "##......##",
-            "#########.",
-        ],
-    },
-    Picture {
-        at: [6, 2],
-        rows: &[
-            ".########.",
-            "##......##",
-            "##........",
-            "##........",
-            "##........",
-            "##......##",
-            ".########.",
-        ],
-    },
-    Picture {
-        at: [6, 2],
-        rows: &[
-            "#######...",
-            "##....###.",
-            "##......##",
-            "##......##",
-            "##......##",
-            "##....###.",
-            "#######...",
-        ],
-    },
-    Picture {
-        at: [6, 2],
-        rows: &[
-            "##########",
-            "##........",
-            "##........",
-            "######....",
-            "##........",
-            "##........",
-            "##########",
-        ],
-    },
-    Picture {
-        at: [6, 2],
-        rows: &[
-            "##########",
-            "##........",
-            "##........",
-            "######....",
-            "##........",
-            "##........",
-            "##........",
-        ],
-    },
-];
-
-const SET_LABEL: Picture = Picture {
-    at: [4, 2],
-    rows: &[
-        ".###..####..######",
-        "##....##......##..",
-        "##....##......##..",
-        ".##...####....##..",
-        "..##..##......##..",
-        "..##..##......##..",
-        "###...####....##..",
-    ],
-};
-
-const CLR_LABEL: Picture = Picture {
-    at: [4, 2],
-    rows: &[
-        ".###..##....#####.",
-        "##....##....##..##",
-        "##....##....##..##",
-        "##....##....#####.",
-        "##....##....##..##",
-        "##....##....##..##",
-        ".###..####..##..##",
-    ],
-};
-
 #[cfg(test)]
 mod tests {
     use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};

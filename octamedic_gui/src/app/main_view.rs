@@ -151,7 +151,8 @@ impl Gadget<AppState, Event> for MainView {
         }
         // last, so a text field being typed in gets its space first. space stops, shift+space
         // continues the song, like the STOP and CONT. SONG buttons
-        if let Some(mods) = space_bar_mods(event).filter(|_| !taken) {
+        let space_stops = |mods: &KeyMods| mods.contains(KeyMods::SHIFT) || !state.space_deletes;
+        if let Some(mods) = space_bar_mods(event).filter(|_| !taken).filter(space_stops) {
             if mods.contains(KeyMods::SHIFT) {
                 state.start(PlayStart::ContinueSong);
             } else {
@@ -427,7 +428,9 @@ mod tests {
             mods: KeyMods::NONE,
             repeat: false,
         };
-        assert!(!view.handle_event(&mut state, &keypad_5));
+        // without Caps Lock it's the EDIT panel's keypad map, track 9 on and off by default
+        assert!(view.handle_event(&mut state, &keypad_5));
+        assert!(state.is_track_muted(9));
         assert_eq!(state.song().sequence().len(), 1);
         state.caps_lock = true;
         assert!(view.handle_event(&mut state, &keypad_5));

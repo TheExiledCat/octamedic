@@ -25,6 +25,7 @@ use rustuition::palette::{Color, IntuitionColorPalette};
 
 use crate::{
     app::{
+        advance::{CommandAdvance, NoteAdvance},
         block_range::{BlockRange, Cell},
         chord::HeldChord,
         clipboard::Clipboard,
@@ -32,6 +33,7 @@ use crate::{
         cursor::EditCursor,
         files::browser::Browser,
         history::History,
+        keypad::KeypadMap,
         mode::{HeaderMode, MainMode},
         prompt::Prompt,
         screen_filters::ScreenFilters,
@@ -41,7 +43,7 @@ use crate::{
 
 const NOTIFICATION_DURATION: Duration = Duration::from_secs(2);
 
-const MAX_INSTRUMENT: u8 = MAX_INSTRUMENTS as u8;
+pub const MAX_INSTRUMENT: u8 = MAX_INSTRUMENTS as u8;
 
 // the keyboard's bottom row. F1 to F5 only go up to 5, the status bar's octaves box to 9
 pub const MAX_OCTAVE: u8 = 9;
@@ -183,6 +185,12 @@ pub struct AppState {
     pub selected_tracks: [bool; SELECTABLE_TRACKS],
     pub chord_mode: bool,
     pub chord_reset: bool,
+    pub keypad_map: KeypadMap,
+    pub keypad_map2: bool,
+    pub space_deletes: bool,
+    pub note_advance: NoteAdvance,
+    pub command_advance: Option<CommandAdvance>,
+    pub play_on_move: bool,
     pub held_chord: Option<HeldChord>,
     pub last_chord_tracks: Vec<usize>,
     // shown instead of the notification, and holding everything up until it's answered
@@ -270,7 +278,7 @@ impl AppState {
             active_sequence_index: 0,
             active_instrument: InstrumentId(1),
             current_octave: 1,
-            line_add: 1,
+            line_add: 2,
             spacing: false,
             caps_lock: false,
             name_edit_request: None,
@@ -282,6 +290,12 @@ impl AppState {
             selected_tracks: [true; SELECTABLE_TRACKS],
             chord_mode: false,
             chord_reset: false,
+            keypad_map: KeypadMap::default(),
+            keypad_map2: false,
+            space_deletes: false,
+            note_advance: NoteAdvance::default(),
+            command_advance: None,
+            play_on_move: false,
             held_chord: None,
             last_chord_tracks: Vec::new(),
             prompt: None,
@@ -501,6 +515,18 @@ impl AppState {
 
     pub fn is_track_muted(&self, track: usize) -> bool {
         return self.muted_tracks.get(track).copied().unwrap_or(false);
+    }
+
+    pub fn set_track_muted(&mut self, track: usize, muted: bool) {
+        if self.is_track_muted(track) != muted {
+            self.toggle_track_mute(track);
+        }
+    }
+
+    pub fn set_all_tracks_muted(&mut self, muted: bool) {
+        for track in 0..SONG_TRACKS {
+            self.set_track_muted(track, muted);
+        }
     }
 
     pub fn toggle_track_mute(&mut self, track: usize) {

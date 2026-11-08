@@ -29,7 +29,7 @@ use rustuition::{
 use crate::macos;
 use crate::{
     app::{
-        config::Config, main_view::MainView, prompt, screen, state::AppState,
+        config::Config, keypad, main_view::MainView, prompt, screen, state::AppState,
         window_shape::WindowShape,
     },
     framework::{
@@ -65,6 +65,8 @@ pub struct App {
     key_repeated: bool,
     // the last key pressed went to a prompt
     prompt_took_key: bool,
+    // the keypad never types notes, only into a box being typed in
+    drop_keypad_char: bool,
     key_repeat: KeyRepeat,
     // the text event after a held back repeat gets dropped too
     repeat_held_back: bool,
@@ -103,6 +105,7 @@ impl App {
             next_frame: Instant::now(),
             key_repeated: false,
             prompt_took_key: false,
+            drop_keypad_char: false,
             key_repeat: KeyRepeat::default(),
             repeat_held_back: false,
             alts_held: [false; 2],
@@ -386,6 +389,7 @@ impl EventHandler for App {
             repeat: repeated,
         };
         self.prompt_took_key = self.state.prompt.is_some();
+        self.drop_keypad_char = keypad::is_keypad(key) && !self.state.typing;
         self.dispatch(event);
         return Ok(());
     }
@@ -403,7 +407,7 @@ impl EventHandler for App {
 
     fn text_input_event(&mut self, ctx: &mut Context, character: char) -> GameResult {
         // the letter of a key that answered a prompt isn't typed as well
-        if self.repeat_held_back || self.prompt_took_key {
+        if self.repeat_held_back || self.prompt_took_key || self.drop_keypad_char {
             return Ok(());
         }
         let shift = ctx.keyboard.active_mods().contains(KeyMods::SHIFT);
