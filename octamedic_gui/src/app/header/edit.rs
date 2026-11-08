@@ -195,8 +195,8 @@ impl Edit {
         let unhooked = |button: Button, rect: Rect| (button.enabled(false), rect);
         return Self {
             tracks_on: std::array::from_fn(track_digit),
-            all_on: Button::new(placed_at(fonts::TALL, 2, &[(3, "SET")])),
-            all_off: Button::new(placed_at(fonts::TALL, 2, &[(3, "CLR")])),
+            all_on: all_tracks_button(ALL_ON_WORDS),
+            all_off: all_tracks_button(ALL_OFF_WORDS),
             track_on_off: narrow(&[(4, "TRK"), (29, "ON/OFF")]),
             select_instrument: narrow(&[
                 (4, "S"),
@@ -421,6 +421,13 @@ impl Gadget<AppState, Event> for Edit {
         }
         self.line_add.render(state, LINE_ADD.within(area), painter);
     }
+}
+
+pub const ALL_ON_WORDS: Words = &[(3, "SET")];
+pub const ALL_OFF_WORDS: Words = &[(3, "CLR")];
+
+pub fn all_tracks_button(words: Words) -> Button {
+    return Button::new(placed_at(fonts::TALL, 2, words));
 }
 
 pub fn track_digit(track: usize) -> Button {

@@ -24,8 +24,9 @@ adds on top, in `src/framework/`, and how OctaMED's screens in `src/app/` are pu
   only), `SMALL` (the status row flags like `CHRD`, 5 lines), `LABEL` (play panel labels), `TITLE`,
   `AUTHOR`, `EDITOR` (16px wide block editor chars), `TRACKS` (the track digits of TRK ON: and
   SELECT:), `TRACKS_BOLD` (TRKS:'s, which OctaMED drew bolder and wider rather than just bold),
-  `TALL` (SET and CLR), `BIG` (the EDIT panel's OCTAVE digits, EDIT ON and SPC) and
-  `LABEL_SMALL_DOT` (`LABEL` with the 1px full stop of L.ALT and R.ALT). Letters and
+  `TALL` (SET and CLR), `BIG` (the EDIT panel's OCTAVE digits, EDIT ON and SPC, and RANGE's
+  CHORD), `TIMER_LABEL` (`BIG` with the title bar's own M and R) and `LABEL_SMALL_DOT` (`LABEL`
+  with the 1px full stop of L.ALT and R.ALT). Letters and
   digits always come from a font; only symbols like arrows are pictures. `cargo test` checks the
   files parse.
 - `app/pens.rs`: OctaMED's pens past rustuition's four, `RED`, `ROSE`, `PINK` and `BLUSH`. The
@@ -295,8 +296,9 @@ there, and PASTE SELECT does the same from the first track picked with SELECT: 0
 the cursor's (SET picks them all, CLR none; the TRANS panel's SEL.TRKS uses them all). CLEAR
 empties the range and CANCEL drops it. The
 RANGE: boxes show its first and last track and line. SPREAD, SLIDE: 1 and 2 and NOTE ECHO are
-ghosted. The SELECT: digits are `fonts::TRACKS` and SET and CLR `fonts::TALL`, shared with the EDIT
-panel (`header/labels.rs` has the hand placed labels the panels share).
+ghosted. CHORD's label is embossed, shine over a shadow (`labels::embossed`), and RST is a
+small button inside its right end. With no range the RANGE: boxes show `-` and `---`. The SELECT:
+digits are `fonts::TRACKS` and SET and CLR `fonts::TALL`, shared with the EDIT panel (`header/labels.rs` has the hand placed labels the panels share).
 
 The TRANS panel (`header/transpose.rs`, the edits in `app/transpose.rs`) works on the cells AFFECT
 picks: every block of the song, the block, the cursor's track, the tracks picked with SELECT: 0 to F

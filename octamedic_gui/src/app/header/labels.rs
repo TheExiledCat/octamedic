@@ -24,6 +24,16 @@ pub fn placed_at(font: Font, top: i32, words: Words) -> impl Fn(ContentArea, Pen
     };
 }
 
+/// OctaMED's raised lettering: shine with a shadow a pixel down and right.
+pub fn embossed(font: Font, top: i32, words: Words) -> impl Fn(ContentArea, Pen, &mut Painter) {
+    return move |area, _, painter| {
+        let [left, button_top] = button_origin(area);
+        let shadow = [left + 1, button_top + top + 1];
+        draw_words(painter, font, shadow, words, Pen::BACKGROUND);
+        draw_words(painter, font, [left, button_top + top], words, Pen::SHINE);
+    };
+}
+
 /// A label and a symbol beside it, each placed from the button's top left.
 pub fn placed_with_picture(
     font: Font,

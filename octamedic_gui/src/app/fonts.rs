@@ -35,8 +35,10 @@ pub const TRACKS_BOLD: Font = Font::new(|| &TRACKS_BOLD_FONT);
 // the tall SET and CLR beside the track digits
 pub const TALL: Font = Font::new(|| &TALL_FONT);
 
-// the EDIT panel's OCTAVE digits, EDIT ON and SPC
+// the EDIT panel's OCTAVE digits, EDIT ON and SPC, and CHORD
 pub const BIG: Font = Font::new(|| &BIG_FONT);
+// BIG with the title bar's own M and R, for TIMER
+pub const TIMER_LABEL: Font = Font::new(|| &TIMER_LABEL_FONT);
 
 // 16px wide block editor chars for blocks with few tracks, double width topaz otherwise
 pub const EDITOR: Font = Font::new(|| &EDITOR_FONT);
@@ -55,6 +57,7 @@ const TRACKS_BOLD_GLYPHS: &str = include_str!("../../assets/fonts/tracks_bold.tx
 const TALL_GLYPHS: &str = include_str!("../../assets/fonts/tall.txt");
 const BIG_GLYPHS: &str = include_str!("../../assets/fonts/big.txt");
 const SMALL_DOT_GLYPHS: &str = include_str!("../../assets/fonts/small_dot.txt");
+const TIMER_GLYPHS: &str = include_str!("../../assets/fonts/timer.txt");
 
 static PANEL_FONT: LazyLock<BitmapFont> = LazyLock::new(|| {
     BitmapFont::new("panel", 6)
@@ -84,13 +87,18 @@ static TALL_FONT: LazyLock<BitmapFont> = LazyLock::new(|| {
         .with_glyphs(TALL_GLYPHS)
 });
 
-static BIG_FONT: LazyLock<BitmapFont> = LazyLock::new(|| {
-    BitmapFont::new("big", 6)
+static BIG_FONT: LazyLock<BitmapFont> = LazyLock::new(|| big_font("big"));
+
+static TIMER_LABEL_FONT: LazyLock<BitmapFont> =
+    LazyLock::new(|| big_font("timer label").with_glyphs(TIMER_GLYPHS));
+
+fn big_font(name: &'static str) -> BitmapFont {
+    return BitmapFont::new(name, 6)
         .bearing(1)
         .space(3)
         .capitals_only()
-        .with_glyphs(BIG_GLYPHS)
-});
+        .with_glyphs(BIG_GLYPHS);
+}
 
 static SMALL_FONT: LazyLock<BitmapFont> = LazyLock::new(|| {
     BitmapFont::new("small", 5)

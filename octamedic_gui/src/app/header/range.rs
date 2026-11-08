@@ -11,7 +11,7 @@ use crate::{
         fonts,
         header::{
             edit,
-            labels::{Words, draw_pixels, draw_words, placed, placed_at},
+            labels::{Words, draw_pixels, draw_words, embossed, placed, placed_at},
         },
         state::{AppState, SELECTABLE_TRACKS},
     },
@@ -27,46 +27,50 @@ const SELECT_FIRST: Rect = Rect::new(48, 0, 22, 11);
 pub const SET: Rect = Rect::new(400, 0, 24, 11);
 pub const CLR: Rect = Rect::new(424, 0, 24, 11);
 
-const SELECT_TRACK: Rect = Rect::new(0, 11, 105, 11);
-const CUT: Rect = Rect::new(105, 11, 58, 11);
-const COPY: Rect = Rect::new(163, 11, 58, 11);
-const PASTE: Rect = Rect::new(221, 11, 58, 11);
-const PASTE_SELECT: Rect = Rect::new(279, 11, 80, 11);
-const CHORD: Rect = Rect::new(359, 11, 64, 11);
-const RST: Rect = Rect::new(423, 11, 25, 11);
+const SELECT_TRACK: Rect = Rect::new(0, 11, 104, 11);
+const CUT: Rect = Rect::new(104, 11, 58, 11);
+const COPY: Rect = Rect::new(162, 11, 58, 11);
+const PASTE: Rect = Rect::new(220, 11, 58, 11);
+const PASTE_SELECT: Rect = Rect::new(278, 11, 80, 11);
+const CHORD: Rect = Rect::new(358, 11, 90, 11);
+// a small button inside CHORD's right end
+const RST: Rect = Rect::new(421, 12, 25, 9);
 
-const SELECT_BLOCK: Rect = Rect::new(0, 22, 105, 11);
-const CLEAR: Rect = Rect::new(105, 22, 58, 11);
-const CANCEL: Rect = Rect::new(163, 22, 58, 11);
+const SELECT_BLOCK: Rect = Rect::new(0, 22, 104, 11);
+const CLEAR: Rect = Rect::new(104, 22, 58, 11);
+const CANCEL: Rect = Rect::new(162, 22, 58, 11);
 const SPREAD: [Rect; 3] = [
-    Rect::new(279, 22, 14, 11),
-    Rect::new(293, 22, 14, 11),
-    Rect::new(307, 22, 14, 11),
+    Rect::new(278, 22, 14, 11),
+    Rect::new(292, 22, 14, 11),
+    Rect::new(306, 22, 14, 11),
 ];
-const SLIDE_1: Rect = Rect::new(377, 22, 18, 11);
-const SLIDE_2: Rect = Rect::new(395, 22, 18, 11);
-const SLIDE_VOL: Rect = Rect::new(413, 22, 35, 11);
+const SLIDE_1: Rect = Rect::new(376, 22, 18, 11);
+const SLIDE_2: Rect = Rect::new(394, 22, 18, 11);
+const SLIDE_VOL: Rect = Rect::new(412, 22, 36, 11);
 
-const NOTE_ECHO: Rect = Rect::new(0, 34, 77, 11);
-const DIST: Rect = Rect::new(108, 34, 28, 11);
-const MIN: Rect = Rect::new(163, 34, 28, 11);
+const NOTE_ECHO: Rect = Rect::new(0, 34, 76, 11);
+const DIST: Rect = Rect::new(107, 34, 28, 11);
+const MIN: Rect = Rect::new(162, 34, 28, 11);
 // the range's first and last track, then its first and last line
 const RANGE_BOXES: [Rect; 4] = [
-    Rect::new(339, 34, 12, 11),
-    Rect::new(361, 34, 12, 11),
-    Rect::new(377, 34, 28, 11),
-    Rect::new(415, 34, 28, 11),
+    Rect::new(338, 34, 12, 11),
+    Rect::new(360, 34, 12, 11),
+    Rect::new(376, 34, 28, 11),
+    Rect::new(414, 34, 28, 11),
 ];
-const RANGE_ARROWS: [[i32; 2]; 2] = [[353, 37], [407, 37]];
+const RANGE_ARROWS: [[i32; 2]; 2] = [[352, 37], [406, 37]];
+const NO_RANGE: [&str; 4] = ["-", "-", "---", "---"];
+// a pixel further apart than the font has them
+const CHORD_LETTERS: Words = &[(6, "C"), (17, "H"), (28, "O"), (39, "R"), (50, "D")];
 const RANGE_TEXT: [i32; 2] = [2, 2];
 
 const LABELS: [([i32; 2], Font, Words); 6] = [
     ([4, 3], fonts::NARROW_LABEL, &[(0, "SELECT"), (39, ":")]),
-    ([229, 25], fonts::LABEL, &[(0, "SPREAD:")]),
-    ([340, 25], fonts::LABEL, &[(0, "SLIDE:")]),
-    ([80, 37], fonts::LABEL, &[(0, "DIST")]),
-    ([140, 37], fonts::LABEL, &[(0, "M"), (10, "IN")]),
-    ([296, 37], fonts::LABEL, &[(0, "RANGE:")]),
+    ([228, 25], fonts::LABEL, &[(0, "SPREAD:")]),
+    ([339, 25], fonts::LABEL, &[(0, "SLIDE:")]),
+    ([80, 37], fonts::LABEL, &[(0, "DIS"), (19, "T")]),
+    ([140, 37], fonts::LABEL, &[(0, "MIN")]),
+    ([295, 37], fonts::LABEL, &[(0, "RANGE:")]),
 ];
 
 const DEFAULT_DIST: &str = "4";
@@ -101,26 +105,36 @@ impl Range {
             return (Button::new(placed(font, words)).enabled(false), rect);
         };
         let number_box = |text: &str| {
-            let mut field = widgets::textbox().font(fonts::INTERFACE);
+            let mut field = widgets::textbox()
+                .font(fonts::INTERFACE)
+                .padding(0)
+                .sunken();
             field.set_text(text);
             field.set_enabled(false);
             field
         };
         return Self {
             select: std::array::from_fn(edit::track_digit),
-            set: Button::new(placed_at(fonts::TALL, 2, &[(4, "SET")])),
-            clr: Button::new(placed_at(fonts::TALL, 2, &[(4, "CLR")])),
+            set: edit::all_tracks_button(edit::ALL_ON_WORDS),
+            clr: edit::all_tracks_button(edit::ALL_OFF_WORDS),
             select_track: label(&[(9, "SELECT"), (59, "TRACK")]),
             select_block: label(&[(9, "SELECT"), (59, "BLOCK")]),
             cut: label(&[(19, "CUT")]),
             copy: label(&[(14, "COPY")]),
             paste: label(&[(11, "PASTE")]),
-            paste_select: Button::new(placed(fonts::NARROW_LABEL, &[(4, "PASTE"), (40, "SELECT")])),
-            clear: label(&[(11, "CLEAR")]),
-            cancel: label(&[(7, "CANCEL")]),
+            paste_select: Button::new(placed(
+                fonts::NARROW_LABEL,
+                &[(4, "PAS"), (24, "TE"), (40, "SELECT")],
+            )),
+            clear: label(&[(12, "CLEAR")]),
+            cancel: label(&[(8, "CANCEL")]),
             slide_vol: label(&[(7, "VOL")]),
-            chord: Button::new(placed(fonts::PANEL, &[(9, "CHORD")])),
-            chord_reset: Button::new(placed(fonts::NARROW_LABEL, &[(4, "RST")])),
+            chord: Button::new(embossed(fonts::BIG, 2, CHORD_LETTERS)),
+            chord_reset: Button::new(placed_at(
+                fonts::NARROW_LABEL,
+                2,
+                &[(3, "R"), (10, "S"), (16, "T")],
+            )),
             unhooked: vec![
                 unhooked(fonts::LABEL, &[(5, "2")], SPREAD[0]),
                 unhooked(fonts::LABEL, &[(5, "3")], SPREAD[1]),
@@ -206,8 +220,8 @@ impl Gadget<AppState, Event> for Range {
             .chain([
                 &mut self.set,
                 &mut self.clr,
-                &mut self.chord,
                 &mut self.chord_reset,
+                &mut self.chord,
             ])
             .any(|button| button.handle_event(state, event));
         return selecting
@@ -256,23 +270,21 @@ fn render_range(state: &AppState, area: Rect, painter: &mut Painter) {
             format!("{:03}", lines.end - 1),
         ];
     });
-    for (index, rect) in RANGE_BOXES.iter().enumerate() {
+    let numbers = numbers.unwrap_or(NO_RANGE.map(String::from));
+    for (rect, text) in RANGE_BOXES.iter().zip(&numbers) {
         let rect = rect.within(area);
         let inside = painter.frame_inverted(rect, 1);
-        if let Some(numbers) = &numbers {
-            let [x, y] = RANGE_TEXT;
-            let text = &numbers[index];
-            // tracks past F take two digits, more than the track boxes have room for
-            painter.clipped(inside, |painter| {
-                painter.text_in_font(
-                    rect.x + x,
-                    rect.y + y,
-                    text,
-                    Pen::BACKGROUND,
-                    fonts::INTERFACE,
-                );
-            });
-        }
+        let [x, y] = RANGE_TEXT;
+        // tracks past F take two digits, more than the track boxes have room for
+        painter.clipped(inside, |painter| {
+            painter.text_in_font(
+                rect.x + x,
+                rect.y + y,
+                text,
+                Pen::BACKGROUND,
+                fonts::INTERFACE,
+            );
+        });
     }
     for [x, y] in RANGE_ARROWS {
         draw_pixels(
@@ -308,7 +320,6 @@ mod tests {
                 PASTE,
                 PASTE_SELECT,
                 CHORD,
-                RST,
                 SELECT_BLOCK,
                 CLEAR,
                 CANCEL,
