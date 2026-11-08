@@ -121,7 +121,15 @@ The CLI needs the same the first time.
 ### Opening a module
 
 Pass a module to open it straight away, like `octamedic_gui song.mmd1`, or open one with LOAD
-SONG on the FILES panel.
+SONG on the FILES panel. On macOS, pass it to the app with `open`:
+
+```sh
+open -a OctaMEDIC --args ~/Music/song.mmd1
+```
+
+Give the module's whole path, since the app doesn't start in the folder you're in. If OctaMEDIC is
+already open, `open` only brings it to the front, so quit it first. Double-clicking a module in
+Finder doesn't open it yet.
 
 ## Using it
 
