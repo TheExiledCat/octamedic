@@ -417,7 +417,6 @@ impl Playback {
         return Self {
             sliders: [MAX_BPM as u16, MAX_LINES_PER_BEAT as u16].map(|max| {
                 SteppedSlider::new(SliderDirection::Horizontal, 1, max, STEP_ARROW, STEP_WIDTH)
-                    .solid()
                     .fixed_handle(TEMPO_HANDLE_LENGTH)
             }),
             tempo_mode: Button::new("BPM"),

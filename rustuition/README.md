@@ -212,7 +212,8 @@ padding (`padding(n)` or `padding_xy(x, y)`) and cut to what fits; a label too l
 moves into it.
 
 `Slider` is a proportional gadget with a dotted track, horizontal or vertical, optionally
-reversed; `solid()` draws the track solid and the handle flat instead. `SteppedSlider` (`gadgets/stepped_slider.rs`) is a slider with two arrow buttons after
+reversed, drawn like Kickstart 2.0's new look prop gadgets; `solid()` draws Kickstart 1.3's
+instead, a solid track and a flat handle. `SteppedSlider` (`gadgets/stepped_slider.rs`) is a slider with two arrow buttons after
 it that step its value by one and keep stepping while held; its `update(state, current)` hands
 back a new value when it's dragged or stepped, from `min` to `max`. `Grid::new(columns, rows,
 gadgets)` lays gadgets out in rows and passes events and drawing to them.

@@ -127,8 +127,10 @@ name, and every value 0, volume included. Changing the active instrument lets go
 being typed in, so what's typed next can't land in the new instrument. The rest of it is ghosted.
 The rest of MISC and the SLIST screen (`main/song_list.rs`) are laid out like OctaMED with their
 buttons ghosted, ready to be hooked up. MISC's labels are placed letter by letter where OctaMED
-squeezed them in unevenly, its colour sliders are solid like PLAY's, and the picked colour gets a
-sunk in frame in pens 5 and 6, the way OctaMED flips the frame's top bitplane. `main/list_scroller.rs` is the slider with arrows that the
+squeezed them in unevenly, and the picked colour gets a
+sunk in frame in pens 5 and 6, the way OctaMED flips the frame's top bitplane. Every slider has
+Kickstart 2.0's dotted look, though the FS-UAE screenshots they're measured against were taken on
+1.3, which draws them solid. `main/list_scroller.rs` is the slider with arrows that the
 FILES and SLIST lists share. The wheel scrolls it too, with the pointer over the list or the
 slider, through its own `WheelLines`, so whoever draws the list sets its `list_area` as well as
 `lines_that_fit`.

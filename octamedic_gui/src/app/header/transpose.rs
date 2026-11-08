@@ -197,7 +197,6 @@ impl Transpose {
                 PLAY_TRANSPOSE_ARROW,
                 PLAY_TRANSPOSE_ARROW_WIDTH,
             )
-            .solid()
             .fixed_handle(PLAY_TRANSPOSE_HANDLE),
             play_transpose_value: number_box("00").align(Align::Right),
             text: widgets::textbox()

@@ -138,7 +138,6 @@ impl Misc {
         return Self {
             sliders: std::array::from_fn(|_| {
                 Slider::new(SliderDirection::Horizontal, false, steps)
-                    .solid()
                     .fixed_handle(COLOR_HANDLE_LENGTH)
             }),
             values: std::array::from_fn(|_| {
