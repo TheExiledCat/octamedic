@@ -45,7 +45,7 @@ impl Gadget<AppState, Event> for CopyrightBar {
                 button: MouseButton::Left,
                 ..
             } => {
-                state.request_exit();
+                state.confirm_if_unsaved(AppState::request_exit);
                 return true;
             }
             click => return click.handled(),
@@ -82,5 +82,45 @@ impl Gadget<AppState, Event> for CopyrightBar {
         let inside = Rect::new(gadget.x + 1, gadget.y + 1, gadget.w - 2, gadget.h - 2);
         painter.fill(inside, Pen::BACKGROUND);
         painter.picture(&GADGET_PICTURE, inside.x, inside.y);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
+    use rustuition::rect::Point;
+
+    use super::*;
+
+    fn click_gadget(state: &mut AppState) {
+        let mut bar = CopyrightBar::default();
+        bar.gadget.set_area(Rect::new(0, 0, GADGET_WIDTH, HEIGHT));
+        let click = Event::MouseDown {
+            pos: Point::new(1, 1),
+            button: MouseButton::Left,
+        };
+        assert!(bar.handle_event(state, &click));
+    }
+
+    fn state() -> AppState {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        state.displays_off = true;
+        return state;
+    }
+
+    #[test]
+    fn the_gadget_quits_a_saved_song() {
+        let mut state = state();
+        click_gadget(&mut state);
+        assert!(state.exit_requested);
+    }
+
+    #[test]
+    fn the_gadget_asks_about_unsaved_changes() {
+        let mut state = state();
+        state.set_song_name("changed");
+        click_gadget(&mut state);
+        assert!(!state.exit_requested);
+        assert!(state.prompt.is_some());
     }
 }

@@ -273,12 +273,12 @@ fn save_active_instrument(state: &mut AppState) {
         return;
     }
     if !path.exists() {
-        write_instrument(state, path, &bytes);
+        write_file(state, path, &bytes);
         return;
     }
     let question = format!("{file_name} exists, replace it?");
     state.open_prompt(Prompt::yes_no(question, move |state| {
-        write_instrument(state, path, &bytes)
+        write_file(state, path, &bytes);
     }));
 }
 
@@ -300,10 +300,11 @@ fn instrument_file_name(name: &str, save_type: InstrumentSaveType) -> String {
     return name;
 }
 
-fn write_instrument(state: &mut AppState, path: PathBuf, bytes: &[u8]) {
+// returns whether it was written
+fn write_file(state: &mut AppState, path: PathBuf, bytes: &[u8]) -> bool {
     if std::fs::write(&path, bytes).is_err() {
         state.notify("Can't save it");
-        return;
+        return false;
     }
     let folder = state.browser.path().to_path_buf();
     let _ = state.browser.open(folder);
@@ -315,6 +316,7 @@ fn write_instrument(state: &mut AppState, path: PathBuf, bytes: &[u8]) {
         file_name.as_deref().unwrap_or_default()
     ));
     state.browser.select_file(file_name);
+    return true;
 }
 
 fn save_song_in_picked_format(state: &mut AppState, file_name_hint: &str) {
@@ -389,12 +391,12 @@ fn save_wav_dialog(file_name_hint: String, sequence_length: usize) -> Dialog {
             return Err(format!("There's a folder called {file_name}"));
         }
         if !path.exists() {
-            write_song(state, path, &bytes);
+            write_file(state, path, &bytes);
             return Ok(());
         }
         let question = format!("{file_name} exists, replace it?");
         state.open_prompt(Prompt::yes_no(question, move |state| {
-            write_song(state, path, &bytes)
+            write_file(state, path, &bytes);
         }));
         return Ok(());
     });
@@ -417,22 +419,11 @@ fn file_name_with_extension(name: &str, extension: &str) -> String {
     return name;
 }
 
+// only the module is the song saved, a WAV render or an instrument goes through write_file
 fn write_song(state: &mut AppState, path: PathBuf, bytes: &[u8]) {
-    if std::fs::write(&path, bytes).is_err() {
-        state.notify("Can't save it");
-        return;
+    if write_file(state, path, bytes) {
+        state.mark_saved();
     }
-    state.mark_saved();
-    let folder = state.browser.path().to_path_buf();
-    let _ = state.browser.open(folder);
-    let file_name = path
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned());
-    state.notify(format!(
-        "Saved {}",
-        file_name.as_deref().unwrap_or_default()
-    ));
-    state.browser.select_file(file_name);
 }
 
 fn load_song(state: &mut AppState, path: &std::path::Path) {
@@ -498,7 +489,7 @@ mod tests {
         std::fs::create_dir_all(&temp).unwrap();
         state.browser.open(&temp).unwrap();
         state.set_song_name("changed");
-        write_instrument(&mut state, temp.join("sample.raw"), &[0]);
+        write_file(&mut state, temp.join("sample.raw"), &[0]);
         assert!(!state.is_saved());
         write_song(&mut state, temp.join("song.mmd1"), &[0]);
         assert!(state.is_saved());
@@ -639,6 +630,25 @@ mod tests {
         let saved = folder.join("myrender.wav").exists();
         let _ = std::fs::remove_dir_all(&folder);
         assert!(saved);
+    }
+
+    #[test]
+    fn a_wav_render_leaves_the_song_unsaved() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        state.save_format = SaveFormat::Wav;
+        let folder =
+            std::env::temp_dir().join(format!("octamedic-wav-unsaved-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        state.browser.open(&folder).unwrap();
+        state.set_song_name("changed");
+        save_song_in_picked_format(&mut state, "myrender");
+        let mut dialogs = state.take_pending_dialogs();
+        dialogs[0].handle_event(&mut state, &key(ggez::input::keyboard::KeyCode::Return));
+        let saved = folder.join("myrender.wav").exists();
+        let _ = std::fs::remove_dir_all(&folder);
+        assert!(saved);
+        assert!(!state.is_saved());
     }
 
     #[test]
