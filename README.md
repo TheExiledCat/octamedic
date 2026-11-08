@@ -1,105 +1,181 @@
-# OctaMEDIC Pro V4 (WIP v0.0.1 IN DEVELOPMENT)
+# OctaMEDIC Pro V4
 
-**Note**: the contents of this README are placeholder until the first demo version releases, there are no releases published yet.
+A faithful clone of OctaMED Professional v4, the Amiga tracker, for Windows, Linux and macOS.
 
-A faithful clone of OctaMED Professional v4
+![OctaMEDIC](octamedic.png)
 
-![Octamed Placeholder](octamedic.png)
+**v0.0.1 is the first demo.** Someone who knows OctaMED Pro v4 can sit down, make a short song
+from samples start to finish, save it, and open it again later, here or in the real OctaMED.
+Anything that isn't there yet is ghosted in the interface, just like OctaMED greys out what
+can't be used.
 
-## Features (Not finished)
+## Features
 
-- Faithful recreation of the 8 bit sound engine written in Rust using ggez for rendering and cpal for audio playback
-- Reads and Writes real MED modules
-- All the original settings and keybinds
-- Full Midi support
-- Original synthesiser and sample editor
-- Song rendering as WAV files
+### The OctaMED you know
+- OctaMED Pro v4's screen, redrawn pixel for pixel: its panels, gadgets, fonts and 12-bit
+  colour palette, and its keys
+- Paula's four channels emulated, with the PAL or NTSC clock, so songs play at the speed and
+  with the character they would on an Amiga
 
-## Quality of life goals
+### Songs
+- Loads MMD0 and MMD1 modules: notes, instruments and song settings
+- Saves songs as MMD1 with their instruments, which the real OctaMED opens
+- Play and continue song or block, with tempo, filter on/off and the volume command (0C), read as
+  hex or decimal
+- Clear song or clear all, and quitting asks first if there are unsaved changes
 
-- Undo buffer, for fixing accidental deletions
-- Optional setting to let the block editor's cursor onto the instrument's left digit, so instruments above 0V can be typed in directly (the original skips it, so only 0 to V can be typed)
-- Configurable line highlights, like a default spacing added to every new block automatically, or showing them only on the line numbers instead of across the whole line
-- Moving an entry in the play sequence list (the original only has insert and delete)
-- Extra keybinds for block selection, creation, UI highlighting etc (Full mouseless possibilities)
-- Support for importing modern WAV, MP3, FLAC formats (in mono, converted to 8 bit)
-- Support for rendering as WAV and MP3
-- Automatic Sample folder storage for quick loading samples and modules
-- 41-44khz sample rate, which still has the original aliasing simulated
-- Cross platform for Windows 10+, Linux and Mac
-- Full audio interface support using direct or ASIO style drivers (based on platform)
-    - Includes midi in and out for audio interfaces, with both transport and clock sync capabilities
-    - Track separation support for sending up to 8 octamed channels out
-    - Record master from Internal audio or from interface IO or both while rendering
-- Can simulate both PAL and NTSC clock speeds and views
-- original 12 bit amiga color palette
-- Optional CRT style screen filters: scanlines, chroma, VHS wobble, colour, curvature, vignette and noise
+### Editing
+- The block editor: notes, instruments, command digits, holds, highlights and octaves, inserting
+  and deleting notes, spaces and tracks
+- Ranges with cut, copy and paste, for tracks, blocks and selections
+- The BLOCK panel: new blocks, lines, expand and shrink, split and join, and the rest
+- The EDIT panel: track mutes, keypad maps, octaves, line spacing, SPACE=DEL and cursor advance
+- The RANGE and TRANS panels: volume slides, chords, transposing, and changing or swapping notes
+  and instruments
+- Sequence editing: inserting and deleting entries and changing their blocks
 
-## Contributing
+### Instruments
+- Loads WAV, MP3, FLAC, IFF and raw samples, converted to 8-bit mono the way an Amiga plays them
+- The sample editor: ranges, zoom, cut, copy and paste, reverse, mix, freehand drawing, loops,
+  pitch and rate changes, and playing a range
+- Volume, transpose, finetune, hold and decay
+- Saves instruments as raw, IFF or WAV
 
-- [CONTRIBUTING.md](CONTRIBUTING.md) for building, code style and PRs
-- [docs/PLAYER.md](docs/PLAYER.md) for how the player works (Paula, DMA, the CIA timer)
-- [docs/FILES.md](docs/FILES.md) for the files besides modules: loading instruments, multi-octave samples, synth sounds, config.toml and crash.log
-- [rustuition/README.md](rustuition/README.md) for the Amiga style GUI library, and
-  [octamedic_gui/FRAMEWORK.md](octamedic_gui/FRAMEWORK.md) for how the GUI uses it
-- issue templates: [bug report](.github/ISSUE_TEMPLATE/bug_report.md), [feature request](.github/ISSUE_TEMPLATE/feature_request.md)
+### Beyond the original
+- Undo and redo in the block editor (Ctrl+Z, and Ctrl+Y or Ctrl+Shift+Z)
+- Renders songs to WAV, from the GUI or the command line
+- Picks the sound device and can mix to mono (VOL's OUTPUT)
+- Switches between PAL and NTSC (Ctrl+F12)
+- CRT style screen filters (Ctrl+F11): scanlines, chroma, VHS wobble, colour, curvature, vignette
+  and noise, in any order and each with its own settings
+- Remembers all of these between runs, in [config.toml](docs/CONFIG.md)
 
-## Documentation
+## Planned
 
-For a manual, acquire the original OctaMED manual
+Not in v0.0.1 yet, roughly in the order they'll come:
 
-There will be a tiny addendum that will specify all the changes made from the original.
-
-For questions about the documentation and or the project or bug / authenticity problems please make a github issue.
+- The EDIT panel's programmable keys
+- Sample commands besides volume, then MIDI and synth commands
+- Playing synth and hybrid sounds (they're loaded and kept already)
+- The rest of the RANGE panel: spread, the other slides and note echo
+- More than four tracks, with split channels and MIDI
+- Saving as MMD0, and MMD1 without instruments
+- Loading ProTracker and SoundTracker modules
+- MIDI in and out, with transport and clock sync, and routing tracks to audio interface outputs
+- Machine memory as a setting, so the memory readout matches your Amiga
+- Remappable keys and more settings
+- Quality of life: moving entries in the sequence, configurable line highlights, an option to type
+  instruments above 0V directly, and rendering to MP3
 
 ## Installation
 
-To install download a release from the [releases](https://github.com/TheExiledCat/octamedic/releases) page
+Download the zip for your system from the [releases page](https://github.com/TheExiledCat/octamedic/releases).
+Each release has two kinds of zip: `octamedic-gui-…` is the editor, and `octamedic-cli-…` is
+`mmd_cli`, a command line tool for inspecting, playing and rendering modules. Most people only
+need the GUI.
 
-On macOS the GUI comes as `OctaMEDIC.app`: `aarch64-apple-darwin` is for Apple Silicon Macs and `x86_64-apple-darwin` for Intel ones. It isn't notarized by Apple, so the first time you open it macOS says it can't check it for malware and won't open it. To open it anyway, go to System Settings > Privacy & Security and click Open Anyway, or run `xattr -dr com.apple.quarantine OctaMEDIC.app`. The CLI needs the same the first time.
+| System | Download |
+|---|---|
+| Windows (most PCs) | `octamedic-gui-<version>-x86_64-pc-windows-msvc.zip` |
+| Windows on ARM | `octamedic-gui-<version>-aarch64-pc-windows-msvc.zip` |
+| macOS, Apple Silicon (M1 and later) | `octamedic-gui-<version>-aarch64-apple-darwin.zip` |
+| macOS, Intel | `octamedic-gui-<version>-x86_64-apple-darwin.zip` |
+| Linux (most PCs) | `octamedic-gui-<version>-x86_64-unknown-linux-gnu.zip` |
+| Linux on ARM | `octamedic-gui-<version>-aarch64-unknown-linux-gnu.zip` |
 
-It is also possible to build from source using the rust cargo toolchain. This way you get the newest changes (but also the breaking ones!) immediately.
+There's nothing to install: unzip it and run what's inside.
+
+### Windows
+
+1. Unzip it and double-click `octamedic_gui.exe`.
+2. The app isn't signed, so Windows may say it protected your PC. Click **More info**, then
+   **Run anyway**. You only need to do this once.
+
+### macOS
+
+1. Unzip it and move `OctaMEDIC.app` to your Applications folder.
+2. Open it. The first time, macOS says it can't check it for malware, because it isn't notarized
+   by Apple, and won't open it.
+3. Go to **System Settings > Privacy & Security**, scroll down and click **Open Anyway**. Or run
+   this once in Terminal instead:
+
+   ```sh
+   xattr -dr com.apple.quarantine /Applications/OctaMEDIC.app
+   ```
+
+The CLI needs the same the first time.
+
+### Linux
+
+1. Unzip it. You need ALSA's library, which almost every desktop already has (`libasound2` on
+   Debian and Ubuntu, `alsa-lib` on Fedora and Arch).
+2. Run it:
+
+   ```sh
+   chmod +x octamedic_gui   # if the zip didn't keep it executable
+   ./octamedic_gui
+   ```
+
+### Opening a module
+
+Pass a module to open it straight away, like `octamedic_gui song.mmd1`, or open one with LOAD
+SONG on the FILES panel.
+
+## Using it
+
+OctaMEDIC works like OctaMED Pro v4, so the original OctaMED manual is the manual. A short addendum
+of what's different comes with each release's notes, along with the known issues.
+
+A few keys that aren't in the original:
+
+| Key | Does |
+|---|---|
+| Ctrl+F11 | Screen filters |
+| Ctrl+F12 | Switch between PAL and NTSC |
+| Ctrl+Z, Ctrl+Y | Undo and redo in the block editor |
+| Ctrl+` | The debug console, with any startup errors |
+| Ctrl+Q | Quit |
+
+## Configuration
+
+Settings are saved in `config.toml` as you change them in the app: the video standard, the sound
+device, mono, and the screen filters. [docs/CONFIG.md](docs/CONFIG.md) says where it is and what
+every setting does.
+
+## Building from source
+
+You need [Rust](https://rustup.rs) 1.85 or newer. On Linux you also need ALSA's development files
+(`libasound2-dev` and `pkg-config` on Debian and Ubuntu).
+
+```sh
+git clone https://github.com/TheExiledCat/octamedic
+cd octamedic
+cargo run --release -p octamedic_gui
+```
+
+You get the newest changes this way, and also the ones that break things.
+[CONTRIBUTING.md](CONTRIBUTING.md) has more.
 
 ## In this repo
-- mmd
-    - parser and structs for original octamed files
-- mmd_cli
-    - cli tool for reading octamed mmds and extracting wav files
-- octamedic_core
-    - core library for octamedic, including the playback engine
-- octamedic_gui
-    - full octamed clone made using ggez
-- octamedic_util
-    - small helpers shared by the other crates
-- rustuition
-    - custom made UI toolkit to recreate the AmigaOS look from Intuition
-## Roadmap
 
-What's needed for the first release is tracked in [V0.0.1TARGETS.md](V0.0.1TARGETS.md).
+- `mmd`: reads and writes OctaMED's MMD files
+- `mmd_cli`: the command line tool, for inspecting, playing and rendering modules
+- `octamedic_core`: the song model and the playback engine
+- `octamedic_gui`: the editor
+- `octamedic_util`: small helpers shared by the other crates
+- `rustuition`: an Amiga style GUI toolkit recreating AmigaOS's Intuition look
 
-- [X] Loading real mmd file's metadata, note and instrument data
-- [ ] Loading protracker/soundtracker supported modules
-- [X] Loading extra metadata from mmd files
-- [X] Initial engine iteration which can playback real mmd files with just note data (no commands yet)
-- [X] Initial editor iteration that can edit notes and patterns of existing mmd files but cant edit instrument data
-- [ ] Write back modules to:
-    - [ ] MMD0
-    - [ ] MMD1 (No Instr)
-    - [X] MMD1 +Instruments
-- [ ] Sample Commands
-- [ ] Midi commands
-- [ ] Synth commands
-- [X] Loading wav, mp3, flac files as instruments
-- [X] Loading IFF files
-- [X] Editing instruments
-- [ ] Keybind mapping
-- [ ] Midi in support
-    - [ ] Omni in support
-    - [ ] Midi control mapping 
-- [ ] Midi mapping
-- [ ] Track to audio interface routing support
-- [X] Gui overhaul to make it look like octamed
-- [X] Undo and redo in the block editor
-- [X] Rendering songs to WAV, from the GUI and the CLI
-- [ ] Octamed configuration support
-- [ ] Custom configuration overrides
+## Contributing
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) for building, code style and pull requests
+- [docs/CONFIG.md](docs/CONFIG.md) for `config.toml`
+- [docs/PLAYER.md](docs/PLAYER.md) for how the player works (Paula, DMA, the CIA timer)
+- [docs/FILES.md](docs/FILES.md) for the files besides modules: loading instruments, multi-octave
+  samples, synth sounds and crash.log
+- [rustuition/README.md](rustuition/README.md) for the GUI toolkit, and
+  [octamedic_gui/FRAMEWORK.md](octamedic_gui/FRAMEWORK.md) for how the editor uses it
+- [V0.0.1TARGETS.md](V0.0.1TARGETS.md) for what v0.0.1 set out to do
+
+Found a bug, or something that doesn't behave like the real OctaMED? Open an issue with the
+[bug report](.github/ISSUE_TEMPLATE/bug_report.md) template. Ideas go in a
+[feature request](.github/ISSUE_TEMPLATE/feature_request.md).

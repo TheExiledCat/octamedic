@@ -107,8 +107,8 @@ device can't be opened it goes back to the old one, and the notification bar say
 engine has no device at all (it couldn't open one at startup, say), OK tries again even on the same
 device.
 
-The output device, mono and PAL/NTSC are `Config` (`app/config.rs`), saved in `config.toml` (see
-[docs/FILES.md](../docs/FILES.md)). `main` loads it before the window opens, so the window and the
+The output device, mono, PAL/NTSC and the screen filters are `Config` (`app/config.rs`), saved in
+`config.toml` (see [docs/CONFIG.md](../docs/CONFIG.md)). `main` loads it before the window opens, so the window and the
 engine start out on the saved video standard and device. `AppState` keeps it private: read it with
 `config()` and change it with `config_mut()`, which marks it changed, and `AppState::update` saves
 it at the end of that frame, so nothing else has to remember to. If the saved device can't be
