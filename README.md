@@ -33,6 +33,7 @@ A faithful clone of OctaMED Professional v4
     - Record master from Internal audio or from interface IO or both while rendering
 - Can simulate both PAL and NTSC clock speeds and views
 - original 12 bit amiga color palette
+- Optional CRT style screen filters: scanlines, chroma, VHS wobble, colour, curvature, vignette and noise
 
 ## Contributing
 
@@ -98,5 +99,7 @@ What's needed for the first release is tracked in [V0.0.1TARGETS.md](V0.0.1TARGE
 - [ ] Midi mapping
 - [ ] Track to audio interface routing support
 - [X] Gui overhaul to make it look like octamed
+- [X] Undo and redo in the block editor
+- [X] Rendering songs to WAV, from the GUI and the CLI
 - [ ] Octamed configuration support
 - [ ] Custom configuration overrides
