@@ -161,6 +161,7 @@ impl Gadget<AppState, Event> for Footer {
     }
 
     fn update(&mut self, state: &mut AppState) {
+        state.typing |= self.block_name.is_focused() || self.song_name.is_focused();
         if !self.block_name.is_focused() {
             let name = state.active_pattern().map_or("", |pattern| &pattern.name);
             self.block_name.set_text(name);

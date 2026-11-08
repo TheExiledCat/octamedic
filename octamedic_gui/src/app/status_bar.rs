@@ -379,7 +379,9 @@ impl Gadget<AppState, Event> for StatusBar {
 
     fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
         let keys = !state.typing;
-        return keys && (self.dispatch(state, event) || caps_lock_keypad(state, event))
+        let keypad =
+            |state: &mut AppState| caps_lock_keypad(state, event) || keypad_map(state, event);
+        return keys && (self.dispatch(state, event) || keypad(state))
             || self.mutes.handle_event(state, event)
             || self
                 .boxes
@@ -413,6 +415,17 @@ fn caps_lock_keypad(state: &mut AppState, event: &Event) -> bool {
     };
     sequence(state, action);
     return true;
+}
+
+// otherwise the keypad does what the EDIT panel's KEYPAD and MAP2 say
+fn keypad_map(state: &mut AppState, event: &Event) -> bool {
+    let Event::Key { key, mods, repeat } = *event else {
+        return false;
+    };
+    if state.caps_lock || !mods.is_empty() || repeat {
+        return false;
+    }
+    return state.keypad_key(key);
 }
 
 fn sequence(state: &mut AppState, action: SequenceAction) {

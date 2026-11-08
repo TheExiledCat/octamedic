@@ -13,9 +13,36 @@ pub type Words = &'static [(i32, &'static str)];
 const LABEL_Y: i32 = 3;
 
 pub fn placed(font: Font, words: Words) -> impl Fn(ContentArea, Pen, &mut Painter) {
+    return placed_at(font, LABEL_Y, words);
+}
+
+/// Like [`placed`], for a label that isn't the usual 3px down from the button's top.
+pub fn placed_at(font: Font, top: i32, words: Words) -> impl Fn(ContentArea, Pen, &mut Painter) {
     return move |area, pen, painter| {
-        let [left, top] = button_origin(area);
-        draw_words(painter, font, [left, top + LABEL_Y], words, pen);
+        let [left, button_top] = button_origin(area);
+        draw_words(painter, font, [left, button_top + top], words, pen);
+    };
+}
+
+/// OctaMED's raised lettering: shine with a shadow a pixel down and right.
+pub fn embossed(font: Font, top: i32, words: Words) -> impl Fn(ContentArea, Pen, &mut Painter) {
+    return move |area, _, painter| {
+        let [left, button_top] = button_origin(area);
+        let shadow = [left + 1, button_top + top + 1];
+        draw_words(painter, font, shadow, words, Pen::BACKGROUND);
+        draw_words(painter, font, [left, button_top + top], words, Pen::SHINE);
+    };
+}
+
+/// A label and a symbol beside it, each placed from the button's top left.
+pub fn placed_with_picture(
+    font: Font,
+    words: Words,
+    symbol: &'static Picture,
+) -> impl Fn(ContentArea, Pen, &mut Painter) {
+    return move |area, pen, painter| {
+        placed(font, words)(area, pen, painter);
+        picture(symbol)(area, pen, painter);
     };
 }
 
@@ -27,11 +54,12 @@ pub fn draw_words(
     pen: Pen,
 ) {
     for &(x, word) in words {
-        let bearing = word
+        let blank = word
             .chars()
             .next()
             .and_then(|c| font.glyph(c))
             .map_or(0, blank_columns);
+        let bearing = font.bearing() + blank;
         painter.text_in_font(left + x - bearing, top, word, pen, font);
     }
 }

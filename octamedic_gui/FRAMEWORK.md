@@ -20,9 +20,18 @@ adds on top, in `src/framework/`, and how OctaMED's screens in `src/app/` are pu
   `stacked_text`), and `audio_view.rs` the scopes and VU meters.
 - `app/fonts.rs`: OctaMED's own fonts, redrawn by hand in `assets/fonts/` since the originals
   aren't around anywhere. `INTERFACE` (OctaMED's own 8x8, for numbers and names like the status
-  row, Topaz for anything it doesn't have), `PANEL` (gadget labels like `FILES`, 6 lines, capitals
-  only), `SMALL` (the status row flags like `CHRD`, 5 lines), `LABEL` (play panel labels), `TITLE`,
-  `AUTHOR` and `EDITOR` (16px wide block editor chars). `cargo test` checks the files parse.
+  row: its 1, 2, 4, 7, - and = differ from Topaz, which it falls back on for the rest), `PANEL` (gadget labels like `FILES`, 6 lines, capitals
+  only), `SMALL` (the status row flags like `CHRD`, 5 lines), `LABEL` (play panel labels, with the
+  6px wide `-` of `label.txt`), `NARROW_LABEL` (`LABEL` with 1px between letters and the narrow X
+  of `narrow.txt`), `COLOR_LETTERS` (`PANEL` with the title bar's R, for MISC's R G B), `TITLE`,
+  `AUTHOR`, `EDITOR` (16px wide block editor chars), `TRACKS` (the track digits of TRK ON: and
+  SELECT:), `TRACKS_BOLD` (TRKS:'s, which OctaMED drew bolder and wider rather than just bold),
+  `TALL` (SET and CLR), `BIG` (the EDIT panel's OCTAVE digits, EDIT ON and SPC, and RANGE's
+  CHORD), `TIMER_LABEL` (`BIG` with the title bar's own M and R) and `LABEL_SMALL_DOT` (`LABEL`
+  with the 1px full stop of L.ALT and R.ALT), and `QUIT_LABEL` and `CONFIRM_LABEL` for MISC's
+  QUIT and CONFIRM. Letters and
+  digits always come from a font; only symbols like arrows are pictures. `cargo test` checks the
+  files parse.
 - `app/pens.rs`: OctaMED's pens past rustuition's four, `RED`, `ROSE`, `PINK` and `BLUSH`. The
   palette is the song's, turned into the screen's with `state::screen_palette`.
 - `app/mod.rs`: `SCREEN`, PAL hires.
@@ -117,7 +126,11 @@ and the last one with a sound (instrument 1 if none has one), and FLUSH empties 
 name, and every value 0, volume included. Changing the active instrument lets go of any of its boxes
 being typed in, so what's typed next can't land in the new instrument. The rest of it is ghosted.
 The rest of MISC and the SLIST screen (`main/song_list.rs`) are laid out like OctaMED with their
-buttons ghosted, ready to be hooked up. `main/list_scroller.rs` is the slider with arrows that the
+buttons ghosted, ready to be hooked up. MISC's labels are placed letter by letter where OctaMED
+squeezed them in unevenly, and the picked colour gets a
+sunk in frame in pens 5 and 6, the way OctaMED flips the frame's top bitplane. Every slider is
+dotted, as OctaMED draws them on Kickstart 2.0 and later. The FS-UAE screenshots they're measured
+against were taken on 1.3, which draws them solid. `main/list_scroller.rs` is the slider with arrows that the
 FILES and SLIST lists share. The wheel scrolls it too, with the pointer over the list or the
 slider, through its own `WheelLines`, so whoever draws the list sets its `list_area` as well as
 `lines_that_fit`.
@@ -212,12 +225,31 @@ SP in the status bar (or the ~ key) switches spacing on: then entering anything 
 arrows move by the line add (`AppState::line_step`) instead of one line. The line add is never below
 1.
 
-With Caps Lock on the keypad edits the play sequence without Ctrl. The modifiers don't carry Caps
+With Caps Lock on the keypad edits the play sequence without Ctrl. Without it the keypad does what
+the EDIT panel's KEYPAD and MAP2 pick (`app/keypad.rs`): TRK ON/OFF turns tracks on and off,
+SEL.INSTR picks the first 16 instruments, and MAP2 swaps in OctaMED's second layout of each (digits
+for tracks with `.` all off and Enter all on, or digits within the instrument's ten with `.` ten on,
+`+` and `-` next and previous and `*` the nearest instrument above the cursor). The Amiga keypad's
+`(` and `)` have no key on a PC's, so what they do is left out. A keypad key never types a note:
+`App` drops the character it types unless a box is being typed in. The modifiers don't carry Caps
 Lock, so `App` flips `AppState::caps_lock` on the key and corrects it from typed letters. Alt and
 the keypad go through the instrument list like OctaMED's (7 and 1 first and last, 8 and 2 one up and
 down, 9 and 3 a page of 8), Alt+Shift+Left/Right jump 16, Amiga+I opens INSTR with its name box
 selected and Amiga+Shift+I clears it first. Amiga+F switches the filter. In the command and value
 columns Alt and a number key types 10 more, so Alt+0 to Alt+5 are A to F.
+
+The EDIT panel (`header/edit.rs`) has TRK ON 0 to F and SET/CLR for the mutes, KEYPAD, OCTAVE,
+EDIT ON, SPC with the line add, and SPACE=DEL, which makes Space delete like Del instead of
+stopping, in the block editor in edit mode (Shift+Space still continues, and anywhere else Space
+still stops). ADV. picks where the cursor goes after a note or Del in
+the note column (holding a chord always moves down, since a chord spans tracks), up or down by the line add or a track left or right
+(`AppState::advance_after_note`), and the two command arrows, which can be switched off again,
+move it a digit right or left after a command digit instead (`advance_after_digit`). With the
+loudspeaker on, moving the cursor up and down plays the notes on the line it lands on,
+leaving out muted tracks. The
+programmable keys (CLR, the key and its definition, L.ALT and R.ALT, PICK:) are drawn but ghosted.
+Its lettering differs from the other panels' a pixel here and there, so some of it has fonts of its
+own (`TALL`, `BIG`) and the rest is placed letter by letter.
 
 In edit mode Del clears the note and its instrument, on the instrument column just the
 instrument, and on a command or value column just the digit under the cursor, and Shift+Del the whole cell; both move down like entering a note.
@@ -273,9 +305,9 @@ there, and PASTE SELECT does the same from the first track picked with SELECT: 0
 the cursor's (SET picks them all, CLR none; the TRANS panel's SEL.TRKS uses them all). CLEAR
 empties the range and CANCEL drops it. The
 RANGE: boxes show its first and last track and line. SPREAD, SLIDE: 1 and 2 and NOTE ECHO are
-ghosted. The SELECT: digits and SET and CLR are taller than any of the fonts, so they're
-pictures (`header/labels.rs`, which also has the hand placed labels the BLOCK and RANGE panels
-share).
+ghosted. CHORD's label is embossed, shine over a shadow (`labels::embossed`), and RST is a
+small button inside its right end. With no range the RANGE: boxes show `-` and `---`. The SELECT:
+digits are `fonts::TRACKS` and SET and CLR `fonts::TALL`, shared with the EDIT panel (`header/labels.rs` has the hand placed labels the panels share).
 
 The TRANS panel (`header/transpose.rs`, the edits in `app/transpose.rs`) works on the cells AFFECT
 picks: every block of the song, the block, the cursor's track, the tracks picked with SELECT: 0 to F

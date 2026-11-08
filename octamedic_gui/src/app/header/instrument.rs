@@ -169,6 +169,15 @@ impl Instrument {
         };
     }
 
+    fn typing(&self) -> bool {
+        let steppers = self.stepped.iter().map(|stepper| &stepper.textbox);
+        let mut boxes = steppers
+            .chain([&self.name])
+            .chain(&self.hold_decay)
+            .chain(&self.repeats);
+        return boxes.any(Textbox::is_focused);
+    }
+
     fn unfocus_boxes(&mut self) {
         let steppers = self.stepped.iter_mut().map(|stepper| &mut stepper.textbox);
         for textbox in steppers.chain([&mut self.name]).chain(&mut self.hold_decay) {
@@ -298,6 +307,7 @@ fn active(state: &AppState) -> Option<&OctamedicInstrument> {
 
 impl Gadget<AppState, Event> for Instrument {
     fn update(&mut self, state: &mut AppState) {
+        state.typing |= self.typing();
         self.update_transport(state);
         self.update_flush(state);
         // a box still being typed in would keep the last instrument's value, and what's typed

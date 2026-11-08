@@ -1,6 +1,7 @@
 use octamedic_core::amiga::clock::VideoStandard;
 use rustuition::screen::Screen;
 
+pub mod advance;
 pub mod app;
 pub mod block_range;
 pub mod chord;
@@ -16,6 +17,7 @@ pub mod header;
 pub mod history;
 pub mod icon;
 pub mod keybinds;
+pub mod keypad;
 pub mod main;
 pub mod main_view;
 pub mod mode;

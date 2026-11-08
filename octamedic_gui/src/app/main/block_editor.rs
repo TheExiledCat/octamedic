@@ -40,8 +40,8 @@ use crate::{
 const SCOPE_OFFSET: i32 = 2;
 const SCOPE_SAMPLES: usize = 42;
 
-const METER_OFFSET: i32 = 45;
-const METER_WIDTH: i32 = 10;
+const METER_OFFSET: i32 = 44;
+const METER_WIDTH: i32 = 12;
 
 // 3 digits and a space
 const LINE_NUMBER_CHARS: i32 = 4;
@@ -513,6 +513,7 @@ impl KeyActions for BlockEditor {
         });
         let screen = self.visible_tracks as isize;
         let step = state.line_step() as isize;
+        let line_before = state.cursor.line;
         let cursor = &mut state.cursor;
         match action {
             Up => cursor.move_lines(-step, lines),
@@ -561,6 +562,13 @@ impl KeyActions for BlockEditor {
             Undo => state.undo(),
             Redo => state.redo(),
             HoldChord => state.hold_last_chord(),
+        }
+        let moved_line = matches!(
+            action,
+            Up | Down | FirstLine | SecondQuarter | Middle | LastQuarter | LastLine
+        );
+        if moved_line && state.play_on_move && state.cursor.line != line_before {
+            state.play_line(state.cursor.line);
         }
     }
 
@@ -647,6 +655,10 @@ impl Gadget<AppState, Event> for BlockEditor {
         // shortcuts type characters too
         if mods.intersects(KeyMods::CTRL | KeyMods::ALT | KeyMods::LOGO) {
             return false;
+        }
+        if character == ' ' && mods.is_empty() && state.space_bar_deletes() {
+            delete(state, false);
+            return true;
         }
         if state.chord_mode && !character.eq_ignore_ascii_case(&HOLD_KEY) {
             return type_chord_key(state, character, repeat);
@@ -805,7 +817,7 @@ fn enter_key(state: &mut AppState, key: char) -> bool {
     if state.play_on_note && !state.is_playing() {
         state.start(PlayStart::Block);
     }
-    state.move_down();
+    state.advance_after_note();
     return true;
 }
 
@@ -848,7 +860,11 @@ fn delete(state: &mut AppState, whole_cell: bool) {
             *cell = cleared;
         }
     });
-    state.move_down();
+    if !whole_cell && cursor.column >= FIRST_COMMAND_COLUMN {
+        state.advance_after_digit();
+    } else {
+        state.advance_after_note();
+    }
 }
 
 fn enter_hold(state: &mut AppState) {
@@ -857,7 +873,7 @@ fn enter_hold(state: &mut AppState) {
         return;
     }
     state.enter_note(cursor.track, cursor.line, OctamedicNote { value: 0 });
-    state.move_down();
+    state.advance_after_note();
 }
 
 // Alt and a number key types 10 more, so A to F go in from the number row like OctaMED
@@ -884,7 +900,11 @@ fn enter_digit(state: &mut AppState, key: char) -> bool {
         return false;
     };
     state.edit_track(cursor.line, cursor.track, |cell| *cell = typed);
-    state.move_down();
+    if cursor.column >= FIRST_COMMAND_COLUMN {
+        state.advance_after_digit();
+    } else {
+        state.advance_after_note();
+    }
     return true;
 }
 
@@ -1035,8 +1055,8 @@ mod tests {
         let layout = Layout::new(area, 4);
         // two pixels a sample, starting 4 pixels into the track, from the highlighted line down
         assert_eq!(scope_area(&layout, area, 0), Rect::new(68, 132, 84, 65));
-        // 90 pixels in, from the editor's middle down
-        assert_eq!(meter_area(&layout, area, 1), Rect::new(298, 137, 20, 60));
+        // 88 pixels in, from the editor's middle down
+        assert_eq!(meter_area(&layout, area, 1), Rect::new(296, 137, 24, 60));
     }
 
     #[test]
@@ -1395,6 +1415,36 @@ mod tests {
                 .iter()
                 .all(|cell| cell.instrument_id == instrument)
         );
+    }
+
+    #[test]
+    fn entering_follows_the_advance() {
+        use crate::app::advance::{CommandAdvance, NoteAdvance};
+        let (mut editor, mut state) = (BlockEditor::new(), state());
+        state.cursor.edit_mode = true;
+        state.note_advance = NoteAdvance::TrackRight;
+        assert!(editor.handle_event(&mut state, &Event::text('z')));
+        assert_eq!((state.cursor.line, state.cursor.track), (0, 1));
+        state.cursor.column = 2;
+        state.command_advance = Some(CommandAdvance::Right);
+        assert!(editor.handle_event(&mut state, &Event::text('1')));
+        assert_eq!((state.cursor.track, state.cursor.column), (1, 3));
+    }
+
+    #[test]
+    fn space_deletes_with_space_del() {
+        let (mut editor, mut state) = (BlockEditor::new(), state());
+        state.cursor.edit_mode = true;
+        state.enter_note(0, 0, OctamedicNote { value: 13 });
+        assert!(!editor.handle_event(&mut state, &Event::text(' ')));
+        state.space_deletes = true;
+        assert!(editor.handle_event(&mut state, &Event::text(' ')));
+        let pattern = state.active_pattern().unwrap();
+        assert_eq!(pattern.lines[0].tracks[0].note.value, 0);
+        assert_eq!(state.cursor.line, 1);
+        state.cursor.edit_mode = false;
+        assert!(!editor.handle_event(&mut state, &Event::text(' ')));
+        assert!(!state.space_bar_deletes());
     }
 
     #[test]

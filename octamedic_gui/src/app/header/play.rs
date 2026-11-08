@@ -23,6 +23,7 @@ use rustuition::{
 use crate::{
     app::{
         fonts::{self, POSITION_SLASH},
+        header::labels::{Words, draw_words, placed},
         state::{AppState, PlayStart},
     },
     framework::{
@@ -67,7 +68,9 @@ const TEMPO_SLIDERS: [Rect; 2] = [Rect::new(94, 0, 226, 15), Rect::new(320, 0, 1
 const STEP_WIDTH: i32 = 18;
 const STEP_ARROW: [i32; 2] = [8, 7];
 // OctaMED's tempo handles don't scale with the range
-const TEMPO_HANDLE_LENGTH: i32 = 5;
+const TEMPO_HANDLE_LENGTH: i32 = 6;
+// the O sits a pixel closer to the M than the font has it
+const CHANNEL_MODE_WORDS: Words = &[(0, "CH.M"), (24, "ODE:")];
 const TEMPO_MODE: Rect = Rect::new(347, 15, 36, 11);
 const TEMPO: Rect = Rect::new(383, 15, 65, 11);
 const VOL_LABEL: [i32; 2] = [95, 18];
@@ -405,11 +408,6 @@ struct Playback {
 
 impl Playback {
     fn new() -> Self {
-        let toggled = |label| {
-            let mut button = label_button(label);
-            button.set_toggled(true);
-            button
-        };
         let mut channel_modes: [Button; CHANNEL_MODES_COUNT] =
             array::from_fn(|mode| label_button(CHANNEL_MODE_LABELS[mode]));
         channel_modes[0].set_toggled(true);
@@ -427,7 +425,7 @@ impl Playback {
             dec: label_button("DEC"),
             filter: label_button("FILTER"),
             meters: ["E1", "E2", "E3"].map(label_button),
-            sts: toggled("STS").enabled(false),
+            sts: Button::new(placed(fonts::LABEL, &[(5, "S"), (12, "TS")])).enabled(false),
             hq: label_button("HQ").enabled(false),
             channel_modes,
             stop: label_button("STOP").bold(),
@@ -578,12 +576,12 @@ impl Gadget<AppState, Event> for Playback {
         self.sts.render(state, STS.within(area), painter);
 
         let [x, y] = CHANNEL_MODE_LABEL;
-        painter.text_in_font(
-            area.x + x,
-            area.y + y,
-            "CH.MODE:",
-            Pen::BACKGROUND,
+        draw_words(
+            painter,
             fonts::SMALL,
+            [area.x + x, area.y + y],
+            CHANNEL_MODE_WORDS,
+            Pen::BACKGROUND,
         );
         self.hq.render(state, HQ.within(area), painter);
         let modes = CHANNEL_MODES

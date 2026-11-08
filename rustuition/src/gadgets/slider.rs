@@ -69,7 +69,8 @@ impl<S, E> Slider<S, E> {
         return self;
     }
 
-    /// Draws the track solid and the handle flat, rather than a dotted track and a shaded handle.
+    /// Draws the track solid and the handle flat like Kickstart 1.3, rather than the dotted track and
+    /// shaded handle of 2.0's new look.
     pub fn solid(mut self) -> Self {
         self.solid = true;
         return self;
