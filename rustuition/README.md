@@ -125,10 +125,10 @@ Filters (`filters.rs`) change a finished `Framebuffer` after everything's been p
 `Scanlines` (darkens every `spacing`th line), `ChromaticAberration` (red moves one way, blue the
 other), `VhsWobble` (lines shift sideways in a rolling wave with some jitter), `ColorAdjust`
 (hue, saturation, brightness, contrast and warmth, like a monitor's knobs), `Curvature` (bulges
-the picture like a CRT's glass, black past the corners), `Vignette` (darkens towards the edges, its Roundness from the screen's rectangle to an
-ellipse)
-and `Noise` (static, different every frame). A closure taking
-`&mut Framebuffer` is a filter too, and a list of them runs in order:
+the picture like a CRT's glass, black past the corners), `Vignette` (darkens towards the edges,
+its Roundness going from the screen's rectangle to an ellipse) and `Noise` (static, different
+every frame). A closure taking `&mut Framebuffer` is a filter too, and a list of them runs in
+order:
 
 ```rust
 let wobble = VhsWobble { frame: frame_count, ..VhsWobble::default() };
@@ -137,10 +137,11 @@ filters.as_slice().apply(&mut screen);
 ```
 
 They work at the framebuffer's own resolution, so on a 640x256 screen a scanline is a whole line.
-`Framebuffer::scaled` makes a bigger copy first when the filters need finer pixels. Curvature and
-`Vignette` work out where each pixel comes from and how dark it gets once per screen size and
-settings, and reuse that every frame after.
-`pixels_mut` and `row_mut` give your own filters the pixels.
+A filter that bends the picture says so with `wants_finer_pixels`, since at the screen's own
+resolution it drops and doubles pixels; give it a bigger copy from `Framebuffer::scaled` first.
+`Curvature` and `Vignette` work out where each pixel comes from and how dark it gets once per
+screen size and settings, and reuse that every frame after. `pixels_mut` and `row_mut` give your
+own filters the pixels.
 
 `FilterParams` lists a filter's settings as `Param`s (name, range, step, default) and gets and sets
 them by index, so one dialog can edit any filter. `AdjustableFilter` is a filter with params, for

@@ -99,19 +99,19 @@ impl Framebuffer {
         return self.pixels.as_flattened();
     }
 
-    /// A copy `factor` times as wide and tall, each pixel a `factor` by `factor` block, so filters
-    /// that move pixels around have finer ones to work with.
-    pub fn scaled(&self, factor: i32) -> Self {
-        let factor = factor.max(1);
-        let mut scaled = Self::new(self.width * factor, self.height * factor);
+    /// A copy `across` times as wide and `down` times as tall, each pixel a block of them, so
+    /// filters that bend the picture have finer pixels to work with.
+    pub fn scaled(&self, [across, down]: [i32; 2]) -> Self {
+        let (across, down) = (across.max(1), down.max(1));
+        let mut scaled = Self::new(self.width * across, self.height * down);
         for (y, row) in scaled
             .pixels
             .chunks_mut(scaled.width.max(1) as usize)
             .enumerate()
         {
-            let from = (y as i32 / factor * self.width) as usize;
+            let from = (y as i32 / down * self.width) as usize;
             for (x, pixel) in row.iter_mut().enumerate() {
-                *pixel = self.pixels[from + x / factor as usize];
+                *pixel = self.pixels[from + x / across as usize];
             }
         }
         return scaled;
@@ -266,8 +266,11 @@ mod tests {
     fn scaled_makes_each_pixel_a_block() {
         let mut buffer = Framebuffer::new(2, 1);
         buffer.fill(Rect::new(1, 0, 1, 1), Rgba::rgb(255, 0, 0));
-        let scaled = buffer.scaled(2);
+        let scaled = buffer.scaled([2, 2]);
         assert_eq!((scaled.width(), scaled.height()), (4, 2));
+        let taller = buffer.scaled([1, 3]);
+        assert_eq!((taller.width(), taller.height()), (2, 3));
+        assert_eq!(taller.pixel(1, 2), Some([255, 0, 0]));
         assert_eq!(scaled.pixel(1, 1), Some([0, 0, 0]));
         assert_eq!(scaled.pixel(2, 0), Some([255, 0, 0]));
         assert_eq!(scaled.pixel(3, 1), Some([255, 0, 0]));

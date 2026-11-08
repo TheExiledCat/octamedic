@@ -44,7 +44,9 @@ const CURSOR: &[u8] = include_bytes!("../../assets/cursor.png");
 
 // the pointer sprite's pixels are twice as wide as the screen's
 const CURSOR_SCALE: [f32; 2] = [2.0, 1.0];
-const FILTER_SCALE: i32 = 2;
+// the most a filter that bends the picture gets the screen enlarged each way. More than the window
+// shows would only be squeezed out again
+const MAX_FILTER_SCALE: i32 = 2;
 
 pub struct App {
     state: AppState,
@@ -201,8 +203,9 @@ impl App {
         self.dispatch(event(self.pointer));
     }
 
-    // painted in memory instead of straight onto the GPU, so the filters get the finished pixels,
-    // then doubled so filters that bend the picture don't drop whole rows and columns
+    // painted in memory instead of straight onto the GPU, so the filters get the finished pixels.
+    // Curvature gets them enlarged as far as the window shows, so it doesn't drop whole rows and
+    // columns
     fn filtered_screen(&mut self, ctx: &Context, area: Rect) -> Image {
         let mut frame = Framebuffer::new(area.w, area.h);
         {
@@ -211,8 +214,12 @@ impl App {
             self.dialogs.render(&self.state, area, &mut painter);
         }
         self.cursor_pixels.paint(&mut frame, self.pointer);
-        let mut frame = frame.scaled(FILTER_SCALE);
-        self.state.screen_filters.apply(&mut frame);
+        let shown = [
+            self.viewport.w / area.w as f32,
+            self.viewport.h / area.h as f32,
+        ];
+        let finer = shown.map(|scale| (scale.floor() as i32).clamp(1, MAX_FILTER_SCALE));
+        let frame = self.state.screen_filters.apply(frame, finer);
         return Image::from_pixels(
             ctx,
             &frame.to_rgba(),

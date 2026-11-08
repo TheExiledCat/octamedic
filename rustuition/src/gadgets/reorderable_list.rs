@@ -193,6 +193,12 @@ impl<S, E: PointerEvent> Gadget<S, E> for ReorderableList<S, E> {
             .rows
             .iter()
             .position(|row| row.choice.captures_events());
+        if open.is_none() && self.can_toggle_all && self.toggle_all.handle_event(state, event) {
+            if self.toggle_all.clicked().is_some() {
+                self.toggle_all(state);
+            }
+            return true;
+        }
         let rows = open.map_or(0..self.rows.len(), |index| index..index + 1);
         for index in rows {
             if let Some(action) = self.rows[index].handle(state, event) {
@@ -208,12 +214,6 @@ impl<S, E: PointerEvent> Gadget<S, E> for ReorderableList<S, E> {
                 let options: Vec<&str> = self.options.iter().map(String::as_str).collect();
                 self.rows.push(Row::new(&options, ListItem::new(0)));
                 self.emit(state, ListEvent::Add);
-            }
-            return true;
-        }
-        if self.can_toggle_all && self.toggle_all.handle_event(state, event) {
-            if self.toggle_all.clicked().is_some() {
-                self.toggle_all(state);
             }
             return true;
         }

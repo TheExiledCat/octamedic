@@ -25,8 +25,8 @@ debug = false
 [profile.dev.package.wgpu-core]
 debug-assertions = false
 
-# the screen filters go over every pixel of a doubled screen each frame, which at opt-level "z"
-# took more than a frame on its own
+# the screen filters go over every pixel each frame: a chain of six took about 29ms a frame at
+# opt-level "z" and 10ms at 3
 [profile.dev.package.rustuition]
 opt-level = 3
 

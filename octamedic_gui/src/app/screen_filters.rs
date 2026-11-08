@@ -88,10 +88,18 @@ impl ScreenFilters {
         return self.filters.iter().any(|filter| filter.enabled);
     }
 
-    pub fn apply(&self, frame: &mut Framebuffer) {
+    /// Runs the filters over `frame` in order. The first one that bends the picture gets it
+    /// `finer` times as big across and down, and so do the ones after it.
+    pub fn apply(&self, mut frame: Framebuffer, finer: [i32; 2]) -> Framebuffer {
+        let mut scaled = false;
         for filter in self.filters.iter().filter(|filter| filter.enabled) {
-            filter.filter.apply(frame);
+            if !scaled && filter.filter.wants_finer_pixels() {
+                frame = frame.scaled(finer);
+                scaled = true;
+            }
+            filter.filter.apply(&mut frame);
         }
+        return frame;
     }
 
     pub fn advance_frame(&mut self) {
@@ -245,16 +253,30 @@ mod tests {
         let mut filters = ScreenFilters::default();
         filters.add(FilterKind::Scanlines);
         filters.set_param(0, 0, 1.0);
-        let mut frame = Framebuffer::new(1, 2);
-        frame.fill(frame.bounds(), Rgba::rgb(200, 200, 200));
-        filters.apply(&mut frame);
+        let grey = || {
+            let mut frame = Framebuffer::new(1, 2);
+            frame.fill(frame.bounds(), Rgba::rgb(200, 200, 200));
+            frame
+        };
+        let frame = filters.apply(grey(), [2, 2]);
         assert_eq!(frame.pixel(0, 1), Some([0, 0, 0]));
         filters.apply_event(ListEvent::Enable {
             item: 0,
             enabled: false,
         });
-        frame.fill(frame.bounds(), Rgba::rgb(200, 200, 200));
-        filters.apply(&mut frame);
+        let frame = filters.apply(grey(), [2, 2]);
         assert_eq!(frame.pixel(0, 1), Some([200, 200, 200]));
+    }
+
+    #[test]
+    fn enlarged_from_the_first_filter_that_bends_the_picture() {
+        let mut filters = ScreenFilters::default();
+        filters.add(FilterKind::Scanlines);
+        let frame = filters.apply(Framebuffer::new(4, 4), [1, 2]);
+        assert_eq!((frame.width(), frame.height()), (4, 4));
+        filters.add(FilterKind::Curvature);
+        filters.add(FilterKind::Noise);
+        let frame = filters.apply(Framebuffer::new(4, 4), [1, 2]);
+        assert_eq!((frame.width(), frame.height()), (4, 8));
     }
 }

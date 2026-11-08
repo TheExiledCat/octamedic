@@ -1,6 +1,6 @@
 //! Filters run over a finished [`Framebuffer`], after everything's been painted.
 
-use std::{cell::RefCell, rc::Rc};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::target::Framebuffer;
 
@@ -11,6 +11,12 @@ pub trait Filter {
 
     /// Moves on a frame, for filters that animate. Call it once a frame.
     fn advance_frame(&mut self) {}
+
+    /// Whether it bends the picture, so it drops or doubles pixels at the screen's own resolution
+    /// and looks better given a [`Framebuffer::scaled`] copy.
+    fn wants_finer_pixels(&self) -> bool {
+        return false;
+    }
 }
 
 /// One of a filter's settings, a number from `min` to `max` in steps of `step`.
@@ -522,6 +528,10 @@ impl FilterParams for Curvature {
 }
 
 impl Filter for Curvature {
+    fn wants_finer_pixels(&self) -> bool {
+        return true;
+    }
+
     fn apply(&self, frame: &mut Framebuffer) {
         if self.amount <= 0.0 {
             return;
@@ -548,10 +558,11 @@ const VIGNETTE_PARAMS: &[Param] = &[
         step: 0.05,
         default: 0.6,
     },
+    // short of 1.0, past which the corners would go straight from untouched to dark
     Param {
         name: "Size",
         min: 0.0,
-        max: 1.0,
+        max: 0.9,
         step: 0.05,
         default: 0.3,
     },
@@ -575,7 +586,7 @@ const FULL_SHADE: u16 = 256;
 pub struct Vignette {
     /// How dark the edges get, 1.0 for black.
     pub strength: f32,
-    /// How much of the middle stays as it is, 0.0 for none, 1.0 for right out to the edges.
+    /// How much of the middle stays as it is, 0.0 for none, 0.9 for nearly out to the edges.
     pub size: f32,
     /// 0.0 for nearly square corners, 1.0 for an ellipse.
     pub roundness: f32,
@@ -649,6 +660,9 @@ impl Vignette {
 
 impl Filter for Vignette {
     fn apply(&self, frame: &mut Framebuffer) {
+        if self.strength <= 0.0 {
+            return;
+        }
         let (width, height) = (frame.width(), frame.height());
         let settings = [self.strength, self.size, self.roundness].map(f32::to_bits);
         let shades = self
@@ -709,6 +723,9 @@ impl Filter for Noise {
 
     fn apply(&self, frame: &mut Framebuffer) {
         let most = (self.amount * u8::MAX as f32) as i32;
+        if most == 0 {
+            return;
+        }
         for (index, pixel) in frame.pixels_mut().iter_mut().enumerate() {
             // the hash's top 16 bits, -32768 to 32767, scaled to -most to most
             let change = ((hash(index as u32, self.frame) >> 16) as i32 - 32768) * most / 32768;
@@ -718,25 +735,32 @@ impl Filter for Noise {
 }
 
 /// Something a filter works out from the screen size and its settings, kept until either changes.
-#[derive(Clone, Debug)]
-struct Prepared<K, V>(RefCell<Option<(K, Rc<V>)>>);
+#[derive(Debug)]
+struct Prepared<K, V>(Mutex<Option<(K, Arc<V>)>>);
 
 impl<K, V> Default for Prepared<K, V> {
     fn default() -> Self {
-        return Self(RefCell::new(None));
+        return Self(Mutex::new(None));
+    }
+}
+
+// a copy works it out again when it's first used
+impl<K, V> Clone for Prepared<K, V> {
+    fn clone(&self) -> Self {
+        return Self::default();
     }
 }
 
 impl<K: PartialEq, V> Prepared<K, V> {
-    fn get(&self, key: K, prepare: impl FnOnce() -> V) -> Rc<V> {
-        let mut slot = self.0.borrow_mut();
+    fn get(&self, key: K, prepare: impl FnOnce() -> V) -> Arc<V> {
+        let mut slot = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         if let Some((kept, value)) = slot.as_ref() {
             if *kept == key {
-                return Rc::clone(value);
+                return Arc::clone(value);
             }
         }
-        let value = Rc::new(prepare());
-        *slot = Some((key, Rc::clone(&value)));
+        let value = Arc::new(prepare());
+        *slot = Some((key, Arc::clone(&value)));
         return value;
     }
 }
