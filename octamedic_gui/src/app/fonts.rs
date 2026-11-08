@@ -221,6 +221,16 @@ mod tests {
         assert!(parse_glyphs(AUTHOR_GLYPHS, 5).is_ok());
         assert_eq!(parse_glyphs(SMALL_GLYPHS, 5).unwrap().len(), 44);
         assert!(parse_glyphs(EDITOR_GLYPHS, 8).is_ok());
+        for (glyphs, height) in [
+            (TRACKS_GLYPHS, 7),
+            (TRACKS_BOLD_GLYPHS, 7),
+            (TALL_GLYPHS, 7),
+            (BIG_GLYPHS, 6),
+            (TIMER_GLYPHS, 6),
+            (SMALL_DOT_GLYPHS, 5),
+        ] {
+            assert!(parse_glyphs(glyphs, height).is_ok());
+        }
         assert_eq!(parse_glyphs(QUIT_GLYPHS, 7).unwrap().len(), 4);
         assert_eq!(parse_glyphs(CONFIRM_GLYPHS, 6).unwrap().len(), 7);
         assert!(parse_glyphs(NARROW_GLYPHS, 5).is_ok());

@@ -151,7 +151,8 @@ impl Gadget<AppState, Event> for MainView {
         }
         // last, so a text field being typed in gets its space first. space stops, shift+space
         // continues the song, like the STOP and CONT. SONG buttons
-        let space_stops = |mods: &KeyMods| mods.contains(KeyMods::SHIFT) || !state.space_deletes;
+        let space_stops =
+            |mods: &KeyMods| mods.contains(KeyMods::SHIFT) || !state.space_bar_deletes();
         if let Some(mods) = space_bar_mods(event).filter(|_| !taken).filter(space_stops) {
             if mods.contains(KeyMods::SHIFT) {
                 state.start(PlayStart::ContinueSong);

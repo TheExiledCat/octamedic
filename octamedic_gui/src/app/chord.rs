@@ -57,7 +57,8 @@ impl AppState {
         for track in self.last_chord_tracks.clone() {
             self.enter_note(track, line, OctamedicNote { value: 0 });
         }
-        self.advance_after_note();
+        // a chord spans tracks, so it moves down whatever the note advance says, like ending one
+        self.move_down();
     }
 
     fn add_to_chord(&mut self, key: char, enter: bool) -> bool {

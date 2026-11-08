@@ -54,7 +54,7 @@ impl AppState {
             return;
         };
         for (track, cell) in cells.tracks.iter().enumerate() {
-            if cell.note.value == 0 {
+            if cell.note.value == 0 || self.is_track_muted(track) {
                 continue;
             }
             let instrument = match cell.instrument_id {

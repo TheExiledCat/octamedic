@@ -515,6 +515,13 @@ impl AppState {
         return self.timer + self.timer_resumed.map_or(Duration::ZERO, |at| at.elapsed());
     }
 
+    // SPACE=DEL only takes the space bar in the block editor in edit mode, elsewhere it still stops
+    pub fn space_bar_deletes(&self) -> bool {
+        return self.space_deletes
+            && self.cursor.edit_mode
+            && self.main_mode() == MainMode::BlockEditor;
+    }
+
     pub fn is_track_muted(&self, track: usize) -> bool {
         return self.muted_tracks.get(track).copied().unwrap_or(false);
     }

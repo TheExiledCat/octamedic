@@ -240,11 +240,13 @@ columns Alt and a number key types 10 more, so Alt+0 to Alt+5 are A to F.
 
 The EDIT panel (`header/edit.rs`) has TRK ON 0 to F and SET/CLR for the mutes, KEYPAD, OCTAVE,
 EDIT ON, SPC with the line add, and SPACE=DEL, which makes Space delete like Del instead of
-stopping (Shift+Space still continues). ADV. picks where the cursor goes after a note, a hold or
-Del in the note column, up or down by the line add or a track left or right
+stopping, in the block editor in edit mode (Shift+Space still continues, and anywhere else Space
+still stops). ADV. picks where the cursor goes after a note or Del in
+the note column (holding a chord always moves down, since a chord spans tracks), up or down by the line add or a track left or right
 (`AppState::advance_after_note`), and the two command arrows, which can be switched off again,
 move it a digit right or left after a command digit instead (`advance_after_digit`). With the
-loudspeaker on, moving the cursor up and down plays the notes on the line it lands on. The
+loudspeaker on, moving the cursor up and down plays the notes on the line it lands on,
+leaving out muted tracks. The
 programmable keys (CLR, the key and its definition, L.ALT and R.ALT, PICK:) are drawn but ghosted.
 Its lettering differs from the other panels' a pixel here and there, so some of it has fonts of its
 own (`TALL`, `BIG`) and the rest is placed letter by letter.

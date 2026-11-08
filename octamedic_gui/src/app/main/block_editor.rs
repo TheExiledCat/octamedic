@@ -656,7 +656,7 @@ impl Gadget<AppState, Event> for BlockEditor {
         if mods.intersects(KeyMods::CTRL | KeyMods::ALT | KeyMods::LOGO) {
             return false;
         }
-        if character == ' ' && mods.is_empty() && state.space_deletes {
+        if character == ' ' && mods.is_empty() && state.space_bar_deletes() {
             delete(state, false);
             return true;
         }
@@ -1442,6 +1442,9 @@ mod tests {
         let pattern = state.active_pattern().unwrap();
         assert_eq!(pattern.lines[0].tracks[0].note.value, 0);
         assert_eq!(state.cursor.line, 1);
+        state.cursor.edit_mode = false;
+        assert!(!editor.handle_event(&mut state, &Event::text(' ')));
+        assert!(!state.space_bar_deletes());
     }
 
     #[test]
