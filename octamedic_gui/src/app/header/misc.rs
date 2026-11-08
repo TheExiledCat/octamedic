@@ -83,7 +83,6 @@ const PREFS_BUTTONS: [(Font, Words, Rect); 10] = [
     ),
 ];
 const HOST_TO_BUFFER: Rect = Rect::new(0, 11, 37, 11);
-// each with its top
 const PREFS_LABELS: [(i32, Words); 2] = [(3, &[(39, "PATHS:")]), (14, &[(39, "WB"), (56, ":")])];
 const CLEAR_ALL: Rect = Rect::new(0, 0, 118, 11);
 const CLEAR_SONG: Rect = Rect::new(0, 11, 118, 11);
@@ -94,19 +93,20 @@ const CLEAR_ALL_CHOICE: usize = 0;
 const CLEAR_SONG_CHOICE: usize = 1;
 const QUIT_CHOICE: usize = 2;
 
-// the picked colour's sunk in frame, with the pens' top bitplane flipped the way OctaMED does it
+// OctaMED sinks the picked colour's frame in pens 5 and 6 rather than the usual 1 and 2
 const SELECTED_TOP: Pen = Pen(6);
 const SELECTED_BOTTOM: Pen = Pen(5);
 
-const QUIT_LETTERS: Words = &[(41, "Q"), (52, "U"), (63, "I"), (70, "T")];
+const CLEAR_ALL_WORDS: Words = &[(28, "CLEAR"), (71, "ALL")];
+const QUIT_WORDS: Words = &[(41, "Q"), (52, "U"), (63, "I"), (70, "T")];
 const CONFIRM_WORDS: Words = &[(30, "CONFIRM")];
 
 // within the button's frame
 const HOST_TO_BUFFER_PARTS: [i32; 3] = [3, 14, 22];
 const HOST_TO_BUFFER_Y: i32 = 2;
 const ARROW_SIZE: [i32; 2] = [6, 5];
-// CONFIRM's arrows: black rows 2 wider each line down, with a shine down their right side
-// from the left and right
+// CONFIRM's arrows: black rows 2 wider each line down, with a shine down their right side.
+// The left one is inset from the left edge, the right one from the right
 const CONFIRM_ARROW_INSETS: [i32; 2] = [6, 4];
 const CONFIRM_ARROW_ROWS: i32 = 4;
 const CONFIRM_ARROW_WIDTH: i32 = 14;
@@ -160,7 +160,7 @@ impl Misc {
                 .collect(),
             danger_buttons: vec![
                 (
-                    Button::new(placed(fonts::LABEL, &[(28, "CLEAR"), (71, "ALL")])),
+                    Button::new(placed(fonts::LABEL, CLEAR_ALL_WORDS)),
                     CLEAR_ALL,
                 ),
                 (
@@ -168,7 +168,7 @@ impl Misc {
                     CLEAR_SONG,
                 ),
                 (
-                    Button::new(placed_at(fonts::QUIT_LABEL, 2, QUIT_LETTERS)),
+                    Button::new(placed_at(fonts::QUIT_LABEL, 2, QUIT_WORDS)),
                     QUIT,
                 ),
                 (Button::new(confirm), CONFIRM),
