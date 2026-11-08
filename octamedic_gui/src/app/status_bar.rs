@@ -15,6 +15,7 @@ use rustuition::{
 use crate::{
     app::{
         fonts::{self, POSITION_SLASH},
+        keypad::KeypadKey,
         mode::HeaderMode,
         state::{AppState, MAX_OCTAVE, NameEdit},
     },
@@ -422,10 +423,11 @@ fn keypad_map(state: &mut AppState, event: &Event) -> bool {
     let Event::Key { key, mods, repeat } = *event else {
         return false;
     };
-    if state.caps_lock || !mods.is_empty() || repeat {
+    let shift = mods == KeyMods::SHIFT;
+    if state.caps_lock || !(mods.is_empty() || shift) || repeat {
         return false;
     }
-    return state.keypad_key(key);
+    return KeypadKey::from_pc(key, shift).is_some_and(|key| state.keypad_key(key));
 }
 
 fn sequence(state: &mut AppState, action: SequenceAction) {
@@ -686,6 +688,16 @@ mod tests {
         state.chord_mode = true;
         status.update(&mut state);
         assert!(status.boxes[CHRD].is_enabled() && status.boxes[CHRD].is_toggled());
+    }
+
+    #[test]
+    fn shift_slash_on_the_keypad_switches_track_0() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        let mut status = StatusBar::new();
+        press(&mut status, &mut state, KeyCode::NumpadDivide, KeyMods::SHIFT);
+        assert!(state.is_track_muted(0));
+        press(&mut status, &mut state, KeyCode::NumpadDivide, KeyMods::NONE);
+        assert!(state.is_track_muted(2));
     }
 
     #[test]
