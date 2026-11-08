@@ -236,7 +236,8 @@ the EDIT panel's KEYPAD and MAP2 pick (`app/keypad.rs`): TRK ON/OFF turns tracks
 SEL.INSTR picks the first 16 instruments, and MAP2 swaps in OctaMED's second layout of each (digits
 for tracks with `.` all off and Enter all on, or digits within the instrument's ten with `.` ten on,
 `+` and `-` next and previous and `*` the nearest instrument above the cursor). The Amiga keypad's
-`(` and `)` have no key on a PC's, so what they do is left out. A keypad key never types a note:
+`(` and `)` have no key on a PC's, so Shift+/ and Shift+* stand in for them, the keys just right
+of where they'd be (`KeypadKey`): tracks 0 and 1, A and B with MAP2, or instruments 1 and 2. A keypad key never types a note:
 `App` drops the character it types unless a box is being typed in. The modifiers don't carry Caps
 Lock, so `App` flips `AppState::caps_lock` on the key and corrects it from typed letters. Alt and
 the keypad go through the instrument list like OctaMED's (7 and 1 first and last, 8 and 2 one up and
