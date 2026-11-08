@@ -10,7 +10,10 @@ use rustuition::{
     target::Framebuffer,
 };
 
-use crate::{app::state::AppState, framework::widgets::Dialog};
+use crate::{
+    app::{config::FilterConfig, state::AppState},
+    framework::widgets::Dialog,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FilterKind {
@@ -46,6 +49,19 @@ impl FilterKind {
         };
     }
 
+    // what it's called in config.toml
+    fn key(self) -> &'static str {
+        return match self {
+            FilterKind::Scanlines => "scanlines",
+            FilterKind::ChromaticAberration => "chroma",
+            FilterKind::VhsWobble => "vhs_wobble",
+            FilterKind::ColorAdjust => "color",
+            FilterKind::Curvature => "curvature",
+            FilterKind::Vignette => "vignette",
+            FilterKind::Noise => "noise",
+        };
+    }
+
     fn create(self) -> Box<dyn AdjustableFilter> {
         return match self {
             FilterKind::Scanlines => Box::new(Scanlines::default()),
@@ -72,6 +88,50 @@ pub struct ScreenFilters {
 }
 
 impl ScreenFilters {
+    /// The filters `config.toml` lists. Kinds it doesn't know are left out, and settings it
+    /// doesn't have keep their defaults.
+    pub fn from_config(configs: &[FilterConfig]) -> Self {
+        let mut filters = Self::default();
+        for config in configs {
+            let Some(kind) = FilterKind::ALL
+                .into_iter()
+                .find(|kind| kind.key() == config.kind)
+            else {
+                continue;
+            };
+            let mut filter = kind.create();
+            for (index, param) in filter.params().iter().enumerate() {
+                if let Some(&value) = config.settings.get(&setting_key(param.name)) {
+                    filter.set_param(index, value);
+                }
+            }
+            filters.filters.push(ScreenFilter {
+                kind,
+                enabled: config.enabled,
+                filter,
+            });
+        }
+        return filters;
+    }
+
+    pub fn to_config(&self) -> Vec<FilterConfig> {
+        return self
+            .filters
+            .iter()
+            .map(|filter| FilterConfig {
+                kind: filter.kind.key().to_owned(),
+                enabled: filter.enabled,
+                settings: filter
+                    .filter
+                    .params()
+                    .iter()
+                    .enumerate()
+                    .map(|(index, param)| (setting_key(param.name), filter.filter.param(index)))
+                    .collect(),
+            })
+            .collect();
+    }
+
     pub fn get(&self, index: usize) -> Option<&ScreenFilter> {
         return self.filters.get(index);
     }
@@ -166,7 +226,10 @@ pub fn open_filters_dialog(state: &mut AppState) {
         .can_toggle_all(true)
         .on_event(|state: &mut AppState, event| match event {
             ListEvent::Edit(index) => open_params_dialog(state, index),
-            event => state.screen_filters.apply_event(event),
+            event => {
+                state.screen_filters.apply_event(event);
+                state.save_screen_filters();
+            }
         });
     let mut dialog = Dialog::new("Screen filters").submit_button("Close");
     dialog.add_field(list);
@@ -198,8 +261,14 @@ fn open_params_dialog(state: &mut AppState, index: usize) {
                 .screen_filters
                 .set_param(index, param, values.get(*field));
         }
+        state.save_screen_filters();
     });
     state.open_dialog(dialog);
+}
+
+// "Wavelength" -> "wavelength", for config.toml
+fn setting_key(name: &str) -> String {
+    return name.to_ascii_lowercase().replace(' ', "_");
 }
 
 #[cfg(test)]
@@ -246,6 +315,35 @@ mod tests {
         );
         filters.apply_event(ListEvent::Remove(0));
         assert!(!filters.is_active());
+    }
+
+    #[test]
+    fn kept_in_the_config() {
+        let mut filters = ScreenFilters::default();
+        filters.add(FilterKind::Vignette);
+        filters.add(FilterKind::Curvature);
+        filters.set_param(0, 2, 0.75);
+        filters.apply_event(ListEvent::Enable {
+            item: 1,
+            enabled: false,
+        });
+        let config = filters.to_config();
+        assert_eq!(config[0].kind, "vignette");
+        assert_eq!(config[0].settings["roundness"], 0.75);
+        let loaded = ScreenFilters::from_config(&config);
+        assert_eq!(loaded.items(), filters.items());
+        assert_eq!(loaded.get(0).unwrap().filter.param(2), 0.75);
+    }
+
+    #[test]
+    fn unknown_kinds_and_settings_are_left_out() {
+        let config: crate::app::config::Config = toml::from_str(
+            "[[filters]]\nkind = \"fisheye\"\n\n[[filters]]\nkind = \"noise\"\nsparkle = 3.0\n",
+        )
+        .unwrap();
+        let filters = ScreenFilters::from_config(&config.filters);
+        assert_eq!(filters.items(), [ListItem::new(6)]);
+        assert_eq!(filters.get(0).unwrap().filter.param(0), 0.08);
     }
 
     #[test]

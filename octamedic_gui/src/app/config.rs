@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     fs, io,
     path::{Path, PathBuf},
 };
@@ -9,7 +10,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use crate::app::{DEFAULT_VIDEO, files};
 
 /// Persisted configuration, saved in `config.toml` between runs.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Config {
     #[serde(
         default = "default_video",
@@ -19,6 +20,23 @@ pub struct Config {
     pub video: VideoStandard,
     #[serde(default)]
     pub output: OutputConfig,
+    /// The screen filters in the order they run.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub filters: Vec<FilterConfig>,
+}
+
+/// One screen filter: which it is, whether it's on, and its settings by name.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FilterConfig {
+    pub kind: String,
+    #[serde(default = "switched_on")]
+    pub enabled: bool,
+    #[serde(flatten)]
+    pub settings: BTreeMap<String, f32>,
+}
+
+fn switched_on() -> bool {
+    return true;
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -63,12 +81,13 @@ impl Default for Config {
         return Self {
             video: DEFAULT_VIDEO,
             output: OutputConfig::default(),
+            filters: Vec::new(),
         };
     }
 }
 
 /// The outcome of loading configuration at startup.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct LoadedConfig {
     pub config: Config,
     pub path: Option<PathBuf>,
@@ -159,6 +178,11 @@ mod tests {
                 device: Some("Headphones".to_owned()),
                 mono: true,
             },
+            filters: vec![FilterConfig {
+                kind: "vignette".to_owned(),
+                enabled: false,
+                settings: BTreeMap::from([("strength".to_owned(), 0.5), ("size".to_owned(), 0.25)]),
+            }],
         };
         config.save_to_path(&path).unwrap();
         let (loaded, error) = Config::load_from_path(&path);
