@@ -13,6 +13,7 @@ use crate::{
 const ROW_GAP: i32 = 2;
 const ARROW_BUTTON_WIDTH: i32 = 16;
 const BUTTON_GAP: i32 = CHAR_WIDTH / 2;
+const TOGGLE_ALL: &str = "Toggle all";
 
 /// One row of a [`ReorderableList`]: which option it shows and whether it's switched on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -64,7 +65,9 @@ pub struct ReorderableList<S, E> {
     can_add: bool,
     can_remove: bool,
     editable: bool,
+    can_toggle_all: bool,
     add: Button<S, E>,
+    toggle_all: Button<S, E>,
     on_event: Option<OnEvent<S>>,
 }
 
@@ -76,7 +79,9 @@ impl<S, E> ReorderableList<S, E> {
             can_add: false,
             can_remove: false,
             editable: false,
+            can_toggle_all: false,
             add: Button::new("Add"),
+            toggle_all: Button::new(TOGGLE_ALL),
             on_event: None,
         };
     }
@@ -104,6 +109,13 @@ impl<S, E> ReorderableList<S, E> {
         return self;
     }
 
+    /// Shows a Toggle all button above the rows, which switches every row off when they're all on
+    /// and on otherwise, sending [`ListEvent::Enable`] for each one it changes.
+    pub fn can_toggle_all(mut self, can_toggle_all: bool) -> Self {
+        self.can_toggle_all = can_toggle_all;
+        return self;
+    }
+
     /// Runs on every change, as it's made.
     pub fn on_event(mut self, handler: impl FnMut(&mut S, ListEvent) + 'static) -> Self {
         self.on_event = Some(Box::new(handler));
@@ -116,7 +128,17 @@ impl<S, E> ReorderableList<S, E> {
     }
 
     fn lines(&self) -> i32 {
-        return self.rows.len() as i32 + self.can_add as i32;
+        return self.can_toggle_all as i32 + self.rows.len() as i32 + self.can_add as i32;
+    }
+
+    fn toggle_all(&mut self, state: &mut S) {
+        let enabled = !self.rows.iter().all(|row| row.enabled.is_toggled());
+        for item in 0..self.rows.len() {
+            if self.rows[item].enabled.is_toggled() != enabled {
+                self.rows[item].enabled.set_toggled(enabled);
+                self.emit(state, ListEvent::Enable { item, enabled });
+            }
+        }
     }
 
     fn line(area: Rect, index: usize) -> Rect {
@@ -189,24 +211,36 @@ impl<S, E: PointerEvent> Gadget<S, E> for ReorderableList<S, E> {
             }
             return true;
         }
+        if self.can_toggle_all && self.toggle_all.handle_event(state, event) {
+            if self.toggle_all.clicked().is_some() {
+                self.toggle_all(state);
+            }
+            return true;
+        }
         return false;
     }
 
     fn render(&mut self, state: &S, area: Rect, painter: &mut Painter) {
+        let first_row = self.can_toggle_all as usize;
+        if self.can_toggle_all {
+            let line = Self::line(area, 0);
+            let toggle_all = Rect::new(line.x, line.y, label_width(TOGGLE_ALL), line.h);
+            self.toggle_all.render(state, toggle_all, painter);
+        }
         let last = self.rows.len().saturating_sub(1);
         for (index, row) in self.rows.iter_mut().enumerate() {
             row.up.set_enabled(index > 0);
             row.down.set_enabled(index < last);
             row.render(
                 state,
-                Self::line(area, index),
+                Self::line(area, first_row + index),
                 self.editable,
                 self.can_remove,
                 painter,
             );
         }
         if self.can_add {
-            let line = Self::line(area, self.rows.len());
+            let line = Self::line(area, first_row + self.rows.len());
             let add = Rect::new(line.x, line.y, label_width("Add"), line.h);
             self.add.render(state, add, painter);
         }
@@ -231,6 +265,7 @@ impl<S, E: PointerEvent> DialogComponent<S, E> for ReorderableList<S, E> {
 
     fn set_enabled(&mut self, enabled: bool) {
         self.add.set_enabled(enabled);
+        self.toggle_all.set_enabled(enabled);
         for row in &mut self.rows {
             row.set_enabled(enabled);
         }
@@ -397,6 +432,7 @@ mod tests {
             .can_add(true)
             .can_remove(true)
             .editable(true)
+            .can_toggle_all(true)
             .on_event(|events: &mut Events, event| events.push(event));
     }
 
@@ -496,6 +532,29 @@ mod tests {
     }
 
     #[test]
+    fn toggle_all_switches_on_then_off() {
+        let mut events = Events::new();
+        let mut items = three();
+        items[1].enabled = false;
+        let mut list = list(&items);
+        render(&mut list, &events);
+        let toggle_all = list.toggle_all.area();
+        click(&mut list, &mut events, toggle_all);
+        assert!(list.value().iter().all(|item| item.enabled));
+        assert_eq!(
+            events,
+            [ListEvent::Enable {
+                item: 1,
+                enabled: true
+            }]
+        );
+        events.clear();
+        click(&mut list, &mut events, toggle_all);
+        assert!(list.value().iter().all(|item| !item.enabled));
+        assert_eq!(events.len(), 3);
+    }
+
+    #[test]
     fn choosing_from_the_dropdown() {
         let mut events = Events::new();
         let mut list = list(&[ListItem::new(0)]);
@@ -511,9 +570,9 @@ mod tests {
     }
 
     #[test]
-    fn height_fits_the_rows_and_add() {
+    fn height_fits_toggle_all_the_rows_and_add() {
         let list = list(&three());
-        assert_eq!(list.height(), 4 * FIELD_HEIGHT + 3 * ROW_GAP);
+        assert_eq!(list.height(), 5 * FIELD_HEIGHT + 4 * ROW_GAP);
         let without_add = ReorderableList::<Events, MouseEvent>::new(&OPTIONS);
         assert_eq!(without_add.height(), 0);
     }

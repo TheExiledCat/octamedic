@@ -1,5 +1,8 @@
 use rustuition::{
-    filters::{AdjustableFilter, ChromaticAberration, ColorAdjust, Scanlines, VhsWobble},
+    filters::{
+        AdjustableFilter, ChromaticAberration, ColorAdjust, Curvature, Noise, Scanlines, VhsWobble,
+        Vignette,
+    },
     gadgets::{
         dialog::{Field, NumberField},
         reorderable_list::{ListEvent, ListItem, ReorderableList},
@@ -15,14 +18,20 @@ pub enum FilterKind {
     ChromaticAberration,
     VhsWobble,
     ColorAdjust,
+    Curvature,
+    Vignette,
+    Noise,
 }
 
 impl FilterKind {
-    pub const ALL: [FilterKind; 4] = [
+    pub const ALL: [FilterKind; 7] = [
         FilterKind::Scanlines,
         FilterKind::ChromaticAberration,
         FilterKind::VhsWobble,
         FilterKind::ColorAdjust,
+        FilterKind::Curvature,
+        FilterKind::Vignette,
+        FilterKind::Noise,
     ];
 
     pub fn name(self) -> &'static str {
@@ -31,6 +40,9 @@ impl FilterKind {
             FilterKind::ChromaticAberration => "Chroma",
             FilterKind::VhsWobble => "VHS wobble",
             FilterKind::ColorAdjust => "Color",
+            FilterKind::Curvature => "Curvature",
+            FilterKind::Vignette => "Vignette",
+            FilterKind::Noise => "Noise",
         };
     }
 
@@ -40,6 +52,9 @@ impl FilterKind {
             FilterKind::ChromaticAberration => Box::new(ChromaticAberration::default()),
             FilterKind::VhsWobble => Box::new(VhsWobble::default()),
             FilterKind::ColorAdjust => Box::new(ColorAdjust::default()),
+            FilterKind::Curvature => Box::new(Curvature::default()),
+            FilterKind::Vignette => Box::new(Vignette::default()),
+            FilterKind::Noise => Box::new(Noise::default()),
         };
     }
 }
@@ -140,6 +155,7 @@ pub fn open_filters_dialog(state: &mut AppState) {
         .can_add(true)
         .can_remove(true)
         .editable(true)
+        .can_toggle_all(true)
         .on_event(|state: &mut AppState, event| match event {
             ListEvent::Edit(index) => open_params_dialog(state, index),
             event => state.screen_filters.apply_event(event),

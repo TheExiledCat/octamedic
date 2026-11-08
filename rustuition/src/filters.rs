@@ -439,6 +439,221 @@ impl FilterParams for ColorAdjust {
     }
 }
 
+const CURVATURE_PARAMS: &[Param] = &[Param {
+    name: "Amount",
+    min: 0.0,
+    max: 0.25,
+    step: 0.01,
+    default: 0.04,
+}];
+
+/// Bulges the picture out like the curved glass of a CRT, the corners pulled in furthest. What
+/// falls outside the tube is black.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Curvature {
+    /// How far the corners are pulled in, 0.0 for a flat screen.
+    pub amount: f32,
+}
+
+impl Default for Curvature {
+    fn default() -> Self {
+        return Self {
+            amount: CURVATURE_PARAMS[0].default,
+        };
+    }
+}
+
+impl FilterParams for Curvature {
+    fn params(&self) -> &'static [Param] {
+        return CURVATURE_PARAMS;
+    }
+
+    fn param(&self, index: usize) -> f32 {
+        return if index == 0 { self.amount } else { 0.0 };
+    }
+
+    fn set_param(&mut self, index: usize, value: f32) {
+        if let Some(param) = CURVATURE_PARAMS.get(index) {
+            self.amount = param.clamp(value);
+        }
+    }
+}
+
+impl Filter for Curvature {
+    fn apply(&self, frame: &mut Framebuffer) {
+        if self.amount <= 0.0 {
+            return;
+        }
+        let (width, height) = (frame.width(), frame.height());
+        let original = frame.clone();
+        for y in 0..height {
+            let Some(row) = frame.row_mut(y) else {
+                continue;
+            };
+            let dy = centred(y, height);
+            for (x, pixel) in row.iter_mut().enumerate() {
+                let dx = centred(x as i32, width);
+                // each way bends more the further out it is the other way, so the edges bow
+                let from_x = uncentred(dx * (1.0 + self.amount * dy * dy), width);
+                let from_y = uncentred(dy * (1.0 + self.amount * dx * dx), height);
+                *pixel = original.pixel(from_x, from_y).unwrap_or([0; 3]);
+            }
+        }
+    }
+}
+
+const VIGNETTE_PARAMS: &[Param] = &[
+    Param {
+        name: "Strength",
+        min: 0.0,
+        max: 1.0,
+        step: 0.05,
+        default: 0.6,
+    },
+    Param {
+        name: "Size",
+        min: 0.0,
+        max: 1.0,
+        step: 0.05,
+        default: 0.3,
+    },
+];
+
+/// Darkens towards the edges, like an old tube.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Vignette {
+    /// How dark the edges get, 1.0 for black.
+    pub strength: f32,
+    /// How much of the middle stays as it is, 0.0 for none, 1.0 for right out to the edges.
+    pub size: f32,
+}
+
+impl Default for Vignette {
+    fn default() -> Self {
+        return Self {
+            strength: VIGNETTE_PARAMS[0].default,
+            size: VIGNETTE_PARAMS[1].default,
+        };
+    }
+}
+
+impl FilterParams for Vignette {
+    fn params(&self) -> &'static [Param] {
+        return VIGNETTE_PARAMS;
+    }
+
+    fn param(&self, index: usize) -> f32 {
+        return match index {
+            0 => self.strength,
+            1 => self.size,
+            _ => 0.0,
+        };
+    }
+
+    fn set_param(&mut self, index: usize, value: f32) {
+        let Some(param) = VIGNETTE_PARAMS.get(index) else {
+            return;
+        };
+        let value = param.clamp(value);
+        match index {
+            0 => self.strength = value,
+            _ => self.size = value,
+        }
+    }
+}
+
+impl Vignette {
+    // what's left of a pixel `distance` from the middle, where 1.0 is the middle of an edge.
+    // smoothstep, so the dark comes in gently and levels off at the edges
+    fn keep(&self, distance: f32) -> f32 {
+        let fade = ((distance - self.size) / (1.0 - self.size).max(f32::EPSILON)).clamp(0.0, 1.0);
+        return 1.0 - self.strength * fade * fade * (3.0 - 2.0 * fade);
+    }
+}
+
+impl Filter for Vignette {
+    fn apply(&self, frame: &mut Framebuffer) {
+        let (width, height) = (frame.width(), frame.height());
+        for y in 0..height {
+            let dy = centred(y, height);
+            let Some(row) = frame.row_mut(y) else {
+                continue;
+            };
+            for (x, pixel) in row.iter_mut().enumerate() {
+                let dx = centred(x as i32, width);
+                let keep = self.keep((dx * dx + dy * dy).sqrt());
+                *pixel = pixel.map(|channel| (channel as f32 * keep) as u8);
+            }
+        }
+    }
+}
+
+const NOISE_PARAMS: &[Param] = &[Param {
+    name: "Amount",
+    min: 0.0,
+    max: 0.5,
+    step: 0.02,
+    default: 0.08,
+}];
+
+/// Static: every pixel goes a random bit lighter or darker, different each frame.
+/// [`Filter::advance_frame`] moves `frame` on.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Noise {
+    /// The most a pixel changes, out of 1.0.
+    pub amount: f32,
+    pub frame: u32,
+}
+
+impl Default for Noise {
+    fn default() -> Self {
+        return Self {
+            amount: NOISE_PARAMS[0].default,
+            frame: 0,
+        };
+    }
+}
+
+impl FilterParams for Noise {
+    fn params(&self) -> &'static [Param] {
+        return NOISE_PARAMS;
+    }
+
+    fn param(&self, index: usize) -> f32 {
+        return if index == 0 { self.amount } else { 0.0 };
+    }
+
+    fn set_param(&mut self, index: usize, value: f32) {
+        if let Some(param) = NOISE_PARAMS.get(index) {
+            self.amount = param.clamp(value);
+        }
+    }
+}
+
+impl Filter for Noise {
+    fn advance_frame(&mut self) {
+        self.frame = self.frame.wrapping_add(1);
+    }
+
+    fn apply(&self, frame: &mut Framebuffer) {
+        let most = self.amount * u8::MAX as f32;
+        for (index, pixel) in frame.pixels_mut().iter_mut().enumerate() {
+            let change = noise(index as u32, self.frame) * most;
+            *pixel = pixel.map(|channel| (channel as f32 + change).clamp(0.0, 255.0) as u8);
+        }
+    }
+}
+
+// -1.0 at the left or top edge to 1.0 at the right or bottom, through a pixel's middle
+fn centred(position: i32, size: i32) -> f32 {
+    return (position as f32 + 0.5) / size.max(1) as f32 * 2.0 - 1.0;
+}
+
+// the pixel at `centred` position `d`
+fn uncentred(d: f32, size: i32) -> i32 {
+    return ((d + 1.0) * 0.5 * size as f32).floor() as i32;
+}
+
 // large odd numbers that spread nearby inputs far apart: the golden ratio as a u32, and two
 // mixing constants from MurmurHash3
 const GOLDEN_RATIO: u32 = 0x9E37_79B9;
@@ -448,8 +663,8 @@ const FIRST_SHIFT: u32 = 15;
 const SECOND_SHIFT: u32 = 12;
 
 // hash function, -1.0..1.0, full deterministic
-fn noise(line: u32, frame: u32) -> f32 {
-    let mut hash = line.wrapping_mul(GOLDEN_RATIO) ^ frame.wrapping_mul(MURMUR_MIX_1);
+fn noise(index: u32, frame: u32) -> f32 {
+    let mut hash = index.wrapping_mul(GOLDEN_RATIO) ^ frame.wrapping_mul(MURMUR_MIX_1);
     hash ^= hash >> FIRST_SHIFT;
     hash = hash.wrapping_mul(MURMUR_MIX_2);
     hash ^= hash >> SECOND_SHIFT;
@@ -516,12 +731,61 @@ mod tests {
     }
 
     #[test]
+    fn curvature_pulls_the_corners_in() {
+        let mut frame = Framebuffer::new(20, 20);
+        frame.fill(Rect::new(0, 0, 20, 20), Rgba::rgb(255, 255, 255));
+        Curvature { amount: 0.3 }.apply(&mut frame);
+        assert_eq!(frame.pixel(0, 0), Some([0; 3]));
+        assert_eq!(frame.pixel(10, 10), Some([255; 3]));
+        let mut flat = grey(4, 4);
+        Curvature { amount: 0.0 }.apply(&mut flat);
+        assert_eq!(flat, grey(4, 4));
+    }
+
+    #[test]
+    fn vignette_darkens_towards_the_edges() {
+        let mut frame = grey(20, 20);
+        Vignette {
+            strength: 1.0,
+            size: 0.0,
+        }
+        .apply(&mut frame);
+        let [corner, edge, between, middle] =
+            [(0, 0), (0, 10), (5, 10), (10, 10)].map(|(x, y)| frame.pixel(x, y).unwrap()[0]);
+        assert!(corner <= edge && edge < between && between < middle);
+        assert!(edge < 10 && middle >= 95);
+    }
+
+    #[test]
+    fn noise_changes_pixels_by_up_to_the_amount_and_each_frame() {
+        let noise = Noise {
+            amount: 0.1,
+            frame: 0,
+        };
+        let mut first = grey(16, 16);
+        noise.apply(&mut first);
+        assert_ne!(first, grey(16, 16));
+        assert!(
+            first
+                .pixels()
+                .iter()
+                .all(|pixel| (74..=126).contains(&pixel[0]))
+        );
+        let mut later = grey(16, 16);
+        Noise { frame: 1, ..noise }.apply(&mut later);
+        assert_ne!(later, first);
+    }
+
+    #[test]
     fn params_by_index_are_clamped() {
         let mut filters: Vec<Box<dyn AdjustableFilter>> = vec![
             Box::new(Scanlines::default()),
             Box::new(ChromaticAberration::default()),
             Box::new(VhsWobble::default()),
             Box::new(ColorAdjust::default()),
+            Box::new(Curvature::default()),
+            Box::new(Vignette::default()),
+            Box::new(Noise::default()),
         ];
         for filter in &mut filters {
             for (index, param) in filter.params().iter().enumerate() {

@@ -99,6 +99,24 @@ impl Framebuffer {
         return self.pixels.as_flattened();
     }
 
+    /// A copy `factor` times as wide and tall, each pixel a `factor` by `factor` block, so filters
+    /// that move pixels around have finer ones to work with.
+    pub fn scaled(&self, factor: i32) -> Self {
+        let factor = factor.max(1);
+        let mut scaled = Self::new(self.width * factor, self.height * factor);
+        for (y, row) in scaled
+            .pixels
+            .chunks_mut(scaled.width.max(1) as usize)
+            .enumerate()
+        {
+            let from = (y as i32 / factor * self.width) as usize;
+            for (x, pixel) in row.iter_mut().enumerate() {
+                *pixel = self.pixels[from + x / factor as usize];
+            }
+        }
+        return scaled;
+    }
+
     /// The pixel at `x`, `y`, or `None` off the edge.
     pub fn pixel(&self, x: i32, y: i32) -> Option<[u8; 3]> {
         if !self.bounds().contains(Point::new(x, y)) {
@@ -227,6 +245,17 @@ mod batched_canvas {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scaled_makes_each_pixel_a_block() {
+        let mut buffer = Framebuffer::new(2, 1);
+        buffer.fill(Rect::new(1, 0, 1, 1), Rgba::rgb(255, 0, 0));
+        let scaled = buffer.scaled(2);
+        assert_eq!((scaled.width(), scaled.height()), (4, 2));
+        assert_eq!(scaled.pixel(1, 1), Some([0, 0, 0]));
+        assert_eq!(scaled.pixel(2, 0), Some([255, 0, 0]));
+        assert_eq!(scaled.pixel(3, 1), Some([255, 0, 0]));
+    }
 
     #[test]
     fn framebuffer_fill() {

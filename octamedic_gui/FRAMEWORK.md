@@ -81,8 +81,12 @@ the screen's shape once resizing stops: the side that was dragged keeps its size
 fits to it (dragging a corner, the one that changed more wins), staying on the monitor; maximised and fullscreen windows are left alone, with bars at the sides.
 
 Ctrl+F11 opens the screen filters (`app/screen_filters.rs`), a list of rustuition's filters in the
-order they run. While any is on, the screen and the pointer are painted into a `Framebuffer`
-instead of straight onto the GPU, filtered, and uploaded as the screen image.
+order they run (scanlines, chroma, VHS wobble, colour, curvature, vignette and noise), with Toggle
+all above it to switch them all off and on again. While any is on, the screen and the pointer are painted into a `Framebuffer`
+instead of straight onto the GPU, doubled each way (`Framebuffer::scaled`) so curvature and the
+other filters that move pixels don't drop whole rows and columns, filtered, and shown in place of
+the screen image. Filter settings in pixels (scanline spacing, chroma offset, wobble) are in these
+finer pixels, so spacing 2 puts a dark line under every screen line.
 
 The VOL page's OUTPUT button opens the output dialog (`app/output.rs`): which sound device plays
 (cpal's output devices, or the default) and whether it's mixed to mono. OK on another device has
