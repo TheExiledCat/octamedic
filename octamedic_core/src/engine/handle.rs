@@ -367,6 +367,10 @@ impl EngineHandle {
         self.send(EngineCommand::Stop);
     }
 
+    pub fn set_global_transpose(&self, semitones: i8) {
+        self.send(EngineCommand::SetGlobalTranspose(semitones));
+    }
+
     pub fn set_pattern(&self, id: PatternId, pattern: Arc<OctamedicPattern>) {
         self.send(EngineCommand::SetPattern { id, pattern });
     }

@@ -270,12 +270,24 @@ works on it: SELECT TRACK and SELECT BLOCK make the cursor's track or the whole 
 CUT and COPY put it in `Clipboard::range` (its own, apart from the track and block buffers;
 DEL BUFF clears all three), PASTE puts the buffer in from the cursor right and down, over what's
 there, and PASTE SELECT does the same from the first track picked with SELECT: 0 to F rather than
-the cursor's (SET picks them all, CLR none; picking more than one is for the transpose panel, which
-isn't built yet). CLEAR empties the range and CANCEL drops it. The
+the cursor's (SET picks them all, CLR none; the TRANS panel's SEL.TRKS uses them all). CLEAR
+empties the range and CANCEL drops it. The
 RANGE: boxes show its first and last track and line. SPREAD, SLIDE: 1 and 2 and NOTE ECHO are
 ghosted. The SELECT: digits and SET and CLR are taller than any of the fonts, so they're
 pictures (`header/labels.rs`, which also has the hand placed labels the BLOCK and RANGE panels
 share).
+
+The TRANS panel (`header/transpose.rs`, the edits in `app/transpose.rs`) works on the cells AFFECT
+picks: every block of the song, the block, the cursor's track, the tracks picked with SELECT: 0 to F
+or the range, and with CURR only those with the current instrument. 1/2 and OCT move their notes a
+half step or an octave, leaving any that would go past C-1 or note 7F. Like OctaMED, a NOTE box
+takes a note key only while it's held down; -> changes every first note to the second and <-> swaps
+them. The instrument boxes take the current instrument when clicked, and DEL clears the first one's
+notes, leaving their commands. All of it is one undo step. PLAY TRANSPOSE is the song's
+`global_transpose`, which only the engine applies, and TEXT is the project's annotation, saved with
+the module and shown on the notification bar when the song's loaded (INFO isn't hooked up, so it's
+always saved). OctaMED's interface font draws `-` 6px wide with a gap either side, so
+`assets/fonts/interface.txt` has it.
 
 Enter or A in the note column puts in a hold: no note, just the selected instrument, shown as `-|-`
 like any cell with an instrument and no note. It keeps a note held past its instrument's hold length

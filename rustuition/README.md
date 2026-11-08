@@ -206,12 +206,13 @@ pointer); or leave the handler out and poll `clicked()`. `repeat(delay, interval
 clicking while it's held, like a held key; the repeats come from `update`, so call that every frame.
 `toggle` / `set_toggled` draw it inverted, the Amiga way of showing a gadget that's on;
 `highlight(Highlight::Recess)` sinks the frame in as well, like OctaMED's track on/off boxes.
+`sunken()` keeps the frame sunk in without inverting, for a box that shows a value.
 `border(n)` sets the frame thickness. The label is lined up with `align` inside the frame and
 padding (`padding(n)` or `padding_xy(x, y)`) and cut to what fits; a label too long for the padding
 moves into it.
 
 `Slider` is a proportional gadget with a dotted track, horizontal or vertical, optionally
-reversed. `SteppedSlider` (`gadgets/stepped_slider.rs`) is a slider with two arrow buttons after
+reversed; `solid()` draws the track solid and the handle flat instead. `SteppedSlider` (`gadgets/stepped_slider.rs`) is a slider with two arrow buttons after
 it that step its value by one and keep stepping while held; its `update(state, current)` hands
 back a new value when it's dragged or stepped, from `min` to `max`. `Grid::new(columns, rows,
 gadgets)` lays gadgets out in rows and passes events and drawing to them.
@@ -220,7 +221,7 @@ gadgets)` lays gadgets out in rows and passes events and drawing to them.
 the pointer, dragging selects, a double click selects a word, and clicking anywhere else, Enter or
 Escape lets go. It takes the usual editing keys: arrows (with Ctrl by word, with Shift to select),
 Home, End, Backspace, Delete and Ctrl+A. `on_update` gets the new text whenever typing changes it,
-`set_text` changes it without calling that, and `max_length` caps it. `pens` sets the box, text,
+`set_text` changes it without calling that, and `max_length` caps it. `sunken()` sinks its frame in. `pens` sets the box, text,
 cursor and selection pens, and `mix_pens` draws the text over the cursor and selection in their pen
 ORed with the text pen, like separate bitplanes overlapping, so white (1) on pen 6 shows as pen 7. It needs the keys as well as
 the mouse, so your event type implements `TextEvent` too, turning key presses into `TextInput`:

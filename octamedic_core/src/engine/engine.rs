@@ -24,7 +24,7 @@ use crate::{
     },
 };
 
-const MAX_NOTE: u8 = 0x7F;
+pub const MAX_NOTE: u8 = 0x7F;
 
 // a channel past the tracks for previews and the sample editor, so they leave the song's alone
 const PREVIEW_CHANNEL: usize = MAX_TRACKS;

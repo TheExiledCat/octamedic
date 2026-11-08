@@ -343,6 +343,7 @@ pub struct Button<S, E = MouseEvent> {
     // drawn inverted when switched on
     toggled: bool,
     highlight: Highlight,
+    sunken: bool,
     border: i32,
     // [x, y]
     padding: [i32; 2],
@@ -368,6 +369,7 @@ impl<S, E> Button<S, E> {
             on_click: None,
             toggled: false,
             highlight: Highlight::Complement,
+            sunken: false,
             border: 1,
             padding: [1, 1],
             align: Align::Center,
@@ -386,6 +388,12 @@ impl<S, E> Button<S, E> {
     /// held key. It waits while the pointer's off it. Repeats come from [`Gadget::update`].
     pub fn repeat(mut self, delay: Duration, interval: Duration) -> Self {
         self.repeat = Some(Repeat { delay, interval });
+        return self;
+    }
+
+    /// Draws its frame pressed in, like a box showing a value, without inverting it.
+    pub fn sunken(mut self) -> Self {
+        self.sunken = true;
         return self;
     }
 
@@ -491,6 +499,11 @@ impl<S, E> Button<S, E> {
     }
 
     /// Whether it's switched on.
+    /// Whether a mouse button is held down on it, with the pointer still over it.
+    pub fn is_pressed(&self) -> bool {
+        return self.clickable.is_pressed();
+    }
+
     pub fn is_toggled(&self) -> bool {
         return self.toggled;
     }
@@ -584,7 +597,7 @@ impl<S, E: PointerEvent> Gadget<S, E> for Button<S, E> {
         self.clickable.set_area(area);
         let (fill, content) = self.pens();
         painter.fill(area, fill);
-        if self.toggled && self.highlight == Highlight::Recess {
+        if self.sunken || self.toggled && self.highlight == Highlight::Recess {
             painter.frame_inverted(area, self.border);
         } else {
             painter.frame(area, self.border);

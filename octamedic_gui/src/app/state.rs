@@ -890,6 +890,13 @@ impl AppState {
         self.engine.set_tempo(tempo);
     }
 
+    pub fn replace_pattern(&mut self, id: PatternId, pattern: OctamedicPattern) {
+        if let Some(slot) = self.song_and_history().0.get_pattern_mut(id) {
+            *slot = pattern;
+            self.changed_patterns.insert(id);
+        }
+    }
+
     pub fn set_block_name(&mut self, name: &str) {
         self.edit_pattern_untracked(|pattern| pattern.name = name.to_owned());
     }

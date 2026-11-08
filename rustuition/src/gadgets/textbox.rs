@@ -36,6 +36,7 @@ pub struct Textbox<S, E = MouseEvent> {
     select_on_focus: bool,
     font: Font,
     border: i32,
+    sunken: bool,
     padding: i32,
     fill: Pen,
     text_pen: Pen,
@@ -64,6 +65,7 @@ impl<S, E> Textbox<S, E> {
             select_on_focus: false,
             font: Font::TOPAZ,
             border: 1,
+            sunken: false,
             padding: 2,
             fill: Pen::BACKGROUND,
             text_pen: Pen::SHINE,
@@ -78,6 +80,12 @@ impl<S, E> Textbox<S, E> {
     }
 
     /// Sets what's called when typing changes the text.
+    /// Draws its frame pressed in rather than raised.
+    pub fn sunken(mut self) -> Self {
+        self.sunken = true;
+        return self;
+    }
+
     pub fn on_update(mut self, handler: impl Fn(&mut S, &str) + 'static) -> Self {
         self.on_update = Some(Rc::new(handler));
         return self;
@@ -484,7 +492,11 @@ impl<S, E: PointerEvent + TextEvent> Gadget<S, E> for Textbox<S, E> {
     fn render(&mut self, _state: &S, area: Rect, painter: &mut Painter) {
         self.area = area;
         painter.fill(area, self.fill);
-        painter.frame(area, self.border);
+        if self.sunken {
+            painter.frame_inverted(area, self.border);
+        } else {
+            painter.frame(area, self.border);
+        }
         let inner = self.inner(area);
         // scrolled for the cursor while typing, so a short text could stay half hidden after
         if self.focused {

@@ -72,6 +72,12 @@ impl<S, E> SteppedSlider<S, E> {
         return self;
     }
 
+    /// See [`Slider::solid`].
+    pub fn solid(mut self) -> Self {
+        self.slider = self.slider.solid();
+        return self;
+    }
+
     /// See [`Slider::set_handle`].
     pub fn set_handle(&mut self, length: Option<i32>) {
         self.slider.set_handle(length);

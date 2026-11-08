@@ -35,6 +35,7 @@ pub struct Slider<S, E = MouseEvent> {
     // handle is track / steps long unless `handle` is set
     steps: u16,
     handle: Option<i32>,
+    solid: bool,
     value: u16,
     on_slide: Option<Rc<dyn SlideHandler<S>>>,
     drag: Option<Drag>,
@@ -52,6 +53,7 @@ impl<S, E> Slider<S, E> {
             reversed,
             steps: steps.max(1),
             handle: None,
+            solid: false,
             value: 0,
             on_slide: None,
             drag: None,
@@ -64,6 +66,12 @@ impl<S, E> Slider<S, E> {
     /// Makes the handle `length` pixels long, rather than the track split by the steps.
     pub fn fixed_handle(mut self, length: i32) -> Self {
         self.handle = Some(length);
+        return self;
+    }
+
+    /// Draws the track solid and the handle flat, rather than a dotted track and a shaded handle.
+    pub fn solid(mut self) -> Self {
+        self.solid = true;
         return self;
     }
 
@@ -243,8 +251,16 @@ impl<S, E: PointerEvent> Gadget<S, E> for Slider<S, E> {
     fn render(&mut self, _state: &S, area: Rect, painter: &mut Painter) {
         let track = painter.frame(area, 1);
         self.area = track;
-        painter.dotted_rect(track, Pen::BACKGROUND, Pen::SHADOW);
         let handle = self.handle_rect(track);
+        if self.solid {
+            painter.fill(track, Pen::BACKGROUND);
+            painter.fill(handle, Pen::SHINE);
+            if !self.enabled {
+                painter.ghost(area, Pen::BACKGROUND);
+            }
+            return;
+        }
+        painter.dotted_rect(track, Pen::BACKGROUND, Pen::SHADOW);
         painter.fill(handle, Pen::SHINE);
         let bottom = Rect::new(handle.x, handle.bottom() - 1, handle.w, 1);
         painter.fill(bottom, Pen::SHADOW);

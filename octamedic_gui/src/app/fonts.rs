@@ -126,7 +126,7 @@ mod tests {
     #[test]
     fn font_files_parse() {
         assert!(parse_glyphs(PANEL_GLYPHS, 6).unwrap().len() >= 26);
-        assert_eq!(parse_glyphs(INTERFACE_GLYPHS, 8).unwrap().len(), 2);
+        assert_eq!(parse_glyphs(INTERFACE_GLYPHS, 8).unwrap().len(), 3);
         assert!(parse_glyphs(TITLE_GLYPHS, 9).is_ok());
         assert!(parse_glyphs(AUTHOR_GLYPHS, 5).is_ok());
         assert_eq!(parse_glyphs(SMALL_GLYPHS, 5).unwrap().len(), 43);
