@@ -16,7 +16,22 @@ video = "pal"          # or "ntsc"
 [output]
 device = "alsa:pulse"  # cpal's id for the device, left out for the default one
 mono = false
+
+[[filters]]            # the screen filters (Ctrl+F11) in the order they run
+kind = "curvature"     # scanlines, chroma, vhs_wobble, color, curvature, vignette or noise
+enabled = true
+amount = 0.04          # each setting by its name in the dialog, lowercase
+
+[[filters]]
+kind = "vignette"
+enabled = false
+strength = 0.6
+size = 0.3
+roundness = 0.4
 ```
+
+The filters are saved whenever they're changed in the dialog. A kind it doesn't know is left out
+and a setting that's missing keeps its default.
 
 Anything missing takes its default, and a missing file is written with the defaults. A file that
 can't be read or parsed (a video standard other than pal or ntsc, say) is renamed to

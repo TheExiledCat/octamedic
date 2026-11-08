@@ -308,7 +308,7 @@ impl AppState {
             play_on_note: false,
             meters: Meters::default(),
             browser: Browser::new(),
-            screen_filters: ScreenFilters::default(),
+            screen_filters: ScreenFilters::from_config(&config.filters),
             pending_dialogs: Vec::new(),
             displays_off: false,
             mouse_mods: KeyMods::NONE,
@@ -712,6 +712,10 @@ impl AppState {
     pub fn set_mono(&mut self, mono: bool) {
         self.config_mut().output.mono = mono;
         self.engine.set_mono(mono);
+    }
+
+    pub fn save_screen_filters(&mut self) {
+        self.config_mut().filters = self.screen_filters.to_config();
     }
 
     pub fn save_config(&mut self) {
@@ -1642,7 +1646,10 @@ mod tests {
     use octamedic_core::data::pattern::{DEFAULT_LINES, MAX_LINES};
 
     use super::*;
-    use crate::{app::prompt, framework::event::Event};
+    use crate::{
+        app::{prompt, screen_filters::FilterKind},
+        framework::event::Event,
+    };
 
     fn state() -> AppState {
         return AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
@@ -2228,6 +2235,22 @@ mod tests {
         state.config_mut().video = VideoStandard::Ntsc;
         assert!(state.config_changed());
         assert_eq!(state.video(), VideoStandard::Ntsc);
+    }
+
+    #[test]
+    fn screen_filters_go_in_the_config_and_come_back() {
+        let mut state = state();
+        state.screen_filters.add(FilterKind::Curvature);
+        state.save_screen_filters();
+        assert!(state.config_changed());
+        assert_eq!(state.config().filters[0].kind, "curvature");
+        let restarted = AppState::with_config(
+            OctamedicProject::new(),
+            EngineHandle::disconnected(),
+            state.config().clone(),
+            None,
+        );
+        assert!(restarted.screen_filters.is_active());
     }
 
     #[test]

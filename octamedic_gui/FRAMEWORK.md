@@ -91,7 +91,8 @@ fits to it (dragging a corner, the one that changed more wins), staying on the m
 
 Ctrl+F11 opens the screen filters (`app/screen_filters.rs`), a list of rustuition's filters in the
 order they run (scanlines, chroma, VHS wobble, colour, curvature, vignette and noise), with Toggle
-all above it to switch them all off and on again. While any is on, the screen and the pointer
+all above it to switch them all off and on again. They're kept in `config.toml`
+(`AppState::save_screen_filters`), so they're back the next time it starts. While any is on, the screen and the pointer
 are painted into a `Framebuffer` instead of straight onto the GPU, filtered, and shown in place of
 the screen image. Curvature would drop whole rows and columns at the screen's own resolution, so
 from it on the picture is enlarged as far as the window shows it, up to twice each way (PAL hires
