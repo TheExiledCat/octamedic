@@ -159,7 +159,10 @@ pub fn sample_note(note: u8, transpose: i8, finetune: i8, octaves: SampleOctaves
         };
         return SampleNote { copy: 0, period };
     };
-    let octave = index as usize / NOTES_PER_OCTAVE as usize;
+    // the player's tables end at octave 6. higher notes, from a high octave or a big transpose,
+    // play in octave 6, the way plain samples fold into B-3's octave
+    let last_octave = OCTAVE_COPIES[row].len() - 1;
+    let octave = (index as usize / NOTES_PER_OCTAVE as usize).min(last_octave);
     let semitone = index as usize % NOTES_PER_OCTAVE as usize;
     let periods_row = OCTAVE_ROWS[row][octave] as usize;
     return SampleNote {
@@ -347,6 +350,34 @@ mod tests {
                 period: 428
             }
         );
+    }
+
+    #[test]
+    fn notes_above_octave_6_play_in_octave_6() {
+        for octaves in SampleOctaves::MULTI {
+            let c6 = sample_note(61, 0, 0, octaves);
+            // C-8 and C-9, and C-6 transposed up two octaves
+            assert_eq!(sample_note(85, 0, 0, octaves), c6, "{octaves:?}");
+            assert_eq!(sample_note(97, 0, 0, octaves), c6, "{octaves:?}");
+            assert_eq!(sample_note(61, 24, 0, octaves), c6, "{octaves:?}");
+        }
+    }
+
+    #[test]
+    fn every_note_and_transpose_plays() {
+        // plain and extra low samples too, their own index maths is the same kind
+        let every_type = SampleOctaves::MULTI
+            .into_iter()
+            .chain([SampleOctaves::One, SampleOctaves::ExtraLow]);
+        for octaves in every_type {
+            for finetune in MIN_FINETUNE..=MAX_FINETUNE {
+                for note in 0..=u8::MAX {
+                    for transpose in i8::MIN..=i8::MAX {
+                        sample_note(note, transpose, finetune, octaves);
+                    }
+                }
+            }
+        }
     }
 
     #[test]
