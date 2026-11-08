@@ -279,16 +279,13 @@ impl Transpose {
     }
 
     fn update_play_transpose(&mut self, state: &mut AppState) {
-        let limit = PLAY_TRANSPOSE_LIMIT as i16;
         let current = state
             .song()
             .global_transpose
             .clamp(-PLAY_TRANSPOSE_LIMIT, PLAY_TRANSPOSE_LIMIT);
-        let slid = self
-            .play_transpose
-            .update(state, (current as i16 + limit) as u16);
-        if let Some(position) = slid {
-            state.set_play_transpose((position as i16 - limit) as i8);
+        let position = (current + PLAY_TRANSPOSE_LIMIT) as u16;
+        if let Some(slid) = self.play_transpose.update(state, position) {
+            state.set_play_transpose(slid as i8 - PLAY_TRANSPOSE_LIMIT);
         }
         let semitones = state.song().global_transpose;
         self.play_transpose_value
