@@ -79,13 +79,13 @@ impl<S, E> Textbox<S, E> {
         };
     }
 
-    /// Sets what's called when typing changes the text.
     /// Draws its frame pressed in rather than raised.
     pub fn sunken(mut self) -> Self {
         self.sunken = true;
         return self;
     }
 
+    /// Sets what's called when typing changes the text.
     pub fn on_update(mut self, handler: impl Fn(&mut S, &str) + 'static) -> Self {
         self.on_update = Some(Rc::new(handler));
         return self;

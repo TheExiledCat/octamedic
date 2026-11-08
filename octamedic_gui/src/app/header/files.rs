@@ -437,7 +437,7 @@ fn write_song(state: &mut AppState, path: PathBuf, bytes: &[u8]) {
 fn load_song(state: &mut AppState, path: &std::path::Path) {
     match load_module(path) {
         Ok(project) => {
-            let text = project.annotation.clone();
+            let text = project.annotation.lines().next().unwrap_or("").to_owned();
             state.load_project(project);
             if !text.is_empty() {
                 state.notify(text);

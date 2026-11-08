@@ -254,21 +254,17 @@ impl<S, E: PointerEvent> Gadget<S, E> for Slider<S, E> {
         let handle = self.handle_rect(track);
         if self.solid {
             painter.fill(track, Pen::BACKGROUND);
-            painter.fill(handle, Pen::SHINE);
-            if !self.enabled {
-                painter.ghost(area, Pen::BACKGROUND);
-            }
-            return;
+        } else {
+            painter.dotted_rect(track, Pen::BACKGROUND, Pen::SHADOW);
         }
-        painter.dotted_rect(track, Pen::BACKGROUND, Pen::SHADOW);
         painter.fill(handle, Pen::SHINE);
-        let bottom = Rect::new(handle.x, handle.bottom() - 1, handle.w, 1);
-        painter.fill(bottom, Pen::SHADOW);
-        if handle.right() < track.right() {
-            painter.fill(
-                Rect::new(handle.right(), handle.y, 1, handle.h),
-                Pen::SHADOW,
-            );
+        if !self.solid {
+            let bottom = Rect::new(handle.x, handle.bottom() - 1, handle.w, 1);
+            painter.fill(bottom, Pen::SHADOW);
+            if handle.right() < track.right() {
+                let right = Rect::new(handle.right(), handle.y, 1, handle.h);
+                painter.fill(right, Pen::SHADOW);
+            }
         }
         if !self.enabled {
             painter.ghost(area, Pen::BACKGROUND);

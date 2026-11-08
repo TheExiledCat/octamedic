@@ -1,6 +1,7 @@
 use std::{
     collections::{HashSet, VecDeque},
     path::PathBuf,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -891,8 +892,8 @@ impl AppState {
     }
 
     pub fn replace_pattern(&mut self, id: PatternId, pattern: OctamedicPattern) {
-        if let Some(slot) = self.song_and_history().0.get_pattern_mut(id) {
-            *slot = pattern;
+        let song = self.song_and_history().0;
+        if song.replace_shared_pattern(id, Arc::new(pattern)).is_some() {
             self.changed_patterns.insert(id);
         }
     }

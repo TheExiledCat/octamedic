@@ -498,12 +498,12 @@ impl<S, E> Button<S, E> {
         self.toggled = toggled;
     }
 
-    /// Whether it's switched on.
     /// Whether a mouse button is held down on it, with the pointer still over it.
     pub fn is_pressed(&self) -> bool {
         return self.clickable.is_pressed();
     }
 
+    /// Whether it's switched on.
     pub fn is_toggled(&self) -> bool {
         return self.toggled;
     }

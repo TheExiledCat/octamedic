@@ -164,26 +164,33 @@ impl AppState {
         };
         let current = self.active_instrument;
         for &id in &affected.blocks {
-            let Some(mut pattern) = self.song().get_pattern(&id).cloned() else {
+            let Some(pattern) = self.song().get_pattern(&id) else {
                 continue;
             };
-            let mut changed = false;
-            for (line_index, line) in pattern.lines.iter_mut().enumerate() {
-                for (track, cell) in line.tracks.iter_mut().enumerate() {
+            let mut edited = Vec::new();
+            for (line_index, line) in pattern.lines.iter().enumerate() {
+                for (track, &cell) in line.tracks.iter().enumerate() {
                     if !affected.has(line_index, track) {
                         continue;
                     }
                     if current_only && cell.instrument_id != current {
                         continue;
                     }
-                    let before = *cell;
-                    edit(cell);
-                    changed |= *cell != before;
+                    let mut changed = cell;
+                    edit(&mut changed);
+                    if changed != cell {
+                        edited.push((line_index, track, changed));
+                    }
                 }
             }
-            if changed {
-                self.replace_pattern(id, pattern);
+            if edited.is_empty() {
+                continue;
             }
+            let mut pattern = pattern.clone();
+            for (line, track, cell) in edited {
+                pattern.lines[line].tracks[track] = cell;
+            }
+            self.replace_pattern(id, pattern);
         }
     }
 }
