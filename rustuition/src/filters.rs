@@ -1,5 +1,7 @@
 //! Filters run over a finished [`Framebuffer`], after everything's been painted.
 
+use std::{cell::RefCell, rc::Rc};
+
 use crate::target::Framebuffer;
 
 /// Changes a finished frame, like scanlines over it. Closures taking `&mut Framebuffer` are
@@ -397,13 +399,21 @@ impl ColorAdjust {
 }
 
 impl Filter for ColorAdjust {
+    // a screen has few colours in long runs, so the last one worked out usually does again
     fn apply(&self, frame: &mut Framebuffer) {
         let turn = self.hue.to_radians().sin_cos();
+        let mut last: Option<([u8; 3], [u8; 3])> = None;
         for pixel in frame.pixels_mut() {
+            if let Some((_, after)) = last.filter(|(before, _)| before == pixel) {
+                *pixel = after;
+                continue;
+            }
+            let before = *pixel;
             let rgb = pixel.map(|channel| channel as f32 / u8::MAX as f32);
             let adjusted = self.adjust(rgb, turn);
             *pixel =
                 adjusted.map(|channel| (channel.clamp(0.0, 1.0) * u8::MAX as f32).round() as u8);
+            last = Some((before, *pixel));
         }
     }
 }
@@ -447,19 +457,51 @@ const CURVATURE_PARAMS: &[Param] = &[Param {
     default: 0.04,
 }];
 
+// where each pixel of the bent picture comes from, for pixels past the tube's edge
+const OUTSIDE: u32 = u32::MAX;
+
 /// Bulges the picture out like the curved glass of a CRT, the corners pulled in furthest. What
 /// falls outside the tube is black.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Curvature {
     /// How far the corners are pulled in, 0.0 for a flat screen.
     pub amount: f32,
+    // which pixel each one is taken from, worked out once per screen size and amount
+    sources: Prepared<(i32, i32, u32), Vec<u32>>,
 }
 
 impl Default for Curvature {
     fn default() -> Self {
         return Self {
             amount: CURVATURE_PARAMS[0].default,
+            sources: Prepared::default(),
         };
+    }
+}
+
+impl Curvature {
+    fn sources(&self, width: i32, height: i32) -> Vec<u32> {
+        // each way bends more the further out it is the other way, so the edges bow
+        let columns: Vec<(f32, f32)> = (0..width)
+            .map(|x| centred(x, width))
+            .map(|dx| (dx, 1.0 + self.amount * dx * dx))
+            .collect();
+        let mut sources = Vec::with_capacity((width * height) as usize);
+        for y in 0..height {
+            let dy = centred(y, height);
+            let row_bend = 1.0 + self.amount * dy * dy;
+            for &(dx, column_bend) in &columns {
+                let from_x = uncentred(dx * row_bend, width);
+                let from_y = uncentred(dy * column_bend, height);
+                let inside = (0..width).contains(&from_x) && (0..height).contains(&from_y);
+                sources.push(if inside {
+                    (from_y * width + from_x) as u32
+                } else {
+                    OUTSIDE
+                });
+            }
+        }
+        return sources;
     }
 }
 
@@ -485,19 +527,15 @@ impl Filter for Curvature {
             return;
         }
         let (width, height) = (frame.width(), frame.height());
-        let original = frame.clone();
-        for y in 0..height {
-            let Some(row) = frame.row_mut(y) else {
-                continue;
+        let key = (width, height, self.amount.to_bits());
+        let sources = self.sources.get(key, || self.sources(width, height));
+        let original = frame.pixels().to_vec();
+        for (pixel, &source) in frame.pixels_mut().iter_mut().zip(sources.iter()) {
+            *pixel = if source == OUTSIDE {
+                [0; 3]
+            } else {
+                original[source as usize]
             };
-            let dy = centred(y, height);
-            for (x, pixel) in row.iter_mut().enumerate() {
-                let dx = centred(x as i32, width);
-                // each way bends more the further out it is the other way, so the edges bow
-                let from_x = uncentred(dx * (1.0 + self.amount * dy * dy), width);
-                let from_y = uncentred(dy * (1.0 + self.amount * dx * dx), height);
-                *pixel = original.pixel(from_x, from_y).unwrap_or([0; 3]);
-            }
         }
     }
 }
@@ -517,15 +555,32 @@ const VIGNETTE_PARAMS: &[Param] = &[
         step: 0.05,
         default: 0.3,
     },
+    Param {
+        name: "Roundness",
+        min: 0.0,
+        max: 1.0,
+        step: 0.05,
+        default: 0.4,
+    },
 ];
 
-/// Darkens towards the edges, like an old tube.
-#[derive(Clone, Copy, Debug, PartialEq)]
+// the superellipse exponent at roundness 0; at 1 it's 2, a plain ellipse
+const SQUAREST_VIGNETTE: f32 = 10.0;
+// a shade that leaves a pixel as it is
+const FULL_SHADE: u16 = 256;
+
+/// Darkens towards the edges, like an old tube. Its shape goes from the screen's own rectangle with
+/// rounded corners to an ellipse as `roundness` goes up.
+#[derive(Clone, Debug)]
 pub struct Vignette {
     /// How dark the edges get, 1.0 for black.
     pub strength: f32,
     /// How much of the middle stays as it is, 0.0 for none, 1.0 for right out to the edges.
     pub size: f32,
+    /// 0.0 for nearly square corners, 1.0 for an ellipse.
+    pub roundness: f32,
+    // each pixel's shade, worked out once per screen size and settings
+    shades: Prepared<(i32, i32, [u32; 3]), Vec<u16>>,
 }
 
 impl Default for Vignette {
@@ -533,6 +588,8 @@ impl Default for Vignette {
         return Self {
             strength: VIGNETTE_PARAMS[0].default,
             size: VIGNETTE_PARAMS[1].default,
+            roundness: VIGNETTE_PARAMS[2].default,
+            shades: Prepared::default(),
         };
     }
 }
@@ -546,6 +603,7 @@ impl FilterParams for Vignette {
         return match index {
             0 => self.strength,
             1 => self.size,
+            2 => self.roundness,
             _ => 0.0,
         };
     }
@@ -557,12 +615,30 @@ impl FilterParams for Vignette {
         let value = param.clamp(value);
         match index {
             0 => self.strength = value,
-            _ => self.size = value,
+            1 => self.size = value,
+            _ => self.roundness = value,
         }
     }
 }
 
 impl Vignette {
+    // each pixel's shade out of FULL_SHADE. The superellipse distance (|dx|^n + |dy|^n)^(1/n) is 1.0
+    // all along the edges' middles out and a little more in the corners
+    fn shades(&self, width: i32, height: i32) -> Vec<u16> {
+        let exponent = SQUAREST_VIGNETTE - (SQUAREST_VIGNETTE - 2.0) * self.roundness;
+        let part = |position: i32, size: i32| centred(position, size).abs().powf(exponent);
+        let columns: Vec<f32> = (0..width).map(|x| part(x, width)).collect();
+        let mut shades = Vec::with_capacity((width * height) as usize);
+        for y in 0..height {
+            let row_part = part(y, height);
+            for column_part in &columns {
+                let distance = (column_part + row_part).powf(1.0 / exponent);
+                shades.push((self.keep(distance) * FULL_SHADE as f32).round() as u16);
+            }
+        }
+        return shades;
+    }
+
     // what's left of a pixel `distance` from the middle, where 1.0 is the middle of an edge.
     // smoothstep, so the dark comes in gently and levels off at the edges
     fn keep(&self, distance: f32) -> f32 {
@@ -574,16 +650,12 @@ impl Vignette {
 impl Filter for Vignette {
     fn apply(&self, frame: &mut Framebuffer) {
         let (width, height) = (frame.width(), frame.height());
-        for y in 0..height {
-            let dy = centred(y, height);
-            let Some(row) = frame.row_mut(y) else {
-                continue;
-            };
-            for (x, pixel) in row.iter_mut().enumerate() {
-                let dx = centred(x as i32, width);
-                let keep = self.keep((dx * dx + dy * dy).sqrt());
-                *pixel = pixel.map(|channel| (channel as f32 * keep) as u8);
-            }
+        let settings = [self.strength, self.size, self.roundness].map(f32::to_bits);
+        let shades = self
+            .shades
+            .get((width, height, settings), || self.shades(width, height));
+        for (pixel, &shade) in frame.pixels_mut().iter_mut().zip(shades.iter()) {
+            *pixel = pixel.map(|channel| (channel as u16 * shade / FULL_SHADE) as u8);
         }
     }
 }
@@ -636,11 +708,36 @@ impl Filter for Noise {
     }
 
     fn apply(&self, frame: &mut Framebuffer) {
-        let most = self.amount * u8::MAX as f32;
+        let most = (self.amount * u8::MAX as f32) as i32;
         for (index, pixel) in frame.pixels_mut().iter_mut().enumerate() {
-            let change = noise(index as u32, self.frame) * most;
-            *pixel = pixel.map(|channel| (channel as f32 + change).clamp(0.0, 255.0) as u8);
+            // the hash's top 16 bits, -32768 to 32767, scaled to -most to most
+            let change = ((hash(index as u32, self.frame) >> 16) as i32 - 32768) * most / 32768;
+            *pixel = pixel.map(|channel| (channel as i32 + change).clamp(0, 255) as u8);
         }
+    }
+}
+
+/// Something a filter works out from the screen size and its settings, kept until either changes.
+#[derive(Clone, Debug)]
+struct Prepared<K, V>(RefCell<Option<(K, Rc<V>)>>);
+
+impl<K, V> Default for Prepared<K, V> {
+    fn default() -> Self {
+        return Self(RefCell::new(None));
+    }
+}
+
+impl<K: PartialEq, V> Prepared<K, V> {
+    fn get(&self, key: K, prepare: impl FnOnce() -> V) -> Rc<V> {
+        let mut slot = self.0.borrow_mut();
+        if let Some((kept, value)) = slot.as_ref() {
+            if *kept == key {
+                return Rc::clone(value);
+            }
+        }
+        let value = Rc::new(prepare());
+        *slot = Some((key, Rc::clone(&value)));
+        return value;
     }
 }
 
@@ -662,13 +759,18 @@ const MURMUR_MIX_2: u32 = 0x2C1B_3C6D;
 const FIRST_SHIFT: u32 = 15;
 const SECOND_SHIFT: u32 = 12;
 
-// hash function, -1.0..1.0, full deterministic
-fn noise(index: u32, frame: u32) -> f32 {
+// the same every time for the same index and frame, but all over the place from one to the next
+fn hash(index: u32, frame: u32) -> u32 {
     let mut hash = index.wrapping_mul(GOLDEN_RATIO) ^ frame.wrapping_mul(MURMUR_MIX_1);
     hash ^= hash >> FIRST_SHIFT;
     hash = hash.wrapping_mul(MURMUR_MIX_2);
     hash ^= hash >> SECOND_SHIFT;
-    return hash as f32 / u32::MAX as f32 * 2.0 - 1.0;
+    return hash;
+}
+
+// -1.0..1.0
+fn noise(index: u32, frame: u32) -> f32 {
+    return hash(index, frame) as f32 / u32::MAX as f32 * 2.0 - 1.0;
 }
 
 #[cfg(test)]
@@ -734,11 +836,19 @@ mod tests {
     fn curvature_pulls_the_corners_in() {
         let mut frame = Framebuffer::new(20, 20);
         frame.fill(Rect::new(0, 0, 20, 20), Rgba::rgb(255, 255, 255));
-        Curvature { amount: 0.3 }.apply(&mut frame);
+        Curvature {
+            amount: 0.3,
+            ..Curvature::default()
+        }
+        .apply(&mut frame);
         assert_eq!(frame.pixel(0, 0), Some([0; 3]));
         assert_eq!(frame.pixel(10, 10), Some([255; 3]));
         let mut flat = grey(4, 4);
-        Curvature { amount: 0.0 }.apply(&mut flat);
+        Curvature {
+            amount: 0.0,
+            ..Curvature::default()
+        }
+        .apply(&mut flat);
         assert_eq!(flat, grey(4, 4));
     }
 
@@ -748,12 +858,34 @@ mod tests {
         Vignette {
             strength: 1.0,
             size: 0.0,
+            roundness: 1.0,
+            ..Vignette::default()
         }
         .apply(&mut frame);
         let [corner, edge, between, middle] =
             [(0, 0), (0, 10), (5, 10), (10, 10)].map(|(x, y)| frame.pixel(x, y).unwrap()[0]);
         assert!(corner <= edge && edge < between && between < middle);
         assert!(edge < 10 && middle >= 95);
+    }
+
+    #[test]
+    fn roundness_goes_from_the_rectangle_to_an_ellipse() {
+        // a point out along the diagonal against one just as far out straight to the side: the
+        // squarer it is, the closer the two are
+        let gap = |roundness: f32| {
+            let mut frame = grey(40, 40);
+            Vignette {
+                strength: 1.0,
+                size: 0.5,
+                roundness,
+                ..Vignette::default()
+            }
+            .apply(&mut frame);
+            let shade = |x, y| frame.pixel(x, y).unwrap()[0] as i32;
+            shade(33, 20) - shade(33, 33)
+        };
+        assert!(gap(0.0) < gap(1.0));
+        assert!(gap(0.0) >= 0);
     }
 
     #[test]

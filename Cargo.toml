@@ -25,6 +25,11 @@ debug = false
 [profile.dev.package.wgpu-core]
 debug-assertions = false
 
+# the screen filters go over every pixel of a doubled screen each frame, which at opt-level "z"
+# took more than a frame on its own
+[profile.dev.package.rustuition]
+opt-level = 3
+
 [profile.debugging]
 inherits = "dev"
 debug = true

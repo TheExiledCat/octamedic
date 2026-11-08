@@ -210,14 +210,9 @@ impl App {
         self.cursor_pixels.paint(&mut frame, self.pointer);
         let mut frame = frame.scaled(FILTER_SCALE);
         self.state.screen_filters.apply(&mut frame);
-        let rgba: Vec<u8> = frame
-            .pixels()
-            .iter()
-            .flat_map(|&[r, g, b]| [r, g, b, u8::MAX])
-            .collect();
         return Image::from_pixels(
             ctx,
-            &rgba,
+            &frame.to_rgba(),
             ImageFormat::Rgba8UnormSrgb,
             frame.width() as u32,
             frame.height() as u32,

@@ -117,6 +117,15 @@ impl Framebuffer {
         return scaled;
     }
 
+    /// The pixels as r, g, b, a bytes, every alpha opaque, the way GPU textures usually take them.
+    pub fn to_rgba(&self) -> Vec<u8> {
+        let mut rgba = Vec::with_capacity(self.pixels.len() * 4);
+        for &[r, g, b] in &self.pixels {
+            rgba.extend_from_slice(&[r, g, b, u8::MAX]);
+        }
+        return rgba;
+    }
+
     /// The pixel at `x`, `y`, or `None` off the edge.
     pub fn pixel(&self, x: i32, y: i32) -> Option<[u8; 3]> {
         if !self.bounds().contains(Point::new(x, y)) {
@@ -245,6 +254,13 @@ mod batched_canvas {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rgba_is_opaque() {
+        let mut buffer = Framebuffer::new(1, 1);
+        buffer.fill(buffer.bounds(), Rgba::rgb(1, 2, 3));
+        assert_eq!(buffer.to_rgba(), [1, 2, 3, 255]);
+    }
 
     #[test]
     fn scaled_makes_each_pixel_a_block() {
