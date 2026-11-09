@@ -1091,16 +1091,21 @@ mod tests {
         assert!(channel_writes(&recorder, 0).is_empty());
     }
 
-    #[test]
-    fn multi_octave_notes_play_their_copy() {
+    // copies of 2, 4 and 8 bytes
+    fn three_octave_instrument() -> OctamedicInstrument {
         let mut instrument = OctamedicInstrument::new("bass");
         instrument.kind = InstrumentKind::Sample(Arc::new(OctamedicSample {
             data: (0..14).collect(),
             repeat: None,
             octaves: SampleOctaves::Three,
         }));
+        return instrument;
+    }
+
+    #[test]
+    fn multi_octave_notes_play_their_copy() {
         // C-1 on a 3 octave sample is the longest copy, 8 bytes from byte 6, at C-1's period
-        let writes = note_writes(instrument, 1);
+        let writes = note_writes(three_octave_instrument(), 1);
         assert!(writes.iter().any(|write| matches!(
             write,
             PaulaWrite::Sample {
@@ -1110,6 +1115,21 @@ mod tests {
             }
         )));
         assert!(writes.contains(&PaulaWrite::Period(856)));
+    }
+
+    #[test]
+    fn notes_above_octave_6_play_like_octave_6() {
+        // C-8 plays like C-6: the shortest copy, 2 bytes from the start, at C-3's period
+        let writes = note_writes(three_octave_instrument(), 85);
+        assert!(writes.iter().any(|write| matches!(
+            write,
+            PaulaWrite::Sample {
+                start: 0,
+                len: 2,
+                ..
+            }
+        )));
+        assert!(writes.contains(&PaulaWrite::Period(214)));
     }
 
     #[test]

@@ -57,6 +57,16 @@ pub enum SampleOctaves {
 }
 
 impl SampleOctaves {
+    /// The types with a copy per octave, in MMD order (instrument types 1 to 6).
+    pub const MULTI: [SampleOctaves; 6] = [
+        Self::Five,
+        Self::Three,
+        Self::Two,
+        Self::Four,
+        Self::Six,
+        Self::Seven,
+    ];
+
     /// How many copies of the sound there are.
     pub fn copies(self) -> u32 {
         return match self {

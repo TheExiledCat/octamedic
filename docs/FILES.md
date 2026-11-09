@@ -112,6 +112,10 @@ no higher than octave 5's pitch):
 
 IFF7OCT never plays its shortest copy, so its seventh octave never plays.
 
+Notes that still land above octave 6, from the octaves box's 7 to 9 or a big transpose, run past
+the end of the player's tables. OctaMEDIC plays them in octave 6, the way plain samples play
+anything above B-3 in B-3's octave.
+
 **EXTSAMPLE** (type 7, V5 and later) plays as one copy, two octaves lower than a normal sample:
 the period table gets two extra-low rows (3424 down to 1812, then 1712 down to 906) in front.
 
