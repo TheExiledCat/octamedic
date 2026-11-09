@@ -12,7 +12,6 @@ pub struct DialogStack {
 }
 
 impl DialogStack {
-    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         return self.dialogs.is_empty();
     }

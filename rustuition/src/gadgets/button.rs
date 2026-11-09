@@ -587,6 +587,8 @@ impl<S, E: PointerEvent> Gadget<S, E> for Button<S, E> {
                 self.press(state, ButtonClick { button, char_index });
             }
             Click::Handled => self.held = None,
+            // a missed release the clickable has just forgotten
+            Click::Ignored if !self.clickable.is_held() => self.held = None,
             Click::Ignored => {}
         }
         return click.handled();
@@ -853,6 +855,33 @@ mod tests {
             &mut Painter::new(&mut screen, &palette),
         );
         assert_eq!(screen.pixel(10, 5), Some([0, 0, 0]));
+    }
+
+    #[test]
+    fn a_missed_release_stops_the_repeat() {
+        let clicks = Rc::new(std::cell::Cell::new(0));
+        let counted = clicks.clone();
+        let mut button = Button::<()>::new("+")
+            .repeat(DEFAULT_REPEAT_DELAY, DEFAULT_REPEAT_INTERVAL)
+            .on_click(move |_, _| counted.set(counted.get() + 1));
+        button.clickable.set_area(Rect::new(0, 0, 10, 10));
+        let start = Instant::now();
+        let press = |x, y| MouseEvent::Down {
+            pos: Point::new(x, y),
+            button: MouseButton::Left,
+        };
+        button.handle_event(&mut (), &press(5, 5));
+        // its release went elsewhere, then a press elsewhere, then back over the button
+        button.handle_event(&mut (), &press(50, 50));
+        assert!(button.held.is_none());
+        button.handle_event(
+            &mut (),
+            &MouseEvent::Move {
+                pos: Point::new(5, 5),
+            },
+        );
+        button.repeat_at(&mut (), start + DEFAULT_REPEAT_DELAY * 2);
+        assert_eq!(clicks.get(), 1);
     }
 
     #[test]

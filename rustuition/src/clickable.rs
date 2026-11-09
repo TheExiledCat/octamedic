@@ -41,6 +41,11 @@ impl Clickable {
         self.hovered = false;
     }
 
+    /// Whether a mouse button pressed on it is still held, wherever the pointer is.
+    pub fn is_held(&self) -> bool {
+        return self.pressed.is_some();
+    }
+
     /// Whether a mouse button is held on it with the pointer still over it.
     pub fn is_pressed(&self) -> bool {
         return self.hovered && self.pressed.is_some();
@@ -59,7 +64,11 @@ impl Clickable {
             }
             MouseEvent::Down { pos, button } => {
                 self.hovered = self.area.contains(pos);
-                // a press of the button held means its release went to another widget
+                // a press of the button held means its release went to another widget, so it's
+                // not held any more, wherever this press lands. kept, it'd take the next release
+                if self.pressed == Some(button) {
+                    self.pressed = None;
+                }
                 let other_held = self.pressed.is_some_and(|held| held != button);
                 if !self.hovered || other_held {
                     return Click::Ignored;
@@ -149,6 +158,19 @@ mod tests {
             button: MouseButton::Right,
         };
         assert_eq!(clickable.handle(&right), Click::Ignored);
+    }
+
+    #[test]
+    fn missed_release_forgotten_by_a_press_elsewhere() {
+        let mut clickable = clickable();
+        clickable.handle(&down(15, 15));
+        // the release went to another widget, then something else is pressed and let go
+        assert_eq!(clickable.handle(&down(100, 100)), Click::Ignored);
+        assert_eq!(clickable.handle(&up(100, 100)), Click::Ignored);
+        clickable.handle(&MouseEvent::Move {
+            pos: Point::new(15, 15),
+        });
+        assert!(!clickable.is_pressed());
     }
 
     #[test]

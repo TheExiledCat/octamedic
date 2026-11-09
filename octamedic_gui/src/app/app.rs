@@ -52,6 +52,7 @@ pub struct App {
     state: AppState,
     main: MainView,
     dialogs: DialogStack,
+    screen_presses: ScreenPresses,
     // native res, scaled up into the window
     screen: Image,
     video: VideoStandard,
@@ -96,6 +97,7 @@ impl App {
             state,
             main: MainView::new(),
             dialogs: DialogStack::default(),
+            screen_presses: ScreenPresses::default(),
             screen: screen_image(ctx, video),
             video,
             cursor: Image::from_bytes(ctx, CURSOR)?,
@@ -192,9 +194,13 @@ impl App {
     }
 
     fn dispatch(&mut self, event: Event) -> bool {
-        return prompt::handle_event(&mut self.state, &event)
-            || self.dialogs.handle_event(&mut self.state, &event)
-            || self.main.handle_event(&mut self.state, &event);
+        return route_event(
+            &mut self.state,
+            &mut self.dialogs,
+            &mut self.main,
+            &mut self.screen_presses,
+            &event,
+        );
     }
 
     fn mouse_event(&mut self, ctx: &Context, x: f32, y: f32, event: impl FnOnce(Point) -> Event) {
@@ -458,6 +464,47 @@ fn quit_now(state: &mut AppState) -> bool {
     return state.exit_requested;
 }
 
+/// Mouse buttons whose press went to the screens rather than a prompt or dialog.
+#[derive(Default)]
+struct ScreenPresses {
+    left: bool,
+    right: bool,
+}
+
+impl ScreenPresses {
+    fn held(&mut self, button: event::MouseButton) -> &mut bool {
+        return match button {
+            event::MouseButton::Left => &mut self.left,
+            event::MouseButton::Right => &mut self.right,
+        };
+    }
+}
+
+// the prompt, then the top dialog, then the screens. a release goes back to the screens when they
+// got its press, even if a prompt or dialog opened since, so whatever was pressed lets go. like a
+// requester coming up ending the active gadget in Intuition
+fn route_event(
+    state: &mut AppState,
+    dialogs: &mut DialogStack,
+    screens: &mut impl Gadget<AppState, Event>,
+    presses: &mut ScreenPresses,
+    event: &Event,
+) -> bool {
+    match *event {
+        Event::MouseDown { button, .. } => {
+            *presses.held(button) = state.prompt.is_none() && dialogs.is_empty();
+        }
+        // forgetting the press either way
+        Event::MouseUp { button, .. } if std::mem::take(presses.held(button)) => {
+            return screens.handle_event(state, event);
+        }
+        _ => {}
+    }
+    return prompt::handle_event(state, event)
+        || dialogs.handle_event(state, event)
+        || screens.handle_event(state, event);
+}
+
 // the key's toggle isn't in the modifiers, and it may already be on at startup, so a typed letter
 // tells: uppercase without shift, or lowercase with it, means it's on
 fn caps_lock_from_letter(character: char, shift: bool) -> Option<bool> {
@@ -523,7 +570,126 @@ fn drawable_size(ctx: &Context) -> [f32; 2] {
 
 #[cfg(test)]
 mod tests {
+    use rustuition::rect::Rect;
+
     use super::*;
+    use crate::app::{
+        mode::{HeaderMode, MainMode},
+        prompt::Prompt,
+    };
+
+    fn mouse(down: bool, x: i32, y: i32) -> Event {
+        let (pos, button) = (Point::new(x, y), event::MouseButton::Left);
+        return match down {
+            true => Event::MouseDown { pos, button },
+            false => Event::MouseUp { pos, button },
+        };
+    }
+
+    // stands in for the screens, keeping what it gets
+    #[derive(Default)]
+    struct Screens {
+        events: Vec<Event>,
+    }
+
+    impl Gadget<AppState, Event> for Screens {
+        fn handle_event(&mut self, _state: &mut AppState, event: &Event) -> bool {
+            self.events.push(*event);
+            return true;
+        }
+
+        fn render(&mut self, _state: &AppState, _area: Rect, _painter: &mut Painter) {}
+    }
+
+    #[test]
+    fn a_release_goes_where_its_press_went() {
+        let mut state = state();
+        let mut dialogs = DialogStack::default();
+        let mut screens = Screens::default();
+        let mut presses = ScreenPresses::default();
+        let (press, release) = (mouse(true, 5, 5), mouse(false, 5, 5));
+        let mut route = |state: &mut AppState, screens: &mut Screens, event: &Event| {
+            route_event(state, &mut dialogs, screens, &mut presses, event);
+        };
+        route(&mut state, &mut screens, &press);
+        // the press opened a prompt, which gets everything but that release
+        state.open_prompt(Prompt::yes_no("Sure?", |_| {}));
+        route(&mut state, &mut screens, &release);
+        assert_eq!(screens.events, [press, release]);
+        // and a press on the prompt keeps its release there
+        route(&mut state, &mut screens, &press);
+        route(&mut state, &mut screens, &release);
+        assert_eq!(screens.events.len(), 2);
+    }
+
+    #[test]
+    fn load_asking_first_doesnt_leave_the_list_scrolling() {
+        let folder =
+            std::env::temp_dir().join(format!("octamedic-load-release-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(&folder).unwrap();
+        // more than the file list shows, so its scroll bar moves
+        for index in 0..60 {
+            std::fs::write(folder.join(format!("song{index:02}.mmd1")), []).unwrap();
+        }
+        let mut state = state();
+        state.browser.open(&folder).unwrap();
+        state.browser.select_file(Some("song00.mmd1".to_owned()));
+        state.set_modes(HeaderMode::Files, MainMode::Files);
+        state.set_song_name("changed");
+        let mut dialogs = DialogStack::default();
+        let mut main = MainView::new();
+        let mut presses = ScreenPresses::default();
+        let mut route = |state: &mut AppState, main: &mut MainView, event: Event| {
+            route_event(state, &mut dialogs, main, &mut presses, &event);
+            main.update(state);
+        };
+        let draw = |main: &mut MainView, state: &AppState| {
+            let mut screen = Framebuffer::new(640, 256);
+            main.render(
+                state,
+                screen.bounds(),
+                &mut Painter::new(&mut screen, &state.palette),
+            );
+            return screen;
+        };
+        main.update(&mut state);
+        let before = draw(&mut main, &state);
+        // LOAD SONG asks about the changes, and the prompt is open when it's let go
+        route(&mut state, &mut main, mouse(true, 170, 22));
+        assert!(state.prompt.is_some());
+        route(&mut state, &mut main, mouse(false, 170, 22));
+        let no = Event::Key {
+            key: KeyCode::N,
+            mods: KeyMods::empty(),
+            repeat: false,
+        };
+        route(&mut state, &mut main, no);
+        assert!(state.prompt.is_none());
+        // drag the file list's scroll bar down and let go
+        route(&mut state, &mut main, mouse(true, 444, 105));
+        route(
+            &mut state,
+            &mut main,
+            Event::MouseMove {
+                pos: Point::new(444, 150),
+            },
+        );
+        route(&mut state, &mut main, mouse(false, 444, 150));
+        let let_go = draw(&mut main, &state);
+        // it's let go, so moving on doesn't scroll it any further
+        route(
+            &mut state,
+            &mut main,
+            Event::MouseMove {
+                pos: Point::new(444, 190),
+            },
+        );
+        let after = draw(&mut main, &state);
+        let _ = std::fs::remove_dir_all(&folder);
+        assert!(let_go != before, "the drag scrolled the list");
+        assert!(after == let_go);
+    }
 
     #[test]
     fn cursor_paints_into_the_framebuffer() {
