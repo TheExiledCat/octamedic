@@ -5,7 +5,7 @@ macOS. It's a program of its own, written from scratch: you don't need an Amiga,
 Kickstart ROMs or a copy of OctaMED to run it.
 
 Join us on the TrackerCatz Discord server.
-[![Discord](https://img.shields.io/badge/TrackerCatz_Discord-Join%20Server-5865F2?logo=discord&logoColor=white)](https://discord.gg/yourinvite)
+[![Discord](https://img.shields.io/badge/TrackerCatz_Discord-Join%20Server-5865F2?logo=discord&logoColor=white)](https://discord.gg/cjAQR9xB5q)
 
 ![OctaMEDIC](octamedic.png)
 
