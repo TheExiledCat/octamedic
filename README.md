@@ -4,6 +4,9 @@ A faithful, standalone clone of OctaMED Professional v4, the Amiga tracker, for 
 macOS. It's a program of its own, written from scratch: you don't need an Amiga, an emulator,
 Kickstart ROMs or a copy of OctaMED to run it.
 
+Join us on the TrackerCatz Discord server.
+[![Discord](https://img.shields.io/badge/TrackerCatz_Discord-Join%20Server-5865F2?logo=discord&logoColor=white)](https://discord.gg/yourinvite)
+
 ![OctaMEDIC](octamedic.png)
 
 **v0.0.1 is the first demo.** Someone who knows OctaMED Pro v4 can sit down, make a short song
