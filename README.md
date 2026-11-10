@@ -88,7 +88,8 @@ need the GUI.
 | Linux (most PCs) | `octamedic-gui-<version>-x86_64-unknown-linux-gnu.zip` |
 | Linux on ARM | `octamedic-gui-<version>-aarch64-unknown-linux-gnu.zip` |
 
-There's nothing to install: unzip it and run what's inside.
+There's nothing to install: unzip it and run what's inside. If it won't start or something
+doesn't work, [docs/SUPPORT.md](docs/SUPPORT.md) has fixes for each system.
 
 ### Windows
 
@@ -194,6 +195,8 @@ You get the newest changes this way, and also the ones that break things.
 ## Contributing
 
 - [CONTRIBUTING.md](CONTRIBUTING.md) for building, code style and pull requests
+- [docs/SUPPORT.md](docs/SUPPORT.md) if something doesn't work: install warnings, a window that
+  won't open, no sound
 - [docs/CONFIG.md](docs/CONFIG.md) for `config.toml`
 - [docs/PLAYER.md](docs/PLAYER.md) for how the player works (Paula, DMA, the CIA timer)
 - [docs/FILES.md](docs/FILES.md) for the files besides modules: loading instruments, multi-octave
