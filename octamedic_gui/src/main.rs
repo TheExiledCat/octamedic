@@ -92,7 +92,6 @@ fn ggez_backend(graphics: GraphicsBackend) -> Backend {
         GraphicsBackend::Vulkan => Backend::Vulkan,
         GraphicsBackend::Metal => Backend::Metal,
         GraphicsBackend::Dx12 => Backend::Dx12,
-        GraphicsBackend::Dx11 => Backend::Dx11,
         GraphicsBackend::Gl => Backend::Gl,
     };
 }

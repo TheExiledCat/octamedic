@@ -51,7 +51,8 @@ pub struct OutputConfig {
     pub mono: bool,
 }
 
-/// What wgpu draws with. Auto tries Vulkan, Metal and DX12, then GL and DX11.
+/// What wgpu draws with. Auto tries Vulkan, Metal and DX12, then GL. wgpu 0.16's DX11 backend is
+/// unfinished (its render pipelines are `todo!()`), so it isn't offered.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub enum GraphicsBackend {
@@ -60,19 +61,11 @@ pub enum GraphicsBackend {
     Vulkan,
     Metal,
     Dx12,
-    Dx11,
     Gl,
 }
 
 impl GraphicsBackend {
-    const ALL: [Self; 6] = [
-        Self::Auto,
-        Self::Vulkan,
-        Self::Metal,
-        Self::Dx12,
-        Self::Dx11,
-        Self::Gl,
-    ];
+    const ALL: [Self; 5] = [Self::Auto, Self::Vulkan, Self::Metal, Self::Dx12, Self::Gl];
 
     pub fn name(self) -> &'static str {
         return match self {
@@ -80,7 +73,6 @@ impl GraphicsBackend {
             Self::Vulkan => "vulkan",
             Self::Metal => "metal",
             Self::Dx12 => "dx12",
-            Self::Dx11 => "dx11",
             Self::Gl => "gl",
         };
     }
@@ -96,7 +88,7 @@ impl FromStr for GraphicsBackend {
             .find(|backend| backend.name() == name)
             .ok_or_else(|| {
                 format!(
-                    "unknown graphics backend \"{name}\", expected auto, vulkan, metal, dx12, dx11 or gl"
+                    "unknown graphics backend \"{name}\", expected auto, vulkan, metal, dx12 or gl"
                 )
             });
     }

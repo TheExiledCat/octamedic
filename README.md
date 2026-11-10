@@ -105,7 +105,7 @@ set OCTAMEDIC_GRAPHICS=dx12
 octamedic_gui.exe
 ```
 
-If `dx12` doesn't help, try `dx11`, `vulkan` or `gl`. The one that works can go in `config.toml`
+If `dx12` doesn't help, try `vulkan` or `gl`. The one that works can go in `config.toml`
 as `graphics = "dx12"` ([docs/CONFIG.md](docs/CONFIG.md)). Either way, please add your
 `crash.log` and graphics card to [issue #53](https://github.com/TheExiledCat/octamedic/issues/53).
 graphics card.

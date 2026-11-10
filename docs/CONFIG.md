@@ -54,12 +54,11 @@ between them in the app.
 ### `graphics`
 
 What the screen is drawn with. `"auto"` (the default) tries Vulkan, Metal or DirectX 12 first,
-then OpenGL and DirectX 11. If the window stays white or closes as soon as it opens, try another:
+then OpenGL. If the window stays white or closes as soon as it opens, try another:
 
 | Value | Works on |
 |---|---|
 | `"dx12"` | Windows |
-| `"dx11"` | Windows |
 | `"vulkan"` | Windows and Linux, with a Vulkan driver |
 | `"gl"` | Windows and Linux |
 | `"metal"` | macOS |

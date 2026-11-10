@@ -48,7 +48,7 @@ set OCTAMEDIC_GRAPHICS=dx12
 octamedic_gui.exe
 ```
 
-If that doesn't help, try `dx11`, then `vulkan`, then `gl`. When one works, put it in `config.toml`
+If that doesn't help, try `vulkan`, then `gl`. When one works, put it in `config.toml`
 so it's used every time:
 
 ```toml
@@ -59,6 +59,19 @@ graphics = "dx12"
 from NVIDIA, AMD or Intel's site, and trying with overlays turned off (Steam, Discord, OBS,
 RivaTuner/MSI Afterburner, GeForce Experience). Remote Desktop and virtual machines often don't
 have the graphics support it needs.
+
+#### Older Intel graphics
+
+Which backend to try depends on the generation, which is the first digit of the processor's number
+(an i5-**6**200U is 6th gen). **Device Manager > Display adapters** shows the graphics' name.
+
+- **6th to 10th gen** (HD Graphics 5xx and 6xx, UHD Graphics 6xx, Iris 5xx and 6xx): Intel's
+  Vulkan driver for these is old, and OctaMEDIC picks Vulkan when it's there. Try `dx12` first.
+- **4th and 5th gen** (HD Graphics 4400, 4600, 5500, 6000, Iris 5100 and 6100): there's no Vulkan
+  on Windows, so it's already using DirectX 12. Try `gl`, and Intel's last driver for these.
+- **3rd gen and older** (HD Graphics 2500, 4000, 3000): these have neither Vulkan nor DirectX 12,
+  and their OpenGL is too old for what OctaMEDIC's graphics library needs, so it may not run on
+  them at all. Please still report it.
 
 Please add your `crash.log`, graphics card and which backend worked to
 [issue #53](https://github.com/TheExiledCat/octamedic/issues/53), so it can be fixed for everyone.
