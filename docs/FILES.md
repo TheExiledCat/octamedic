@@ -8,8 +8,19 @@ documentation) covers, and how OctaMED's own files and samples work.
 Both are in the config folder (`files::get_config_directory_root`). [CONFIG.md](CONFIG.md) has where
 that is and every setting in `config.toml`; it's loaded and saved by `app/config.rs`.
 
-`crash.log` is written when the GUI panics or can't open its window (`crash_log.rs`): the error, a
-backtrace for a panic, and the startup errors before it. Only the last crash is kept.
+`crash.log` is written when the GUI panics, can't open its window, or logs an error, like ggez does
+when a frame can't be drawn (`crash_log.rs`). It starts with the version and system, the graphics
+backend asked for and the adapter wgpu picked, the startup errors and any warnings, then the errors
+of that run in order, with a backtrace for a panic. Only the last run that had an error is kept.
+
+When a crash closes the app, `alert.rs` says so with the system's own message box and offers to
+open the crash log: MessageBox on Windows, `osascript` on macOS, and zenity or kdialog on Linux
+(with neither there's no message, only the log). A panic on another thread, which doesn't close
+the window, is logged without one.
+
+Nothing is logged when the process dies without a panic or an error, like a stack overflow or a
+crash in a graphics driver. Running it as `octamedic_gui.exe 2> err.txt` catches a stack overflow's
+message; a driver crash shows in Windows' Event Viewer, under Windows Logs > Application.
 
 ## Loading instruments
 

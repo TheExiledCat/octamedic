@@ -5,7 +5,7 @@ use std::{convert::Infallible, path::PathBuf};
 
 use ggez::{
     Context, ContextBuilder, GameResult,
-    conf::{WindowMode, WindowSetup},
+    conf::{Backend, WindowMode, WindowSetup},
     event,
     winit::{dpi::PhysicalPosition, monitor::MonitorHandle, window::Window},
 };
@@ -14,10 +14,11 @@ use rustuition::screen::Screen;
 
 use crate::app::{
     app::App,
-    config::{Config, LoadedConfig},
+    config::{Config, GraphicsBackend, LoadedConfig},
     files, icon, screen,
 };
 
+mod alert;
 mod app;
 mod crash_log;
 mod framework;
@@ -41,8 +42,12 @@ const WINDOW_SCALE: f32 = 2.0;
 // dock, which winit doesn't tell us about
 const MONITOR_SHARE: f32 = 0.9;
 
+// lets someone whose window won't open try another backend without finding config.toml
+const GRAPHICS_VARIABLE: &str = "OCTAMEDIC_GRAPHICS";
+
 fn main() {
     crash_log::log_panics();
+    crash_log::log_records();
     // shown once the window's open, there's no console to print them to on Windows
     let mut errors = Vec::new();
     if let Err(error) = files::initialize() {
@@ -56,19 +61,46 @@ fn main() {
     if let Some(error) = config_error {
         errors.push(error);
     }
+    let graphics = graphics_backend(&config, &mut errors);
+    crash_log::note(format!("Graphics backend asked for: {graphics}"));
     let project = load_project().unwrap_or_else(|error| {
         errors.push(error);
         OctamedicProject::new()
     });
+    for error in &errors {
+        crash_log::note(error.clone());
+    }
     // only comes back if the window couldn't open
-    let Err(error) = run(project, config, config_path, &errors);
-    crash_log::log_error(&error.to_string(), &errors);
+    let Err(error) = run(project, config, graphics, config_path, &errors);
+    crash_log::log_error(&error.to_string());
     std::process::exit(1);
+}
+
+fn graphics_backend(config: &Config, errors: &mut Vec<String>) -> GraphicsBackend {
+    let Ok(name) = std::env::var(GRAPHICS_VARIABLE) else {
+        return config.graphics;
+    };
+    return name.parse().unwrap_or_else(|error| {
+        errors.push(format!("{GRAPHICS_VARIABLE}: {error}"));
+        config.graphics
+    });
+}
+
+fn ggez_backend(graphics: GraphicsBackend) -> Backend {
+    return match graphics {
+        GraphicsBackend::Auto => Backend::All,
+        GraphicsBackend::Vulkan => Backend::Vulkan,
+        GraphicsBackend::Metal => Backend::Metal,
+        GraphicsBackend::Dx12 => Backend::Dx12,
+        GraphicsBackend::Dx11 => Backend::Dx11,
+        GraphicsBackend::Gl => Backend::Gl,
+    };
 }
 
 fn run(
     project: OctamedicProject,
     config: Config,
+    graphics: GraphicsBackend,
     config_path: Option<PathBuf>,
     errors: &[String],
 ) -> GameResult<Infallible> {
@@ -90,6 +122,7 @@ fn run(
         .window_mode(mode)
         // vsync queues frames and the pointer ends up trailing the mouse, so App paces itself
         .window_setup(WindowSetup::default().title("OctaMEDIC").vsync(false))
+        .backend(ggez_backend(graphics))
         .build()?;
     #[cfg(target_os = "macos")]
     macos::ask_before_quitting();

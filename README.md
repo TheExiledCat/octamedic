@@ -96,6 +96,19 @@ There's nothing to install: unzip it and run what's inside.
 2. The app isn't signed, so Windows may say it protected your PC. Click **More info**, then
    **Run anyway**. You only need to do this once.
 
+If the window stays white or closes straight away, try another graphics backend: open a Command
+Prompt in the folder and run
+
+```bat
+set OCTAMEDIC_GRAPHICS=dx12
+octamedic_gui.exe
+```
+
+If `dx12` doesn't help, try `dx11`, `vulkan` or `gl`. The one that works can go in `config.toml`
+as `graphics = "dx12"` ([docs/CONFIG.md](docs/CONFIG.md)). Either way, please add your
+`crash.log` and graphics card to [issue #53](https://github.com/TheExiledCat/octamedic/issues/53).
+graphics card.
+
 ### macOS
 
 1. Unzip it and move `OctaMEDIC.app` to your Applications folder.
