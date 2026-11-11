@@ -11,9 +11,9 @@ use rustuition::{
 
 use crate::{
     app::{
+        audio_devices::{open_input_dialog, open_output_dialog},
         fonts,
         header::labels::{Words, draw_words},
-        output::open_output_dialog,
         pens,
         state::AppState,
     },
@@ -69,9 +69,8 @@ pub struct Volume {
     master_volume: Textbox,
     track_steps: [Button; STEPS.len()],
     master_steps: [Button; STEPS.len()],
-    // audio input settings, not there yet
+    // open the input and output dialogs
     input: Button,
-    // opens the output dialog
     output: Button,
     // from the last render, for clicks
     track_boxes: [Rect; SONG_TRACKS],
@@ -85,7 +84,7 @@ impl Volume {
             master_volume: volume_box(),
             track_steps: step_buttons(),
             master_steps: step_buttons(),
-            input: routing_button("INPUT").enabled(false),
+            input: routing_button("INPUT"),
             output: routing_button("OUTPUT"),
             track_boxes: [Rect::default(); SONG_TRACKS],
         };
@@ -113,6 +112,9 @@ impl Gadget<AppState, Event> for Volume {
             if button.clicked().is_some() {
                 state.set_master_volume(stepped(state.song().master_volume.get(), *step));
             }
+        }
+        if self.input.clicked().is_some() {
+            open_input_dialog(state);
         }
         if self.output.clicked().is_some() {
             open_output_dialog(state);
@@ -155,7 +157,7 @@ impl Gadget<AppState, Event> for Volume {
             .track_steps
             .iter_mut()
             .chain(&mut self.master_steps)
-            .chain([&mut self.output])
+            .chain([&mut self.input, &mut self.output])
             .any(|button| button.handle_event(state, event));
     }
 
@@ -333,8 +335,6 @@ mod tests {
 
     #[test]
     fn routing_buttons_fit() {
-        let (volume, _) = panel();
-        assert!(!volume.input.is_enabled());
         for rect in [INPUT, OUTPUT] {
             assert!(rect.x > DIVIDER.right() && rect.right() <= AREA.right());
             assert!(rect.bottom() <= AREA.bottom());
@@ -346,10 +346,12 @@ mod tests {
     }
 
     #[test]
-    fn output_opens_its_dialog() {
-        let (mut volume, mut state) = panel();
-        click(&mut volume, &mut state, centre(OUTPUT));
-        assert_eq!(state.take_pending_dialogs().len(), 1);
+    fn input_and_output_open_their_dialogs() {
+        for button in [INPUT, OUTPUT] {
+            let (mut volume, mut state) = panel();
+            click(&mut volume, &mut state, centre(button));
+            assert_eq!(state.take_pending_dialogs().len(), 1);
+        }
     }
 
     #[test]

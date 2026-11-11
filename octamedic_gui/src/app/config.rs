@@ -23,6 +23,8 @@ pub struct Config {
     #[serde(default)]
     pub graphics: GraphicsBackend,
     #[serde(default)]
+    pub input: InputConfig,
+    #[serde(default)]
     pub output: OutputConfig,
     /// The screen filters in the order they run.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -41,6 +43,12 @@ pub struct FilterConfig {
 
 fn switched_on() -> bool {
     return true;
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InputConfig {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub device: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -148,6 +156,7 @@ impl Default for Config {
         return Self {
             video: DEFAULT_VIDEO,
             graphics: GraphicsBackend::Auto,
+            input: InputConfig::default(),
             output: OutputConfig::default(),
             filters: Vec::new(),
         };
@@ -232,6 +241,7 @@ mod tests {
     fn default_config() {
         let config = Config::default();
         assert_eq!(config.video, VideoStandard::Pal);
+        assert_eq!(config.input.device, None);
         assert_eq!(config.output.device, None);
         assert!(!config.output.mono);
     }
@@ -243,6 +253,9 @@ mod tests {
         let config = Config {
             video: VideoStandard::Ntsc,
             graphics: GraphicsBackend::Dx12,
+            input: InputConfig {
+                device: Some("Microphone".to_owned()),
+            },
             output: OutputConfig {
                 device: Some("Headphones".to_owned()),
                 mono: true,
