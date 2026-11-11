@@ -1,5 +1,67 @@
 # Changelog
 
+## v0.0.2 - 2026-11-11
+
+A hotfix, mostly for the people whose window stays white and closes on Windows: a setting to try
+another graphics backend, and crash reports that say what went wrong. Plus two fixes.
+
+### Added
+
+- A message when OctaMEDIC crashes, with a button that opens the crash log: **Yes** on Windows,
+  **Open crash log** on macOS and Linux. On Linux it needs `zenity` or `kdialog`; without either,
+  the crash is only written to the log
+- A setting for the graphics backend, for when the window stays white or closes straight away:
+  `graphics` in `config.toml`, or the `OCTAMEDIC_GRAPHICS` environment variable to try one without
+  editing the file. It takes `auto` (the default), `dx12`, `vulkan`, `gl` or `metal`. On Windows,
+  from a Command Prompt in the folder you unzipped:
+
+  ```bat
+  cmd /c "set OCTAMEDIC_GRAPHICS=dx12&& octamedic_gui.exe"
+  ```
+
+  [CONFIG.md](https://github.com/TheExiledCat/octamedic/blob/main/docs/CONFIG.md#graphics) has
+  which works where
+- [SUPPORT.md](https://github.com/TheExiledCat/octamedic/blob/main/docs/SUPPORT.md): fixes for
+  what people run into on each system, from the Windows and macOS warnings about unsigned apps to
+  a window that won't open, missing libraries on Linux and no sound
+
+### Changed
+
+- `crash.log` now has every error from the run that crashed, not just the last one. It starts with
+  your system, the graphics backend asked for, the graphics card and driver that were picked, the
+  startup errors and any warnings, so it's worth attaching to any report about the window
+
+### Fixed
+
+- When a frame couldn't be drawn, the GUI closed without a message and without writing a crash
+  log. Both happen now
+- Notes above octave 6 on multi-octave instruments (IFF 3 and 5 octave samples), from a high
+  octave or a big transpose, stopped all sound. They play in octave 6 now, the way plain samples
+  play notes above B-3 in B-3's octave. This also fixes playing and recording such songs with
+  `mmd_cli`
+- A button that opened a prompt or dialog when pressed, like LOAD SONG with unsaved changes, stayed
+  pressed afterwards and took the next mouse release wherever it was: a scroll bar kept following
+  the pointer with no button held, and a repeating arrow kept stepping whenever it was hovered
+
+### Known issues
+
+- On some Windows machines, often with older graphics cards, the window stays white and closes.
+  The cause isn't known yet: try another backend as above, and please add your `crash.log` and
+  graphics card to [issue #53](https://github.com/TheExiledCat/octamedic/issues/53)
+- A crash that ends the program without an error, like a stack overflow or a crash inside the
+  graphics driver, still leaves no crash log.
+  [SUPPORT.md](https://github.com/TheExiledCat/octamedic/blob/main/docs/SUPPORT.md#it-closes-with-no-message-and-no-crash-log)
+  says how to find out what happened
+- Low volume commands go silent when the track or master volume is below 64: `0C01` on a track at
+  63 rounds down to nothing. What the real OctaMED does here still needs checking
+- Sample editor: REV over a range that crosses from one octave of a multi-octave sample into
+  another scrambles the sample, even though its length stays the same
+- macOS: double-clicking a module in Finder doesn't open it. Pass it with
+  `open -a OctaMEDIC --args /path/to/song.mmd1` instead, with OctaMEDIC closed
+- The builds aren't signed or notarized, so Windows and macOS warn the first time they open.
+  [SUPPORT.md](https://github.com/TheExiledCat/octamedic/blob/main/docs/SUPPORT.md) says how to get
+  past it
+
 ## v0.0.1 - 2026-11-08
 
 The first demo. Someone who knows OctaMED Pro v4 can sit down, make a short song from samples start

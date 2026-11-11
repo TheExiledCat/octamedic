@@ -166,8 +166,22 @@ A few keys that aren't in the original:
 ## Configuration
 
 Settings are saved in `config.toml` as you change them in the app: the video standard, the sound
-device, mono, and the screen filters. [docs/CONFIG.md](docs/CONFIG.md) says where it is and what
-every setting does.
+device, mono, and the screen filters. The graphics backend is set there too, by hand.
+[docs/CONFIG.md](docs/CONFIG.md) says where it is and what every setting does.
+
+## Support
+
+- **Something doesn't work?** [docs/SUPPORT.md](docs/SUPPORT.md) has fixes for each system: the
+  warnings about an unsigned app, a window that stays white or won't open, missing libraries on
+  Linux, no sound, and more.
+- **It crashed?** A message says so and opens `crash.log`. It's in `%LOCALAPPDATA%\octamedic` on
+  Windows, `~/Library/Application Support/octamedic` on macOS and `~/.config/octamedic` on Linux.
+  Attach it to your report.
+- **Found a bug, or something that doesn't behave like the real OctaMED?** Open an issue with the
+  [bug report](.github/ISSUE_TEMPLATE/bug_report.md) template. Ideas go in a
+  [feature request](.github/ISSUE_TEMPLATE/feature_request.md).
+- **Questions, or just want to talk trackers?** Join the
+  [TrackerCatz Discord](https://discord.gg/cjAQR9xB5q).
 
 ## Building from source
 
@@ -195,8 +209,6 @@ You get the newest changes this way, and also the ones that break things.
 ## Contributing
 
 - [CONTRIBUTING.md](CONTRIBUTING.md) for building, code style and pull requests
-- [docs/SUPPORT.md](docs/SUPPORT.md) if something doesn't work: install warnings, a window that
-  won't open, no sound
 - [docs/CONFIG.md](docs/CONFIG.md) for `config.toml`
 - [docs/PLAYER.md](docs/PLAYER.md) for how the player works (Paula, DMA, the CIA timer)
 - [docs/FILES.md](docs/FILES.md) for the files besides modules: loading instruments, multi-octave
@@ -204,7 +216,3 @@ You get the newest changes this way, and also the ones that break things.
 - [rustuition/README.md](rustuition/README.md) for the GUI toolkit, and
   [octamedic_gui/FRAMEWORK.md](octamedic_gui/FRAMEWORK.md) for how the editor uses it
 - [V0.0.1TARGETS.md](V0.0.1TARGETS.md) for what v0.0.1 set out to do
-
-Found a bug, or something that doesn't behave like the real OctaMED? Open an issue with the
-[bug report](.github/ISSUE_TEMPLATE/bug_report.md) template. Ideas go in a
-[feature request](.github/ISSUE_TEMPLATE/feature_request.md).
