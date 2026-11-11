@@ -2060,6 +2060,7 @@ dependencies = [
  "fs4",
  "ggez",
  "image",
+ "log",
  "mmd",
  "objc2 0.6.4",
  "octamedic_core",
@@ -2067,6 +2068,7 @@ dependencies = [
  "rustuition",
  "serde",
  "toml",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

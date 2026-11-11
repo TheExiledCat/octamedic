@@ -19,6 +19,12 @@ serde = { version = "1.0", features = ["derive"] }
 toml = "0.5"
 # what ggez decodes images with already, for the pointer's pixels
 image = { version = "0.24", default-features = false, features = ["png"] }
+# already in Cargo.lock from ggez and wgpu, whose errors only go through it
+log = "0.4"
+
+[target.'cfg(windows)'.dependencies]
+# for the crash alert; dirs and fs4 build this windows-sys already
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 # to answer the app delegate's applicationShouldTerminate:, cpal builds it already

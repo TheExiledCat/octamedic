@@ -32,8 +32,9 @@ On WSL, the CLI and GUI folders each have two scripts that pass their arguments 
 over X11, because under WSLg's Wayland the window closes straight away.
 
 On Windows the GUI doesn't open a console, even from `cargo run`, so nothing it prints shows up.
-Errors from starting up go in the debug console (Ctrl+`), and a panic, or an error that stops the
-window opening, goes in `crash.log` in the config folder (`%LOCALAPPDATA%\octamedic`). The settings
+Errors from starting up go in the debug console (Ctrl+`), and a panic or any logged error goes in
+`crash.log` in the config folder (`%LOCALAPPDATA%\octamedic`); [docs/FILES.md](docs/FILES.md)
+has what's in it. The settings
 kept between runs are in `config.toml` there; [docs/CONFIG.md](docs/CONFIG.md) has every setting.
 
 On a Mac, `octamedic_gui/macos/bundle.sh` turns a release build into `OctaMEDIC.app`, the same

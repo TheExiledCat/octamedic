@@ -1,7 +1,8 @@
 use std::{
     collections::BTreeMap,
-    fs, io,
+    fmt, fs, io,
     path::{Path, PathBuf},
+    str::FromStr,
 };
 
 use octamedic_core::amiga::clock::VideoStandard;
@@ -18,6 +19,9 @@ pub struct Config {
         deserialize_with = "deserialize_video"
     )]
     pub video: VideoStandard,
+    // before the tables, toml can't write a plain value after one
+    #[serde(default)]
+    pub graphics: GraphicsBackend,
     #[serde(default)]
     pub output: OutputConfig,
     /// The screen filters in the order they run.
@@ -45,6 +49,69 @@ pub struct OutputConfig {
     pub device: Option<String>,
     #[serde(default)]
     pub mono: bool,
+}
+
+/// What wgpu draws with. Auto tries Vulkan, Metal and DX12, then GL. wgpu 0.16's DX11 backend is
+/// unfinished (its render pipelines are `todo!()`), so it isn't offered.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
+pub enum GraphicsBackend {
+    #[default]
+    Auto,
+    Vulkan,
+    Metal,
+    Dx12,
+    Gl,
+}
+
+impl GraphicsBackend {
+    const ALL: [Self; 5] = [Self::Auto, Self::Vulkan, Self::Metal, Self::Dx12, Self::Gl];
+
+    pub fn name(self) -> &'static str {
+        return match self {
+            Self::Auto => "auto",
+            Self::Vulkan => "vulkan",
+            Self::Metal => "metal",
+            Self::Dx12 => "dx12",
+            Self::Gl => "gl",
+        };
+    }
+}
+
+impl FromStr for GraphicsBackend {
+    type Err = String;
+
+    fn from_str(name: &str) -> Result<Self, String> {
+        let name = name.trim().to_ascii_lowercase();
+        return Self::ALL
+            .into_iter()
+            .find(|backend| backend.name() == name)
+            .ok_or_else(|| {
+                format!(
+                    "unknown graphics backend \"{name}\", expected auto, vulkan, metal, dx12 or gl"
+                )
+            });
+    }
+}
+
+impl TryFrom<String> for GraphicsBackend {
+    type Error = String;
+
+    fn try_from(name: String) -> Result<Self, String> {
+        return name.parse();
+    }
+}
+
+impl From<GraphicsBackend> for String {
+    fn from(backend: GraphicsBackend) -> Self {
+        return backend.name().to_owned();
+    }
+}
+
+impl fmt::Display for GraphicsBackend {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        return f.write_str(self.name());
+    }
 }
 
 fn default_video() -> VideoStandard {
@@ -80,6 +147,7 @@ impl Default for Config {
     fn default() -> Self {
         return Self {
             video: DEFAULT_VIDEO,
+            graphics: GraphicsBackend::Auto,
             output: OutputConfig::default(),
             filters: Vec::new(),
         };
@@ -174,6 +242,7 @@ mod tests {
         let path = folder.join("config.toml");
         let config = Config {
             video: VideoStandard::Ntsc,
+            graphics: GraphicsBackend::Dx12,
             output: OutputConfig {
                 device: Some("Headphones".to_owned()),
                 mono: true,
@@ -212,6 +281,24 @@ mod tests {
     }
 
     #[test]
+    fn parses_graphics_backend_case_insensitive() {
+        let config: Config = toml::from_str("graphics = \"DX12\"").unwrap();
+        assert_eq!(config.graphics, GraphicsBackend::Dx12);
+        assert_eq!(" Vulkan ".parse(), Ok(GraphicsBackend::Vulkan));
+    }
+
+    #[test]
+    fn unknown_graphics_backend_fails_parsing() {
+        let result: Result<Config, _> = toml::from_str("graphics = \"directx\"");
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("unknown graphics backend")
+        );
+    }
+
+    #[test]
     fn parses_missing_fields_as_defaults() {
         let config: Config = toml::from_str("").unwrap();
         assert_eq!(config, Config::default());
@@ -228,6 +315,7 @@ mod tests {
         assert_eq!(error, None);
         assert_eq!(loaded, Config::default());
         assert!(written.contains("video = 'pal'"));
+        assert!(written.contains("graphics = 'auto'"));
     }
 
     #[test]

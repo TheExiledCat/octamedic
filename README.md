@@ -88,13 +88,27 @@ need the GUI.
 | Linux (most PCs) | `octamedic-gui-<version>-x86_64-unknown-linux-gnu.zip` |
 | Linux on ARM | `octamedic-gui-<version>-aarch64-unknown-linux-gnu.zip` |
 
-There's nothing to install: unzip it and run what's inside.
+There's nothing to install: unzip it and run what's inside. If it won't start or something
+doesn't work, [docs/SUPPORT.md](docs/SUPPORT.md) has fixes for each system.
 
 ### Windows
 
 1. Unzip it and double-click `octamedic_gui.exe`.
 2. The app isn't signed, so Windows may say it protected your PC. Click **More info**, then
    **Run anyway**. You only need to do this once.
+
+If the window stays white or closes straight away, try another graphics backend: open a Command
+Prompt in the folder and run
+
+```bat
+set OCTAMEDIC_GRAPHICS=dx12
+octamedic_gui.exe
+```
+
+If `dx12` doesn't help, try `vulkan` or `gl`. The one that works can go in `config.toml`
+as `graphics = "dx12"` ([docs/CONFIG.md](docs/CONFIG.md)). Either way, please add your
+`crash.log` and graphics card to [issue #53](https://github.com/TheExiledCat/octamedic/issues/53).
+graphics card.
 
 ### macOS
 
@@ -181,6 +195,8 @@ You get the newest changes this way, and also the ones that break things.
 ## Contributing
 
 - [CONTRIBUTING.md](CONTRIBUTING.md) for building, code style and pull requests
+- [docs/SUPPORT.md](docs/SUPPORT.md) if something doesn't work: install warnings, a window that
+  won't open, no sound
 - [docs/CONFIG.md](docs/CONFIG.md) for `config.toml`
 - [docs/PLAYER.md](docs/PLAYER.md) for how the player works (Paula, DMA, the CIA timer)
 - [docs/FILES.md](docs/FILES.md) for the files besides modules: loading instruments, multi-octave

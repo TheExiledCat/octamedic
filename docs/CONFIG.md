@@ -14,12 +14,13 @@ changes.
 | macOS | `~/Library/Application Support/octamedic` |
 
 `crash.log` is in the same folder. It holds the last crash, if there was one, and is worth
-attaching to a bug report.
+attaching to a bug report. When the app crashes, a message says so and has a button that opens it.
 
 ## An example
 
 ```toml
 video = "pal"
+graphics = "auto"
 
 [output]
 device = "alsa:pulse"
@@ -49,6 +50,28 @@ the defaults, and a notification says what was wrong.
 `"pal"` (the default) or `"ntsc"`: the Amiga's video standard. It sets the screen's height and the
 clock the player runs on, so songs play at the speed they would on that machine. Ctrl+F12 switches
 between them in the app.
+
+### `graphics`
+
+What the screen is drawn with. `"auto"` (the default) tries Vulkan, Metal or DirectX 12 first,
+then OpenGL. If the window stays white or closes as soon as it opens, try another:
+
+| Value | Works on |
+|---|---|
+| `"dx12"` | Windows |
+| `"vulkan"` | Windows and Linux, with a Vulkan driver |
+| `"gl"` | Windows and Linux |
+| `"metal"` | macOS |
+
+The `OCTAMEDIC_GRAPHICS` environment variable takes the same values and wins over the file, to try
+one without editing it. On Windows, from a Command Prompt in the folder you unzipped:
+
+```bat
+set OCTAMEDIC_GRAPHICS=dx12
+octamedic_gui.exe
+```
+
+The crash log says which backend was asked for and which graphics card and driver were picked.
 
 ### `[output]`
 
