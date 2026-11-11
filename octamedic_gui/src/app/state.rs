@@ -640,6 +640,18 @@ impl AppState {
         return self.config.output.device.as_deref();
     }
 
+    /// The device the sample editor records from, `None` for the system's default. Nothing has
+    /// it open, so it's only opened when something records.
+    pub fn input_device(&self) -> Option<&str> {
+        return self.config.input.device.as_deref();
+    }
+
+    pub fn set_input_device(&mut self, device: Option<String>) {
+        if device != self.config.input.device {
+            self.config_mut().input.device = device;
+        }
+    }
+
     /// Starts the engine on the given device without fallback.
     fn try_open_audio(&mut self, device: Option<&str>) -> Result<(), String> {
         let engine = match EngineHandle::spawn(self.config.video.clock(), device) {

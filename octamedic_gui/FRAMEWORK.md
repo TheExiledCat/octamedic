@@ -99,13 +99,18 @@ from it on the picture is enlarged as far as the window shows it, up to twice ea
 in a 640x512 window: once across, twice down). Filters before it work in screen pixels, so
 scanlines there bend with the tube; filters after it work in the finer pixels.
 
-The VOL page's OUTPUT button opens the output dialog (`app/output.rs`): which sound device plays
+The VOL page's OUTPUT button opens the output dialog (`app/audio_devices.rs`): which sound device plays
 (cpal's output devices, or the default) and whether it's mixed to mono. OK on another device has
 `AppState::set_output_device` close the engine and start it again on that one with
 `AppState::open_audio`, which sends it the song, mutes and mono; that stops playing. If the new
 device can't be opened it goes back to the old one, and the notification bar says why. If the
 engine has no device at all (it couldn't open one at startup, say), OK tries again even on the same
 device.
+
+INPUT opens the input dialog next to it: which device the sample editor records from. The engine
+never uses it and nothing keeps it open, so OK only saves it (`AppState::set_input_device`), and
+whatever records opens `AppState::input_device` then, or the default with `None`. A saved device
+that's gone shows as Default and stays saved until another is picked.
 
 The output device, mono, PAL/NTSC and the screen filters are `Config` (`app/config.rs`), saved in
 `config.toml` (see [docs/CONFIG.md](../docs/CONFIG.md)). `main` loads it before the window opens, so the window and the

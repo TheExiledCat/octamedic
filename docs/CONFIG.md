@@ -22,6 +22,9 @@ attaching to a bug report. When the app crashes, a message says so and has a but
 video = "pal"
 graphics = "auto"
 
+[input]
+device = "alsa:pulse"
+
 [output]
 device = "alsa:pulse"
 mono = false
@@ -72,6 +75,14 @@ octamedic_gui.exe
 ```
 
 The crash log says which backend was asked for and which graphics card and driver were picked.
+
+### `[input]`
+
+Set in the app with VOL's INPUT button.
+
+| Key | Default | What it does |
+|---|---|---|
+| `device` | left out | The sound device the sample editor records from, by its system id. Leave it out for the system's default input. |
 
 ### `[output]`
 

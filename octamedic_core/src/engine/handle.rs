@@ -257,27 +257,6 @@ impl EngineError {
     }
 }
 
-/// An output device to play through. `id` picks it in [`EngineHandle::spawn`] and stays the same
-/// between runs, `name` is for showing.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct OutputDevice {
-    pub id: String,
-    pub name: String,
-}
-
-pub fn output_devices() -> Vec<OutputDevice> {
-    let Ok(devices) = cpal::default_host().output_devices() else {
-        return Vec::new();
-    };
-    return devices
-        .filter_map(|device| {
-            let id = device.id().ok()?.to_string();
-            let name = device.description().ok()?.name().to_owned();
-            return Some(OutputDevice { id, name });
-        })
-        .collect();
-}
-
 /// UI side of the engine. The stream lives on its own thread until the handle drops.
 pub struct EngineHandle {
     commands: Sender<EngineCommand>,

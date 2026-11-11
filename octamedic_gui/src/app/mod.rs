@@ -3,6 +3,7 @@ use rustuition::screen::Screen;
 
 pub mod advance;
 pub mod app;
+pub mod audio_devices;
 pub mod block_range;
 pub mod chord;
 pub mod clipboard;
@@ -21,7 +22,6 @@ pub mod keypad;
 pub mod main;
 pub mod main_view;
 pub mod mode;
-pub mod output;
 pub mod pens;
 pub mod prompt;
 pub mod screen_filters;
