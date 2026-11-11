@@ -24,6 +24,7 @@ use crate::{
         song::OctamedicSong,
         tempo::OctamedicTempo,
     },
+    passthrough::{Listener, Passthrough},
 };
 
 pub enum EngineCommand {
@@ -263,6 +264,7 @@ pub struct EngineHandle {
     shutdown: Option<Sender<()>>,
     status: Arc<EngineStatus>,
     thread: Option<JoinHandle<()>>,
+    passthrough: Passthrough,
 }
 
 impl EngineHandle {
@@ -274,11 +276,15 @@ impl EngineHandle {
         let (ready, ready_receiver) = mpsc::channel();
         let status = Arc::new(EngineStatus::default());
         let engine_status = status.clone();
+        let passthrough = Passthrough::default();
+        let stream_passthrough = passthrough.clone();
         // cpal streams aren't Send on every platform
         let thread = thread::Builder::new()
             .name("octamedic-engine".into())
             .spawn(move || {
-                let stream = match open_stream(device, receiver, engine_status, machine) {
+                let opened =
+                    open_stream(device, receiver, engine_status, machine, stream_passthrough);
+                let stream = match opened {
                     Ok(stream) => stream,
                     Err(error) => {
                         let _ = ready.send(Err(error));
@@ -302,6 +308,7 @@ impl EngineHandle {
             shutdown: Some(shutdown),
             status,
             thread: Some(thread),
+            passthrough,
         });
     }
 
@@ -313,11 +320,17 @@ impl EngineHandle {
             shutdown: None,
             status: Arc::new(EngineStatus::default()),
             thread: None,
+            passthrough: Passthrough::default(),
         };
     }
 
     pub fn status(&self) -> &EngineStatus {
         return &self.status;
+    }
+
+    /// Where an input goes to be heard through this engine's device.
+    pub fn passthrough(&self) -> &Passthrough {
+        return &self.passthrough;
     }
 
     pub fn load_song(&self, song: &OctamedicSong) {
@@ -459,6 +472,7 @@ fn open_stream(
     commands: Receiver<EngineCommand>,
     status: Arc<EngineStatus>,
     machine: AmigaClock,
+    passthrough: Passthrough,
 ) -> Result<Stream, EngineError> {
     let host = cpal::default_host();
     let device = match device {
@@ -474,11 +488,12 @@ fn open_stream(
     let config = device.default_output_config().map_err(EngineError::audio)?;
     let engine = OctamedicEngine::new(commands, status, config.sample_rate(), machine);
     let stream_config = config.config();
+    let input = passthrough.listener(stream_config.sample_rate);
     let stream = match config.sample_format() {
-        SampleFormat::F32 => build_stream::<f32>(&device, &stream_config, engine),
-        SampleFormat::I16 => build_stream::<i16>(&device, &stream_config, engine),
-        SampleFormat::U16 => build_stream::<u16>(&device, &stream_config, engine),
-        SampleFormat::I32 => build_stream::<i32>(&device, &stream_config, engine),
+        SampleFormat::F32 => build_stream::<f32>(&device, &stream_config, engine, input),
+        SampleFormat::I16 => build_stream::<i16>(&device, &stream_config, engine, input),
+        SampleFormat::U16 => build_stream::<u16>(&device, &stream_config, engine, input),
+        SampleFormat::I32 => build_stream::<i32>(&device, &stream_config, engine, input),
         format => Err(EngineError::UnsupportedSampleFormat(format)),
     }?;
     stream.play().map_err(EngineError::audio)?;
@@ -489,6 +504,7 @@ fn build_stream<T>(
     device: &Device,
     config: &StreamConfig,
     mut engine: OctamedicEngine,
+    mut input: Listener,
 ) -> Result<Stream, EngineError>
 where
     T: SizedSample + FromSample<f32>,
@@ -501,6 +517,7 @@ where
             move |data: &mut [T], _| {
                 mix.resize(data.len(), 0.0);
                 engine.process(&mut mix, channels);
+                input.mix_into(&mut mix, channels);
                 for (out, &sample) in data.iter_mut().zip(&mix) {
                     *out = T::from_sample(sample);
                 }

@@ -24,6 +24,9 @@ graphics = "auto"
 
 [input]
 device = "alsa:pulse"
+channel = "left"
+gain = 0.0
+hear = true
 
 [output]
 device = "alsa:pulse"
@@ -83,6 +86,9 @@ Set in the app with VOL's INPUT button.
 | Key | Default | What it does |
 |---|---|---|
 | `device` | left out | The sound device the sample editor records from, by its system id. Leave it out for the system's default input. |
+| `channel` | `"mixed"` | Which of its channels: `"left"`, `"right"`, or `"mixed"` for their average. A mic on one input of an audio interface's pair, like input 1 of "Analogue 1 + 2", needs `"left"` (or `"right"` for input 2): mixed, it comes through at half level. |
+| `gain` | `0.0` | In decibels, from -20 to 30: raises a quiet input, or lowers a hot one. MONITOR, RECORD and what you hear all get it, clipped at full scale, so the monitor shows what will clip. |
+| `hear` | `true` | Plays the input through the output while MONITOR or RECORD listens, like OctaMED. Turn it off if it feeds back: a mic near the speakers, or an input that's a loopback of the output. |
 
 ### `[output]`
 

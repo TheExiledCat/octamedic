@@ -5,11 +5,14 @@ use crate::{
     gadget::Gadget,
     gadgets::{
         button::{Button, DEFAULT_REPEAT_DELAY, DEFAULT_REPEAT_INTERVAL, IncDec},
+        slider::SliderDirection,
+        stepped_slider::SteppedSlider,
         textbox::Textbox,
         window::Window,
     },
     painter::{CHAR_HEIGHT, CHAR_WIDTH, Painter, Pen, text_width, text_y},
     rect::Rect,
+    wheel::WheelLines,
 };
 
 const DEFAULT_WIDTH: i32 = 320;
@@ -23,6 +26,13 @@ pub const FIELD_HEIGHT: i32 = CHAR_HEIGHT + 3;
 // tall pixels, so it's about square
 const CHECKBOX_SIZE: [i32; 2] = [26, FIELD_HEIGHT];
 pub const DROPDOWN_ROW_HEIGHT: i32 = CHAR_HEIGHT + 2;
+// an open dropdown shows this many options at most, and scrolls the rest
+pub const DROPDOWN_MAX_ROWS: usize = 10;
+// the scroller next to them when there are more, like the ones next to a list
+const DROPDOWN_SCROLLER_WIDTH: i32 = 20;
+const DROPDOWN_SCROLLER_ARROW: [i32; 2] = [12, 6];
+const DROPDOWN_SCROLLER_ARROW_HEIGHT: i32 = 10;
+const DROPDOWN_SCROLLER_MIN_HANDLE: i32 = 4;
 // the arrow at the right of a dropdown's button, rows of 6, 4 and 2
 const DROPDOWN_ARROW_WIDTH: i32 = 6;
 const DROPDOWN_ARROW_SPACE: i32 = DROPDOWN_ARROW_WIDTH + 6;
@@ -1067,8 +1077,14 @@ pub struct Dropdown<S, E> {
     chosen: usize,
     button: Button<S, E>,
     open: bool,
-    // from the last render, for clicks
+    // the first option the open list shows, and how many fit, from the last render
+    first: usize,
+    rows: usize,
+    scroller: SteppedSlider<S, E>,
+    wheel: WheelLines,
+    // from the last render, for clicks: the whole list and just its options
     list_area: Rect,
+    options_area: Rect,
 }
 
 impl<S, E> Dropdown<S, E> {
@@ -1084,7 +1100,18 @@ impl<S, E> Dropdown<S, E> {
                 .align(crate::painter::Align::Left)
                 .padding_xy(BUTTON_LABEL_PADDING, 1),
             open: false,
+            first: 0,
+            rows: DROPDOWN_MAX_ROWS,
+            scroller: SteppedSlider::new(
+                SliderDirection::Vertical,
+                0,
+                0,
+                DROPDOWN_SCROLLER_ARROW,
+                DROPDOWN_SCROLLER_ARROW_HEIGHT,
+            ),
+            wheel: WheelLines::default(),
             list_area: Rect::default(),
+            options_area: Rect::default(),
         };
     }
 
@@ -1113,23 +1140,66 @@ impl<S, E> Dropdown<S, E> {
         return widest.unwrap_or(0) + 2 * BUTTON_LABEL_PADDING + DROPDOWN_ARROW_SPACE;
     }
 
-    // a press in the open list picks the option under it, anywhere else just closes it
+    fn scrolls(&self) -> bool {
+        return self.options.len() > self.rows;
+    }
+
+    fn last_first(&self) -> usize {
+        return self.options.len().saturating_sub(self.rows);
+    }
+
+    // the chosen option in the middle, as far as the list goes
+    fn open_list(&mut self) {
+        self.open = true;
+        self.rows = self.options.len().min(DROPDOWN_MAX_ROWS);
+        self.first = self
+            .chosen
+            .saturating_sub(self.rows / 2)
+            .min(self.last_first());
+    }
+
+    // a press on an option picks it, on the scroller scrolls, anywhere else just closes the list
     fn handle_open(&mut self, event: MouseEvent) {
         let MouseEvent::Down { pos, .. } = event else {
             return;
         };
-        if self.list_area.contains(pos) {
-            let row = (pos.y - self.list_area.y - 1) / DROPDOWN_ROW_HEIGHT;
-            self.choose(row.max(0) as usize);
+        if self.list_area.contains(pos) && !self.options_area.contains(pos) {
+            return;
+        }
+        if self.options_area.contains(pos) {
+            let row = (pos.y - self.options_area.y) / DROPDOWN_ROW_HEIGHT;
+            self.choose(self.first + row.max(0) as usize);
         }
         self.open = false;
     }
 }
 
 impl<S, E: PointerEvent> Gadget<S, E> for Dropdown<S, E> {
+    fn update(&mut self, state: &mut S) {
+        if !self.open {
+            return;
+        }
+        let last = self.last_first().min(u16::MAX as usize);
+        self.scroller.set_range(0, last as u16);
+        if let Some(first) = self.scroller.update(state, self.first as u16) {
+            self.first = first as usize;
+        }
+    }
+
     fn handle_event(&mut self, state: &mut S, event: &E) -> bool {
         if self.open {
-            if let Some(mouse) = event.mouse() {
+            if self.scrolls() && self.scroller.handle_event(state, event) {
+                return true;
+            }
+            if let Some((pos, y)) = event.wheel() {
+                if self.list_area.contains(pos) {
+                    let lines = self.wheel.lines(y);
+                    self.first = self
+                        .first
+                        .saturating_add_signed(lines as isize)
+                        .min(self.last_first());
+                }
+            } else if let Some(mouse) = event.mouse() {
                 self.handle_open(mouse);
             }
             return true;
@@ -1138,7 +1208,7 @@ impl<S, E: PointerEvent> Gadget<S, E> for Dropdown<S, E> {
             return false;
         }
         if self.button.clicked().is_some() && !self.options.is_empty() {
-            self.open = true;
+            self.open_list();
         }
         return true;
     }
@@ -1163,23 +1233,42 @@ impl<S, E: PointerEvent> DialogComponent<S, E> for Dropdown<S, E> {
     }
 
     // under the button, as wide as it, the chosen option filled in. moved up as far as it needs
-    // to stay on screen
-    fn render_overlay(&mut self, _state: &S, painter: &mut Painter) {
+    // to stay on screen. past DROPDOWN_MAX_ROWS, or what the screen fits, it scrolls, and the
+    // scroller widens it so the options keep their room
+    fn render_overlay(&mut self, state: &S, painter: &mut Painter) {
         if !self.open {
             return;
         }
         let button = self.button.area();
-        let height = self.options.len() as i32 * DROPDOWN_ROW_HEIGHT + 2;
         let screen = painter.clip();
+        let fit = ((screen.h - 2) / DROPDOWN_ROW_HEIGHT).max(1) as usize;
+        self.rows = self.options.len().min(DROPDOWN_MAX_ROWS).min(fit);
+        self.first = self.first.min(self.last_first());
+        let scroller_width = if self.scrolls() {
+            DROPDOWN_SCROLLER_WIDTH
+        } else {
+            0
+        };
+        let width = button.w + scroller_width;
+        let height = self.rows as i32 * DROPDOWN_ROW_HEIGHT + 2;
+        let x = button.x.min(screen.right() - width).max(screen.x);
         let y = button.bottom().min(screen.bottom() - height).max(screen.y);
-        self.list_area = Rect::new(button.x, y, button.w, height);
+        self.list_area = Rect::new(x, y, width, height);
         painter.fill(self.list_area, Pen::FILL);
         let inside = painter.frame(self.list_area, 1);
-        for (index, option) in self.options.iter().enumerate() {
+        let (options, scroller) = inside.split_left(inside.w - scroller_width);
+        self.options_area = options;
+        let shown = self
+            .options
+            .iter()
+            .enumerate()
+            .skip(self.first)
+            .take(self.rows);
+        for (row_index, (index, option)) in shown.enumerate() {
             let row = Rect::new(
-                inside.x,
-                inside.y + index as i32 * DROPDOWN_ROW_HEIGHT,
-                inside.w,
+                options.x,
+                options.y + row_index as i32 * DROPDOWN_ROW_HEIGHT,
+                options.w,
                 DROPDOWN_ROW_HEIGHT,
             );
             let text = if index == self.chosen {
@@ -1189,7 +1278,12 @@ impl<S, E: PointerEvent> DialogComponent<S, E> for Dropdown<S, E> {
                 Pen::BACKGROUND
             };
             let x = row.x + BUTTON_LABEL_PADDING;
-            painter.text(x, text_y(row, CHAR_HEIGHT), option, text);
+            painter.clipped(row, |painter| {
+                painter.text(x, text_y(row, CHAR_HEIGHT), option, text);
+            });
+        }
+        if self.scrolls() {
+            self.render_scroller(state, scroller, painter);
         }
     }
 
@@ -1200,6 +1294,17 @@ impl<S, E: PointerEvent> DialogComponent<S, E> for Dropdown<S, E> {
     fn set_enabled(&mut self, enabled: bool) {
         self.button.set_enabled(enabled);
         self.open &= enabled;
+    }
+}
+
+impl<S, E: PointerEvent> Dropdown<S, E> {
+    // the handle as long as the share of the options shown, like a list's
+    fn render_scroller(&mut self, state: &S, area: Rect, painter: &mut Painter) {
+        let track = area.h - 2 * DROPDOWN_SCROLLER_ARROW_HEIGHT - 2;
+        let handle = track * self.rows as i32 / self.options.len().max(1) as i32;
+        self.scroller
+            .set_handle(Some(handle.max(DROPDOWN_SCROLLER_MIN_HANDLE)));
+        self.scroller.render(state, area, painter);
     }
 }
 
@@ -1249,13 +1354,21 @@ mod tests {
     enum TestEvent {
         Mouse(MouseEvent),
         Typed(TextInput),
+        Wheel(Point, f32),
     }
 
     impl PointerEvent for TestEvent {
         fn mouse(&self) -> Option<MouseEvent> {
             return match self {
                 TestEvent::Mouse(mouse) => Some(*mouse),
-                TestEvent::Typed(_) => None,
+                TestEvent::Typed(_) | TestEvent::Wheel(..) => None,
+            };
+        }
+
+        fn wheel(&self) -> Option<(Point, f32)> {
+            return match *self {
+                TestEvent::Wheel(pos, y) => Some((pos, y)),
+                _ => None,
             };
         }
     }
@@ -1264,7 +1377,7 @@ mod tests {
         fn text_input(&self) -> Option<TextInput> {
             return match self {
                 TestEvent::Typed(input) => Some(*input),
-                TestEvent::Mouse(_) => None,
+                TestEvent::Mouse(_) | TestEvent::Wheel(..) => None,
             };
         }
     }
@@ -1725,6 +1838,111 @@ mod tests {
         dropdown.render_overlay(&log, &mut painter);
         assert_eq!(dropdown.list_area.bottom(), 100);
         assert_eq!(dropdown.list_area.h, 8 * DROPDOWN_ROW_HEIGHT + 2);
+    }
+
+    // a dropdown of `count` options, numbered, open under a button at the top of a 640x256 screen
+    fn open_dropdown(count: usize, chosen: usize) -> (Dropdown<Log, TestEvent>, Log) {
+        let options: Vec<String> = (0..count).map(|option| option.to_string()).collect();
+        let options: Vec<&str> = options.iter().map(String::as_str).collect();
+        let mut dropdown = Dropdown::new("", &options).chosen(chosen);
+        let log = Log::default();
+        render_dropdown(&mut dropdown, &log);
+        dropdown.open_list();
+        render_dropdown(&mut dropdown, &log);
+        return (dropdown, log);
+    }
+
+    fn render_dropdown(dropdown: &mut Dropdown<Log, TestEvent>, log: &Log) {
+        let palette = IntuitionColorPalette::default();
+        let mut screen = Framebuffer::new(SCREEN.w, SCREEN.h);
+        let mut painter = Painter::new(&mut screen, &palette);
+        dropdown.render(log, Rect::new(10, 10, 100, FIELD_HEIGHT), &mut painter);
+        dropdown.render_overlay(log, &mut painter);
+    }
+
+    fn press(dropdown: &mut Dropdown<Log, TestEvent>, log: &mut Log, pos: Point) {
+        for event in [
+            MouseEvent::Down {
+                pos,
+                button: MouseButton::Left,
+            },
+            MouseEvent::Up {
+                pos,
+                button: MouseButton::Left,
+            },
+        ] {
+            dropdown.handle_event(log, &TestEvent::Mouse(event));
+        }
+        dropdown.update(log);
+    }
+
+    #[test]
+    fn a_long_dropdown_scrolls() {
+        let (mut dropdown, mut log) = open_dropdown(30, 0);
+        assert_eq!(
+            dropdown.list_area.h,
+            DROPDOWN_MAX_ROWS as i32 * DROPDOWN_ROW_HEIGHT + 2
+        );
+        // the scroller's beside the options, widening the list by itself and no more
+        assert_eq!(
+            dropdown.list_area.w,
+            dropdown.button.area().w + DROPDOWN_SCROLLER_WIDTH
+        );
+        let (short, _) = open_dropdown(3, 0);
+        assert!(!short.scrolls());
+        let around =
+            |dropdown: &Dropdown<Log, TestEvent>| dropdown.list_area.w - dropdown.options_area.w;
+        assert_eq!(around(&dropdown), around(&short) + DROPDOWN_SCROLLER_WIDTH);
+        let down = dropdown.scroller.arrows()[1].area();
+        press(&mut dropdown, &mut log, Point::new(down.x + 2, down.y + 2));
+        assert!(dropdown.open);
+        assert_eq!(dropdown.first, 1);
+        // the top row is the second option now
+        let top = dropdown.options_area;
+        press(&mut dropdown, &mut log, Point::new(top.x + 2, top.y + 2));
+        assert!(!dropdown.open);
+        assert_eq!(dropdown.value(), 1);
+    }
+
+    #[test]
+    fn a_dropdown_opens_at_the_chosen_option() {
+        let (dropdown, _) = open_dropdown(30, 20);
+        assert_eq!(dropdown.first, 15);
+        // as far as the list goes
+        let (dropdown, _) = open_dropdown(30, 29);
+        assert_eq!(dropdown.first, 20);
+    }
+
+    #[test]
+    fn the_wheel_scrolls_an_open_dropdown() {
+        let (mut dropdown, mut log) = open_dropdown(30, 0);
+        let over = Point::new(dropdown.list_area.x + 2, dropdown.list_area.y + 2);
+        dropdown.handle_event(&mut log, &TestEvent::Wheel(over, -1.0));
+        assert_eq!(dropdown.first, 1);
+        dropdown.handle_event(&mut log, &TestEvent::Wheel(over, 1.0));
+        dropdown.handle_event(&mut log, &TestEvent::Wheel(over, 1.0));
+        assert_eq!(dropdown.first, 0);
+        // not past the end
+        for _ in 0..40 {
+            dropdown.handle_event(&mut log, &TestEvent::Wheel(over, -1.0));
+        }
+        assert_eq!(dropdown.first, 30 - DROPDOWN_MAX_ROWS);
+    }
+
+    #[test]
+    fn a_short_screen_shows_fewer_rows() {
+        let options: Vec<String> = (0..30).map(|option| option.to_string()).collect();
+        let options: Vec<&str> = options.iter().map(String::as_str).collect();
+        let mut dropdown = Dropdown::<Log, MouseEvent>::new("", &options);
+        let mut screen = Framebuffer::new(200, 60);
+        let palette = IntuitionColorPalette::default();
+        let mut painter = Painter::new(&mut screen, &palette);
+        let log = Log::default();
+        dropdown.render(&log, Rect::new(0, 0, 100, FIELD_HEIGHT), &mut painter);
+        dropdown.open_list();
+        dropdown.render_overlay(&log, &mut painter);
+        assert_eq!(dropdown.rows, 5);
+        assert!(dropdown.list_area.bottom() <= 60);
     }
 
     #[test]

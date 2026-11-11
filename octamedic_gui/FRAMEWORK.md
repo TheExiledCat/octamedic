@@ -107,7 +107,9 @@ device can't be opened it goes back to the old one, and the notification bar say
 engine has no device at all (it couldn't open one at startup, say), OK tries again even on the same
 device.
 
-INPUT opens the input dialog next to it: which device the sample editor records from. The engine
+INPUT opens the input dialog next to it: which device the sample editor records from, and its
+channel (Left, Right or Mixed, the same choice as loading a stereo sample) and gain in decibels,
+which the input's stream applies, clipped at full scale (`input::InputSettings`). The engine
 never uses it and nothing keeps it open, so OK only saves it (`AppState::set_input_device`), and
 whatever records opens `AppState::input_device` then, or the default with `None`. A saved device
 that's gone shows as Default and stays saved until another is picked.
@@ -185,6 +187,25 @@ than BUFFSIZE's 131072 is turned down. Shortening averages the samples each
 new one covers and lengthening draws the ones between on a line, so both smooth the sound like
 OctaMED's; up and down an octave a few times comes back noticeably duller.
 PLAY DISPLAY and PLAY RANGE play at the note nearest PITCH.
+
+MONITOR and RECORD listen to VOL's INPUT device (`octamedic_core::input::AudioInput`, on a thread of
+its own like the engine's stream). While they do, `AppState::sampling` is set and `App`'s
+`route_event` gives sampling every event before prompts and dialogs, handing mouse presses to
+`AppState::sampling_click` and dropping their releases; the title bar says what the buttons do.
+MONITOR shows the latest 640 samples, one a column as the input gives them, and any button stops it.
+RECORD shows the same until the left button starts recording. OctaMED blanked the screen then; here
+the waveform shows the whole buffer whatever the zoom, with what's recorded so far written into it
+and a line where it's got to. It stops when the sample buffer, the sample at BUFFSIZE's length, is
+full, or early with the right button, which leaves the rest of the buffer as it was. Before it
+starts, the right button gives up. `input::Recorder` brings the input to the PITCH period's rate
+(the Paula clock over the period, so 214 records twice as fast as 428), averaging the samples each
+one covers, and makes it 8-bit with no gain. The sample editor puts the recording in through
+`edit_sample`, so it can be undone like any edit.
+While they listen, the input can be heard too, unless INPUT's "Hear it while sampling" is off: the
+input's stream pushes what it gets into the engine's `passthrough::Passthrough`, and the engine's
+output stream mixes it in after the song, from one input sample to the next at its own rate. The
+two devices' clocks drift apart, so once 50 ms is waiting it's cut back to 10, and running out is
+silence, never waiting on the input's thread.
 The rest of the buttons are ghosted.
 
 Change project data through `AppState` methods like `enter_note` and `edit_track`, not directly.

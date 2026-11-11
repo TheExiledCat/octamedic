@@ -1,4 +1,5 @@
 use std::{
+    collections::VecDeque,
     ops::{Range, RangeInclusive},
     sync::{Arc, Weak},
 };
@@ -12,6 +13,7 @@ use octamedic_core::{
         note::OctamedicNote,
     },
     engine::period::{nearest_period_note, note_period, period_note},
+    input::eight_bit,
 };
 use rustuition::{
     font::Font,
@@ -32,7 +34,7 @@ use crate::{
         main::{block_editor::note_text, wave_view::WaveView, waveform_mouse::WaveformMouse},
         pens,
         prompt::Prompt,
-        state::{AppState, InstrumentSaveType},
+        state::{AppState, InstrumentSaveType, SamplingMode},
     },
     framework::{
         event::{Event, MouseButton},
@@ -154,6 +156,12 @@ const CHANGE_VOLUME: &str = "CHG.VOL.";
 // the clipboard mixed in from the range's start, only as far as its end if there's a range
 const MIX: &str = "MIX";
 const FREEHAND: &str = "FREEHAND";
+// shows what comes in, a sample a column as the input gives them, until a mouse button's pressed
+const MONITOR: &str = "MONITOR";
+const MONITORED_SAMPLES: usize = WAVEFORM.w as usize;
+// fills the sample buffer from the input at PITCH's rate
+const RECORD: &str = "RECORD";
+const NO_BUFFER: &str = "No sample buffer, set BUFFSIZE first";
 // what FREEHAND zooms to, a sample for every column
 const FREEHAND_SAMPLES: usize = WAVEFORM.w as usize;
 // dot pixels: each sample on its own, without the line from the one before
@@ -167,8 +175,8 @@ const BUTTONS: [(&str, Rect); 32] = [
     (PLAY_DISPLAY, on_row(0, 134, 92)),
     (PLAY_RANGE, on_row(0, 226, 92)),
     (SAMPLE_TO_CLIPBOARD, on_row(0, 318, 62)),
-    ("MONITOR", on_row(0, 380, 70)),
-    ("RECORD", on_row(0, 450, 70)),
+    (MONITOR, on_row(0, 380, 70)),
+    (RECORD, on_row(0, 450, 70)),
 
     (SHOW_RANGE, on_row(1, 134, 92)),
     (SHOW_ALL, on_row(1, 226, 92)),
@@ -215,6 +223,8 @@ const HOOKED_UP: &[&str] = &[
     CUT,
     COPY,
     PASTE,
+    MONITOR,
+    RECORD,
     SAMPLE_TO_CLIPBOARD,
     CLIPBOARD_TO_SAMPLE,
     D_PIXELS,
@@ -473,6 +483,56 @@ fn render_waveform(
     }
 }
 
+// what's coming in as the sample would have it, with no gain: full scale fills the waveform
+// the whole buffer whatever the zoom, what's recorded so far in it, and a line where it's got to
+fn render_recording(state: &AppState, waveform: Rect, painter: &mut Painter) {
+    let (Some(sample), Some(recorded)) = (active_sample(state), state.recorded_so_far()) else {
+        return;
+    };
+    let filling = recorded_into(sample, recorded);
+    let length = filling.data.len();
+    render_waveform(painter, waveform, Some(&filling), 0..length, 0..0, false);
+    position_line(painter, waveform, recording_column(recorded.len(), length));
+}
+
+fn recording_column(recorded: usize, length: usize) -> i32 {
+    let column = recorded * WAVEFORM.w as usize / length.max(1);
+    return (column as i32).min(WAVEFORM.w - 1);
+}
+
+fn position_line(painter: &mut Painter, waveform: Rect, column: i32) {
+    painter.rect(
+        Rect::new(waveform.x + column, waveform.y, 1, waveform.h),
+        Some(Pen::SHADOW),
+        None,
+        Sides::NONE,
+    );
+}
+
+// from the buffer's start, leaving what's past a recording stopped early as it was
+fn recorded_into(sample: &OctamedicSample, recorded: &[i8]) -> OctamedicSample {
+    let mut data = sample.data.clone();
+    let length = recorded.len().min(data.len());
+    data[..length].copy_from_slice(&recorded[..length]);
+    return OctamedicSample {
+        data,
+        repeat: sample.repeat,
+        octaves: sample.octaves,
+    };
+}
+
+fn render_monitored(painter: &mut Painter, waveform: Rect, monitored: &VecDeque<f32>) {
+    let zero = Rect::new(waveform.x, waveform.y + ZERO_LINE_Y, waveform.w, 1);
+    painter.fill(waveform, Pen::BACKGROUND);
+    painter.fill(zero, Pen::SHADOW);
+    let data: Vec<i8> = monitored.iter().map(|&sample| eight_bit(sample)).collect();
+    let rows = sample_rows(&data, waveform);
+    for (column, (top, bottom)) in column_spans(&rows, false).into_iter().enumerate() {
+        let line = Rect::new(waveform.x + column as i32, top, 1, bottom - top + 1);
+        painter.fill(line.intersection(waveform), Pen::SHINE);
+    }
+}
+
 fn save_type_label(save_type: InstrumentSaveType) -> &'static str {
     return match save_type {
         InstrumentSaveType::Raw => "SAVE RAW",
@@ -551,6 +611,9 @@ pub struct SampleEditor {
     turned_off_loop: Option<(Weak<OctamedicSample>, (usize, usize))>,
     // and how far from the mouse the marker's line was when it was grabbed
     dragged_loop_end: Option<(LoopEnd, i32)>,
+    // the latest of what MONITOR's heard, oldest first
+    monitored: VecDeque<f32>,
+    incoming: Vec<f32>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -671,6 +734,8 @@ impl SampleEditor {
             picking_note: None,
             turned_off_loop: None,
             dragged_loop_end: None,
+            monitored: VecDeque::with_capacity(MONITORED_SAMPLES),
+            incoming: Vec::new(),
         }
         .with_periods_shown();
     }
@@ -854,6 +919,38 @@ impl SampleEditor {
         self.button(LOOP_ON).set_toggled(looping);
         self.button(LOOP_START).set_toggled(which == LoopEnd::Start);
         self.button(LOOP_END).set_toggled(which == LoopEnd::End);
+    }
+
+    fn sample_input(&mut self, state: &mut AppState, length: usize) {
+        if self.clicked(MONITOR) {
+            self.monitored.clear();
+            state.start_monitoring();
+        }
+        if self.clicked(RECORD) {
+            self.monitored.clear();
+            self.start_recording(state, length);
+        }
+        if let Some(recorded) = state.take_recording() {
+            edit_sample(state, |sample| recorded_into(sample, &recorded));
+        }
+        if state.sampling().is_none() {
+            return;
+        }
+        state.take_input(&mut self.incoming);
+        self.monitored.extend(self.incoming.drain(..));
+        let over = self.monitored.len().saturating_sub(MONITORED_SAMPLES);
+        self.monitored.drain(..over);
+    }
+
+    // the buffer is the sample as long as it is, so BUFFSIZE sets how much is recorded
+    fn start_recording(&self, state: &mut AppState, length: usize) {
+        if length == 0 {
+            state.notify(NO_BUFFER);
+            return;
+        }
+        let [pitch, _] = self.periods;
+        let rate = state.video().clock().paula_clock / u32::from(pitch.max(1));
+        state.start_recording(rate, length);
     }
 
     fn change_rate(&mut self, state: &mut AppState) {
@@ -1084,6 +1181,7 @@ impl Gadget<AppState, Event> for SampleEditor {
         }
         self.edit_loop(state);
         self.change_rate(state);
+        self.sample_input(state, length);
         self.mouse.take_release();
         self.drag_range();
         self.draw_waveform(state);
@@ -1188,25 +1286,26 @@ impl Gadget<AppState, Event> for SampleEditor {
         let range = self.range();
         let range_columns = self.view.column_of(range.start, WAVEFORM.w)
             ..self.view.column_of(range.end, WAVEFORM.w);
-        render_waveform(
-            painter,
-            waveform,
-            active_sample(state),
-            visible.clone(),
-            range_columns,
-            self.dot_pixels || self.free_hand,
-        );
-        let playing = state.engine.status().sample_position();
-        if let Some(pos) = playing.filter(|pos| visible.contains(pos)) {
-            let column = self.view.column_of(pos, WAVEFORM.w);
-            painter.rect(
-                Rect::new(waveform.x + column, waveform.y, 1, waveform.h),
-                Some(Pen::SHADOW),
-                None,
-                Sides::NONE,
-            );
+        match state.sampling() {
+            Some(SamplingMode::Recording) => render_recording(state, waveform, painter),
+            Some(_) => render_monitored(painter, waveform, &self.monitored),
+            None => render_waveform(
+                painter,
+                waveform,
+                active_sample(state),
+                visible.clone(),
+                range_columns,
+                self.dot_pixels || self.free_hand,
+            ),
         }
-        self.render_markers(state, waveform, painter);
+        // they go by the view, which the input doesn't
+        if state.sampling().is_none() {
+            let playing = state.engine.status().sample_position();
+            if let Some(pos) = playing.filter(|pos| visible.contains(pos)) {
+                position_line(painter, waveform, self.view.column_of(pos, WAVEFORM.w));
+            }
+            self.render_markers(state, waveform, painter);
+        }
         if sample_length(state) == 0 {
             let [x, y] = NO_SAMPLE_POSITION;
             painter.text(waveform.x + x, waveform.y + y, NO_SAMPLE, Pen::SHINE);
@@ -1355,6 +1454,40 @@ mod tests {
         let rows = sample_rows(&[0, 64, -64, 1, 2, 3], waveform);
         assert_eq!(rows, [32, 16, 32]);
         assert!(sample_rows(&[], waveform).is_empty());
+    }
+
+    #[test]
+    fn record_needs_a_buffer() {
+        let mut state = state();
+        let mut editor = SampleEditor::new();
+        editor.update(&mut state);
+        let mut screen = Framebuffer::new(AREA.w, AREA.h);
+        editor.render(&state, AREA, &mut Painter::new(&mut screen, &state.palette));
+        click(&mut editor, &mut state, RECORD);
+        assert_eq!(state.notification.as_deref(), Some(NO_BUFFER));
+        assert!(state.sampling().is_none());
+    }
+
+    #[test]
+    fn the_recording_line_goes_across_the_whole_buffer() {
+        assert_eq!(recording_column(0, 32768), 0);
+        assert_eq!(recording_column(16384, 32768), WAVEFORM.w / 2);
+        // full, it stays on the waveform
+        assert_eq!(recording_column(32768, 32768), WAVEFORM.w - 1);
+    }
+
+    #[test]
+    fn a_recording_fills_the_buffer_from_its_start() {
+        let sample = OctamedicSample {
+            data: vec![1, 2, 3, 4],
+            repeat: Some((0, 4)),
+            octaves: SampleOctaves::One,
+        };
+        // stopped early, the rest stays
+        let stopped = recorded_into(&sample, &[9, 9]);
+        assert_eq!(stopped.data, [9, 9, 3, 4]);
+        assert_eq!(stopped.repeat, Some((0, 4)));
+        assert_eq!(recorded_into(&sample, &[5, 6, 7, 8]).data, [5, 6, 7, 8]);
     }
 
     fn with_sample(state: &mut AppState, length: usize) {
