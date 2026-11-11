@@ -20,6 +20,8 @@ use octamedic_core::{
         volume::MAX_VOLUME,
     },
     engine::{engine::PlayMode, handle::EngineHandle},
+    import::sample::SampleChannel,
+    input::{AudioInput, InputSettings, Recorder},
 };
 use rustuition::palette::{Color, IntuitionColorPalette};
 
@@ -38,7 +40,7 @@ use crate::{
         prompt::Prompt,
         screen_filters::ScreenFilters,
     },
-    framework::widgets::Dialog,
+    framework::{event::MouseButton, widgets::Dialog},
 };
 
 const NOTIFICATION_DURATION: Duration = Duration::from_secs(2);
@@ -159,6 +161,31 @@ impl Default for Meters {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SamplingMode {
+    Monitor,
+    // RECORD was clicked, and the left mouse button starts it
+    ReadyToRecord,
+    Recording,
+}
+
+/// The sample editor listening to the input. While it does, it has the screen and every event,
+/// and the mouse buttons say what happens next.
+struct Sampling {
+    input: AudioInput,
+    purpose: SamplingPurpose,
+}
+
+enum SamplingPurpose {
+    Monitor,
+    // into the sample buffer at the PITCH period's rate, once the left mouse button starts it
+    Record {
+        rate: u32,
+        length: usize,
+        recorder: Option<Recorder>,
+    },
+}
+
 pub struct AppState {
     pub engine: EngineHandle,
     pub active_song: SongId,
@@ -250,6 +277,9 @@ pub struct AppState {
     sequence_changed: bool,
     history: History,
     saved_position: u64,
+    sampling: Option<Sampling>,
+    // what RECORD got, for the sample editor to put in the sample
+    recorded: Option<Vec<i8>>,
 }
 
 // the song's colours, as the screen shows them
@@ -338,6 +368,8 @@ impl AppState {
             sequence_changed: false,
             history: History::default(),
             saved_position: 0,
+            sampling: None,
+            recorded: None,
         };
         state.send_all_to_engine();
         state.reset_history();
@@ -650,6 +682,177 @@ impl AppState {
         if device != self.config.input.device {
             self.config_mut().input.device = device;
         }
+    }
+
+    /// In decibels.
+    pub fn input_gain(&self) -> f32 {
+        return self.config.input.gain;
+    }
+
+    pub fn set_input_gain(&mut self, gain: f32) {
+        if gain != self.config.input.gain {
+            self.config_mut().input.gain = gain;
+        }
+    }
+
+    pub fn hears_input(&self) -> bool {
+        return self.config.input.hear;
+    }
+
+    pub fn set_hears_input(&mut self, hear: bool) {
+        if hear != self.config.input.hear {
+            self.config_mut().input.hear = hear;
+        }
+    }
+
+    pub fn input_channel(&self) -> SampleChannel {
+        return self.config.input.channel;
+    }
+
+    pub fn set_input_channel(&mut self, channel: SampleChannel) {
+        if channel != self.config.input.channel {
+            self.config_mut().input.channel = channel;
+        }
+    }
+
+    pub fn sampling(&self) -> Option<SamplingMode> {
+        let sampling = self.sampling.as_ref()?;
+        return Some(match &sampling.purpose {
+            SamplingPurpose::Monitor => SamplingMode::Monitor,
+            SamplingPurpose::Record { recorder: None, .. } => SamplingMode::ReadyToRecord,
+            SamplingPurpose::Record { .. } => SamplingMode::Recording,
+        });
+    }
+
+    /// How long RECORD takes to fill the buffer, the buffer's length over the rate.
+    pub fn record_seconds(&self) -> Option<f64> {
+        let SamplingPurpose::Record { rate, length, .. } = self.sampling.as_ref()?.purpose else {
+            return None;
+        };
+        return Some(length as f64 / rate.max(1) as f64);
+    }
+
+    pub fn start_monitoring(&mut self) {
+        self.start_sampling(SamplingPurpose::Monitor);
+    }
+
+    /// Shows the input until the left mouse button starts recording `length` samples at `rate`.
+    pub fn start_recording(&mut self, rate: u32, length: usize) {
+        self.start_sampling(SamplingPurpose::Record {
+            rate,
+            length,
+            recorder: None,
+        });
+    }
+
+    // says why if the input can't be opened
+    fn start_sampling(&mut self, purpose: SamplingPurpose) {
+        // closed first, the device might not open twice
+        self.sampling = None;
+        let passthrough = self
+            .hears_input()
+            .then(|| self.engine.passthrough().clone());
+        let settings = InputSettings::new(self.input_channel(), self.input_gain());
+        match AudioInput::open(self.input_device(), settings, passthrough) {
+            Ok(input) => self.sampling = Some(Sampling { input, purpose }),
+            Err(error) => self.notify(format!("NO INPUT: {error}")),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn start_sampling_without_input(&mut self, mode: SamplingMode) {
+        let purpose = match mode {
+            SamplingMode::Monitor => SamplingPurpose::Monitor,
+            SamplingMode::ReadyToRecord | SamplingMode::Recording => SamplingPurpose::Record {
+                rate: 8000,
+                length: 4,
+                recorder: (mode == SamplingMode::Recording).then(|| Recorder::new(0, 8000, 4)),
+            },
+        };
+        let input = AudioInput::disconnected();
+        self.sampling = Some(Sampling { input, purpose });
+    }
+
+    pub fn stop_sampling(&mut self) {
+        self.sampling = None;
+    }
+
+    /// Like OctaMED: any button stops MONITOR. Ready to record, the left one starts it and the
+    /// right one gives up; recording, the right one stops it early.
+    pub fn sampling_click(&mut self, button: MouseButton) {
+        let Some(sampling) = &mut self.sampling else {
+            return;
+        };
+        let SamplingPurpose::Record {
+            rate,
+            length,
+            recorder,
+        } = &mut sampling.purpose
+        else {
+            self.stop_sampling();
+            return;
+        };
+        match (recorder.is_some(), button) {
+            (false, MouseButton::Left) => {
+                // what came in before the click isn't part of it
+                sampling.input.take(&mut Vec::new());
+                *recorder = Some(Recorder::new(sampling.input.sample_rate(), *rate, *length));
+            }
+            (false, MouseButton::Right) => self.stop_sampling(),
+            (true, MouseButton::Right) => self.finish_recording(),
+            (true, MouseButton::Left) => {}
+        }
+    }
+
+    /// What the input's sent since the last call, onto the end of `into`, and into the recording
+    /// if there is one, which ends when the buffer's full.
+    pub fn take_input(&mut self, into: &mut Vec<f32>) {
+        let Some(sampling) = &mut self.sampling else {
+            return;
+        };
+        let start = into.len();
+        sampling.input.take(into);
+        let recorder = match &mut sampling.purpose {
+            SamplingPurpose::Record {
+                recorder: Some(recorder),
+                ..
+            } => recorder,
+            _ => return,
+        };
+        if recorder.record(&into[start..]) {
+            self.finish_recording();
+        }
+    }
+
+    fn finish_recording(&mut self) {
+        let Some(Sampling {
+            purpose:
+                SamplingPurpose::Record {
+                    recorder: Some(recorder),
+                    ..
+                },
+            ..
+        }) = self.sampling.take()
+        else {
+            return;
+        };
+        self.recorded = Some(recorder.into_recorded());
+    }
+
+    /// What's been recorded so far, while recording.
+    pub fn recorded_so_far(&self) -> Option<&[i8]> {
+        return match &self.sampling.as_ref()?.purpose {
+            SamplingPurpose::Record {
+                recorder: Some(recorder),
+                ..
+            } => Some(recorder.recorded()),
+            _ => None,
+        };
+    }
+
+    /// What the last recording got, once.
+    pub fn take_recording(&mut self) -> Option<Vec<i8>> {
+        return self.recorded.take();
     }
 
     /// Starts the engine on the given device without fallback.
@@ -1665,6 +1868,50 @@ mod tests {
 
     fn state() -> AppState {
         return AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+    }
+
+    #[test]
+    fn any_button_stops_monitoring() {
+        let mut state = state();
+        state.start_sampling_without_input(SamplingMode::Monitor);
+        state.sampling_click(MouseButton::Right);
+        assert!(state.sampling().is_none());
+        assert!(state.take_recording().is_none());
+    }
+
+    #[test]
+    fn the_recording_takes_the_buffer_over_the_rate() {
+        let mut state = state();
+        assert_eq!(state.record_seconds(), None);
+        // 4 samples at 8000 Hz
+        state.start_sampling_without_input(SamplingMode::ReadyToRecord);
+        assert_eq!(state.record_seconds(), Some(0.0005));
+        state.start_sampling_without_input(SamplingMode::Monitor);
+        assert_eq!(state.record_seconds(), None);
+    }
+
+    #[test]
+    fn the_right_button_gives_up_before_recording() {
+        let mut state = state();
+        state.start_sampling_without_input(SamplingMode::ReadyToRecord);
+        state.sampling_click(MouseButton::Right);
+        assert!(state.sampling().is_none());
+        assert!(state.take_recording().is_none());
+    }
+
+    #[test]
+    fn the_left_button_records_and_the_right_stops_it() {
+        let mut state = state();
+        state.start_sampling_without_input(SamplingMode::ReadyToRecord);
+        state.sampling_click(MouseButton::Left);
+        assert_eq!(state.sampling(), Some(SamplingMode::Recording));
+        // only the right button stops it
+        state.sampling_click(MouseButton::Left);
+        assert_eq!(state.sampling(), Some(SamplingMode::Recording));
+        state.sampling_click(MouseButton::Right);
+        assert!(state.sampling().is_none());
+        assert_eq!(state.take_recording(), Some(Vec::new()));
+        assert!(state.take_recording().is_none());
     }
 
     #[test]

@@ -5,7 +5,7 @@ use std::{
     str::FromStr,
 };
 
-use octamedic_core::amiga::clock::VideoStandard;
+use octamedic_core::{amiga::clock::VideoStandard, import::sample::SampleChannel};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::app::{DEFAULT_VIDEO, files};
@@ -45,10 +45,71 @@ fn switched_on() -> bool {
     return true;
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct InputConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub device: Option<String>,
+    #[serde(
+        default = "mixed",
+        serialize_with = "serialize_channel",
+        deserialize_with = "deserialize_channel"
+    )]
+    pub channel: SampleChannel,
+    // played through the output while monitoring and recording, like OctaMED
+    #[serde(default = "switched_on")]
+    pub hear: bool,
+    // in decibels, for a quiet input
+    #[serde(default)]
+    pub gain: f32,
+}
+
+impl Default for InputConfig {
+    fn default() -> Self {
+        return Self {
+            device: None,
+            channel: mixed(),
+            hear: true,
+            gain: 0.0,
+        };
+    }
+}
+
+fn mixed() -> SampleChannel {
+    return SampleChannel::Mixed;
+}
+
+fn channel_name(channel: SampleChannel) -> &'static str {
+    return match channel {
+        SampleChannel::Left => "left",
+        SampleChannel::Right => "right",
+        SampleChannel::Mixed => "mixed",
+    };
+}
+
+fn serialize_channel<S>(channel: &SampleChannel, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    return serializer.serialize_str(channel_name(*channel));
+}
+
+fn deserialize_channel<'de, D>(deserializer: D) -> Result<SampleChannel, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let name = String::deserialize(deserializer)?.to_ascii_lowercase();
+    return [
+        SampleChannel::Left,
+        SampleChannel::Right,
+        SampleChannel::Mixed,
+    ]
+    .into_iter()
+    .find(|&channel| channel_name(channel) == name)
+    .ok_or_else(|| {
+        serde::de::Error::custom(format!(
+            "unknown input channel \"{name}\", expected \"left\", \"right\" or \"mixed\""
+        ))
+    });
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -255,6 +316,9 @@ mod tests {
             graphics: GraphicsBackend::Dx12,
             input: InputConfig {
                 device: Some("Microphone".to_owned()),
+                channel: SampleChannel::Left,
+                hear: false,
+                gain: 12.0,
             },
             output: OutputConfig {
                 device: Some("Headphones".to_owned()),
@@ -309,6 +373,17 @@ mod tests {
                 .to_string()
                 .contains("unknown graphics backend")
         );
+    }
+
+    #[test]
+    fn parses_input_channel_case_insensitive() {
+        let config: Config = toml::from_str("[input]\nchannel = \"Right\"").unwrap();
+        assert_eq!(config.input.channel, SampleChannel::Right);
+        let missing: Config = toml::from_str("[input]").unwrap();
+        assert_eq!(missing.input.channel, SampleChannel::Mixed);
+        assert!(missing.input.hear);
+        assert_eq!(missing.input.gain, 0.0);
+        assert!(toml::from_str::<Config>("[input]\nchannel = \"both\"").is_err());
     }
 
     #[test]

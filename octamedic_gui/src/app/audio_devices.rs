@@ -1,13 +1,18 @@
 use octamedic_core::devices::{AudioDevice, input_devices, output_devices};
-use rustuition::gadgets::dialog::{Checkbox, Dropdown};
+use rustuition::gadgets::dialog::{Checkbox, Cycle, Dropdown, NumberField};
 
 use crate::{
-    app::state::AppState,
+    app::{
+        files::load_instrument::{CHANNELS, DEFAULT_CHANNEL},
+        state::AppState,
+    },
     framework::{event::Event, widgets::Dialog},
 };
 
 // first in the list, before the devices
 const DEFAULT_DEVICE: &str = "Default";
+// what INPUT's gain goes from and to, in decibels: down for a hot input, up for a quiet one
+const GAIN_RANGE: [f32; 2] = [-20.0, 30.0];
 // device names can be long, like ALSA's plugins
 const WIDTH: i32 = 560;
 // what fits in the dropdown at WIDTH
@@ -20,7 +25,8 @@ pub fn open_output_dialog(state: &mut AppState) {
     state.open_dialog(dialog);
 }
 
-/// Which device the sample editor records from. OctaMED had the sampler on the parallel port.
+/// Which device the sample editor records from, and which of its channels, like loading a stereo
+/// sample. OctaMED had the sampler on the parallel port.
 pub fn open_input_dialog(state: &mut AppState) {
     let dialog = input_dialog(state, input_devices());
     state.open_dialog(dialog);
@@ -43,17 +49,31 @@ fn output_dialog(state: &AppState, devices: Vec<AudioDevice>) -> Dialog {
     });
 }
 
-// nothing has the input open, so picking one only saves it
+// nothing has the input open, so picking only saves it
 fn input_dialog(state: &AppState, devices: Vec<AudioDevice>) -> Dialog {
     let chosen = chosen_index(&devices, state.input_device());
     let mut dialog = devices_dialog("Input");
     let device = dialog.add_field(device_dropdown(&devices, chosen));
+    let channel_names = CHANNELS.map(|(name, _)| name);
+    let channel_chosen = CHANNELS
+        .iter()
+        .position(|&(_, channel)| channel == state.input_channel())
+        .unwrap_or(DEFAULT_CHANNEL);
+    let channel = dialog.add_field(Cycle::new("Channel:", &channel_names).chosen(channel_chosen));
+    let [least, most] = GAIN_RANGE;
+    let gain_field = NumberField::new("Gain (dB):", least, most, 1.0).value(state.input_gain());
+    let gain = dialog.add_field(gain_field);
+    let hear =
+        dialog.add_field(Checkbox::new("Hear it while sampling").checked(state.hears_input()));
     return dialog.on_submit(move |state, result| {
         let picked = *result.get(device);
         // left alone, a device that's missing from the list stays
         if picked != chosen {
             state.set_input_device(picked_id(&devices, picked));
         }
+        state.set_input_channel(CHANNELS[*result.get(channel)].1);
+        state.set_input_gain(*result.get(gain));
+        state.set_hears_input(*result.get(hear));
     });
 }
 
@@ -99,7 +119,10 @@ fn shortened(name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use ggez::input::keyboard::{KeyCode, KeyMods};
-    use octamedic_core::{data::project::OctamedicProject, engine::handle::EngineHandle};
+    use octamedic_core::{
+        data::project::OctamedicProject, engine::handle::EngineHandle,
+        import::sample::SampleChannel,
+    };
     use rustuition::gadget::Gadget;
 
     use super::*;
@@ -185,6 +208,35 @@ mod tests {
         submit(&mut dialog, &mut state);
         assert!(dialog.is_closed());
         assert_eq!(state.input_device(), Some("unplugged"));
+    }
+
+    #[test]
+    fn the_input_gain_stays_when_left_alone() {
+        let mut state = state();
+        assert_eq!(state.input_gain(), 0.0);
+        state.set_input_gain(12.0);
+        let mut dialog = input_dialog(&state, devices());
+        submit(&mut dialog, &mut state);
+        assert_eq!(state.input_gain(), 12.0);
+    }
+
+    #[test]
+    fn hearing_the_input_stays_when_left_alone() {
+        let mut state = state();
+        assert!(state.hears_input());
+        state.set_hears_input(false);
+        let mut dialog = input_dialog(&state, devices());
+        submit(&mut dialog, &mut state);
+        assert!(!state.hears_input());
+    }
+
+    #[test]
+    fn the_input_channel_stays_when_left_alone() {
+        let mut state = state();
+        state.set_input_channel(SampleChannel::Left);
+        let mut dialog = input_dialog(&state, devices());
+        submit(&mut dialog, &mut state);
+        assert_eq!(state.input_channel(), SampleChannel::Left);
     }
 
     #[test]

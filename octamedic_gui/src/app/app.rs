@@ -52,7 +52,7 @@ pub struct App {
     state: AppState,
     main: MainView,
     dialogs: DialogStack,
-    screen_presses: ScreenPresses,
+    presses: Presses,
     // native res, scaled up into the window
     screen: Image,
     video: VideoStandard,
@@ -97,7 +97,7 @@ impl App {
             state,
             main: MainView::new(),
             dialogs: DialogStack::default(),
-            screen_presses: ScreenPresses::default(),
+            presses: Presses::default(),
             screen: screen_image(ctx, video),
             video,
             cursor: Image::from_bytes(ctx, CURSOR)?,
@@ -198,7 +198,7 @@ impl App {
             &mut self.state,
             &mut self.dialogs,
             &mut self.main,
-            &mut self.screen_presses,
+            &mut self.presses,
             &event,
         );
     }
@@ -464,15 +464,25 @@ fn quit_now(state: &mut AppState) -> bool {
     return state.exit_requested;
 }
 
-/// Mouse buttons whose press went to the screens rather than a prompt or dialog.
+/// Where each mouse button's press went, so its release goes the same way.
 #[derive(Default)]
-struct ScreenPresses {
-    left: bool,
-    right: bool,
+struct Presses {
+    left: PressedOn,
+    right: PressedOn,
 }
 
-impl ScreenPresses {
-    fn held(&mut self, button: event::MouseButton) -> &mut bool {
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+enum PressedOn {
+    // a prompt or a dialog, or nothing's held
+    #[default]
+    Other,
+    Screens,
+    // it was sampling's, and its release goes nowhere
+    Sampling,
+}
+
+impl Presses {
+    fn pressed_on(&mut self, button: event::MouseButton) -> &mut PressedOn {
         return match button {
             event::MouseButton::Left => &mut self.left,
             event::MouseButton::Right => &mut self.right,
@@ -482,23 +492,40 @@ impl ScreenPresses {
 
 // the prompt, then the top dialog, then the screens. a release goes back to the screens when they
 // got its press, even if a prompt or dialog opened since, so whatever was pressed lets go. like a
-// requester coming up ending the active gadget in Intuition
+// requester coming up ending the active gadget in Intuition. sampling comes before all of them:
+// it takes everything, and the mouse buttons say what it does next
 fn route_event(
     state: &mut AppState,
     dialogs: &mut DialogStack,
     screens: &mut impl Gadget<AppState, Event>,
-    presses: &mut ScreenPresses,
+    presses: &mut Presses,
     event: &Event,
 ) -> bool {
     match *event {
         Event::MouseDown { button, .. } => {
-            *presses.held(button) = state.prompt.is_none() && dialogs.is_empty();
+            let pressed_on = if state.sampling().is_some() {
+                PressedOn::Sampling
+            } else if state.prompt.is_none() && dialogs.is_empty() {
+                PressedOn::Screens
+            } else {
+                PressedOn::Other
+            };
+            *presses.pressed_on(button) = pressed_on;
+            if pressed_on == PressedOn::Sampling {
+                state.sampling_click(button);
+                return true;
+            }
         }
         // forgetting the press either way
-        Event::MouseUp { button, .. } if std::mem::take(presses.held(button)) => {
-            return screens.handle_event(state, event);
-        }
+        Event::MouseUp { button, .. } => match std::mem::take(presses.pressed_on(button)) {
+            PressedOn::Screens => return screens.handle_event(state, event),
+            PressedOn::Sampling => return true,
+            PressedOn::Other => {}
+        },
         _ => {}
+    }
+    if state.sampling().is_some() {
+        return true;
     }
     return prompt::handle_event(state, event)
         || dialogs.handle_event(state, event)
@@ -576,6 +603,7 @@ mod tests {
     use crate::app::{
         mode::{HeaderMode, MainMode},
         prompt::Prompt,
+        state::SamplingMode,
     };
 
     fn mouse(down: bool, x: i32, y: i32) -> Event {
@@ -602,11 +630,39 @@ mod tests {
     }
 
     #[test]
+    fn sampling_takes_everything_until_a_mouse_press() {
+        let mut state = state();
+        let mut dialogs = DialogStack::default();
+        let mut screens = Screens::default();
+        let mut presses = Presses::default();
+        let mut route = |state: &mut AppState, screens: &mut Screens, event: &Event| {
+            route_event(state, &mut dialogs, screens, &mut presses, event);
+        };
+        // MONITOR clicks on press, so sampling has started before its release
+        let (press, release) = (mouse(true, 5, 5), mouse(false, 5, 5));
+        route(&mut state, &mut screens, &press);
+        state.start_sampling_without_input(SamplingMode::Monitor);
+        route(&mut state, &mut screens, &release);
+        assert_eq!(screens.events, [press, release]);
+        let key = Event::Key {
+            key: KeyCode::Space,
+            mods: KeyMods::empty(),
+            repeat: false,
+        };
+        route(&mut state, &mut screens, &key);
+        route(&mut state, &mut screens, &press);
+        assert!(state.sampling().is_none());
+        // and the press that stopped it doesn't let go of anything
+        route(&mut state, &mut screens, &release);
+        assert_eq!(screens.events, [press, release]);
+    }
+
+    #[test]
     fn a_release_goes_where_its_press_went() {
         let mut state = state();
         let mut dialogs = DialogStack::default();
         let mut screens = Screens::default();
-        let mut presses = ScreenPresses::default();
+        let mut presses = Presses::default();
         let (press, release) = (mouse(true, 5, 5), mouse(false, 5, 5));
         let mut route = |state: &mut AppState, screens: &mut Screens, event: &Event| {
             route_event(state, &mut dialogs, screens, &mut presses, event);
@@ -639,7 +695,7 @@ mod tests {
         state.set_song_name("changed");
         let mut dialogs = DialogStack::default();
         let mut main = MainView::new();
-        let mut presses = ScreenPresses::default();
+        let mut presses = Presses::default();
         let mut route = |state: &mut AppState, main: &mut MainView, event: Event| {
             route_event(state, &mut dialogs, main, &mut presses, &event);
             main.update(state);

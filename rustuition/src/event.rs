@@ -20,6 +20,13 @@ pub enum MouseEvent {
 pub trait PointerEvent {
     /// The mouse event in it, if it is one.
     fn mouse(&self) -> Option<MouseEvent>;
+
+    /// The wheel turned with the pointer at the point: how far, positive away from you, in lines
+    /// from a wheel or pixels from a trackpad. [`WheelLines`](crate::wheel::WheelLines) makes
+    /// lines of it.
+    fn wheel(&self) -> Option<(Point, f32)> {
+        return None;
+    }
 }
 
 impl PointerEvent for MouseEvent {

@@ -36,12 +36,13 @@ const LOADERS: &[&dyn InstrumentLoader] = &[
 // the numbers are the engine's notes, counted from 1 = C-1 in semitones, so 13 = C-2 and 25 = C-3
 const NOTES: [(&str, u8); 3] = [("C-1", 1), ("C-2", 13), ("C-3", 25)];
 const DEFAULT_NOTE: usize = 2;
-const CHANNELS: [(&str, SampleChannel); 3] = [
+// the INPUT dialog offers the same
+pub const CHANNELS: [(&str, SampleChannel); 3] = [
     ("Left", SampleChannel::Left),
     ("Right", SampleChannel::Right),
     ("Mixed", SampleChannel::Mixed),
 ];
-const DEFAULT_CHANNEL: usize = 2;
+pub const DEFAULT_CHANNEL: usize = 2;
 
 /// Into the active instrument, asking how first if the format wants to.
 pub fn load_selected_instrument(state: &mut AppState) {

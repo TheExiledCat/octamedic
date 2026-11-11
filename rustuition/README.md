@@ -63,6 +63,10 @@ impl PointerEvent for Event {
 }
 ```
 
+`PointerEvent::wheel` is the mouse wheel, for the gadgets that scroll (an open `Dropdown`). It
+gives the pointer's position and how far the wheel turned, and is `None` unless you implement it;
+`wheel::WheelLines` turns that into whole lines, for your own lists too.
+
 The gadgets take the state and event types as parameters (`Button<S, E = MouseEvent>`), so a type
 alias saves writing them every time and lets handlers know what they get:
 
@@ -278,7 +282,9 @@ let dialog = dialog.on_submit(move |state, result| state.rename(result.get(name)
 (`TextField`, `Checkbox`, `Cycle`, `Dropdown`, `Toggle`, `NumberField`, `ReorderableList`, or a
 `Label` whose text changes) and gives back a `Field` that reads it from the `DialogResult`,
 already the right type. A `Dropdown`'s list opens under it, or as far up as it needs to stay on
-screen. Each button submits or cancels; Enter presses the first submit button,
+screen. Past `DROPDOWN_MAX_ROWS` options, or what the screen fits, it scrolls: a slider with arrows
+at its side, which also widens it so the options keep their room, and the wheel. It opens with the
+chosen option in the middle. Each button submits or cancels; Enter presses the first submit button,
 and Escape and the close gadget cancel unless `cancellable(false)`. `on_submit_checked` can
 refuse with a message, which keeps the dialog open.
 `on_change` runs when it opens and whenever a component takes an event, and its `DialogFields`
