@@ -25,6 +25,12 @@ debug = false
 [profile.dev.package.wgpu-core]
 debug-assertions = false
 
+# wgpu-hal 0.16 takes one off its DX12 exception handler count when the instance drops even when it
+# never added one, which it only does with validation, off above. Closing a debug build on Windows
+# then panicked with "attempt to subtract with overflow"; release builds wrap it silently
+[profile.dev.package.wgpu-hal]
+overflow-checks = false
+
 # the screen filters go over every pixel each frame: a chain of six took about 29ms a frame at
 # opt-level "z" and 10ms at 3
 [profile.dev.package.rustuition]
