@@ -33,15 +33,22 @@ jobs:
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
-          # the runners fetch everything through Azure's Ubuntu mirror, so when its name stops
-          # resolving every download fails; use the main archive instead
-          if [ -f /etc/apt/apt-mirrors.txt ]; then
-            sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
-            grep -q . /etc/apt/apt-mirrors.txt ||
-              echo "http://archive.ubuntu.com/ubuntu/" | sudo tee /etc/apt/apt-mirrors.txt > /dev/null
+          install() {
+            sudo apt-get -o Acquire::Retries=3 update &&
+              sudo apt-get -o Acquire::Retries=3 install -y libasound2-dev pkg-config
+          }
+          # when Canonical's servers don't resolve, a university mirror outside ubuntu.com. apt still
+          # checks Ubuntu's signatures on everything it fetches
+          if ! install; then
+            mirror=http://mirrors.ocf.berkeley.edu
+            for list in /etc/apt/sources.list $(grep -rl ubuntu.com /etc/apt/sources.list.d || true); do
+              sudo sed -i -E \
+                -e "s#mirror\+file:/etc/apt/apt-mirrors.txt#$mirror/ubuntu/#" \
+                -e "s#https?://[a-z.]*ubuntu\.com/ubuntu-ports/?#$mirror/ubuntu-ports/#" \
+                -e "s#https?://[a-z.]*ubuntu\.com/ubuntu/?#$mirror/ubuntu/#" "$list"
+            done
+            install
           fi
-          sudo apt-get -o Acquire::Retries=3 update
-          sudo apt-get -o Acquire::Retries=3 install -y libasound2-dev pkg-config
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -60,15 +67,22 @@ jobs:
 
       - name: Install Linux dependencies
         run: |
-          # the runners fetch everything through Azure's Ubuntu mirror, so when its name stops
-          # resolving every download fails; use the main archive instead
-          if [ -f /etc/apt/apt-mirrors.txt ]; then
-            sudo sed -i '/azure\.archive\.ubuntu\.com/d' /etc/apt/apt-mirrors.txt
-            grep -q . /etc/apt/apt-mirrors.txt ||
-              echo "http://archive.ubuntu.com/ubuntu/" | sudo tee /etc/apt/apt-mirrors.txt > /dev/null
+          install() {
+            sudo apt-get -o Acquire::Retries=3 update &&
+              sudo apt-get -o Acquire::Retries=3 install -y libasound2-dev pkg-config
+          }
+          # when Canonical's servers don't resolve, a university mirror outside ubuntu.com. apt still
+          # checks Ubuntu's signatures on everything it fetches
+          if ! install; then
+            mirror=http://mirrors.ocf.berkeley.edu
+            for list in /etc/apt/sources.list $(grep -rl ubuntu.com /etc/apt/sources.list.d || true); do
+              sudo sed -i -E \
+                -e "s#mirror\+file:/etc/apt/apt-mirrors.txt#$mirror/ubuntu/#" \
+                -e "s#https?://[a-z.]*ubuntu\.com/ubuntu-ports/?#$mirror/ubuntu-ports/#" \
+                -e "s#https?://[a-z.]*ubuntu\.com/ubuntu/?#$mirror/ubuntu/#" "$list"
+            done
+            install
           fi
-          sudo apt-get -o Acquire::Retries=3 update
-          sudo apt-get -o Acquire::Retries=3 install -y libasound2-dev pkg-config
 
       - uses: dtolnay/rust-toolchain@stable
         with:
