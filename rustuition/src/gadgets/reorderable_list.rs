@@ -1,9 +1,10 @@
 use crate::{
-    event::PointerEvent,
+    event::{PointerEvent, TextEvent},
     gadget::Gadget,
     gadgets::{
         button::{Button, Triangle},
         dialog::{BUTTON_LABEL_PADDING, DialogComponent, DialogInput, Dropdown, FIELD_HEIGHT},
+        textbox::Textbox,
     },
     painter::{CHAR_WIDTH, Painter, text_width},
     rect::Rect,
@@ -14,25 +15,66 @@ const ROW_GAP: i32 = 2;
 const ARROW_BUTTON_WIDTH: i32 = 16;
 const BUTTON_GAP: i32 = CHAR_WIDTH / 2;
 const TOGGLE_ALL: &str = "Toggle all";
+const TEXT_WIDTH: i32 = 24 * CHAR_WIDTH;
 
-/// One row of a [`ReorderableList`]: which option it shows and whether it's switched on.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// What each row of a [`ReorderableList`] holds.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ListOptions {
+    /// One of these, picked from a dropdown.
+    Choices(Vec<String>),
+    /// Text typed into a field.
+    Text,
+}
+
+impl ListOptions {
+    pub fn choices(options: &[&str]) -> Self {
+        return Self::Choices(options.iter().map(|option| option.to_string()).collect());
+    }
+}
+
+/// What one row holds, matching the list's [`ListOptions`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ItemValue {
+    Choice(usize),
+    Text(String),
+}
+
+/// One row of a [`ReorderableList`]: what it holds and whether it's switched on. A read-only row
+/// is grayed out: it can't be edited, switched, removed or moved, though other rows can still
+/// move past it.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ListItem {
-    pub choice: usize,
+    pub value: ItemValue,
     pub enabled: bool,
+    pub read_only: bool,
 }
 
 impl ListItem {
+    /// A row showing the option at this index.
     pub fn new(choice: usize) -> Self {
         return Self {
-            choice,
+            value: ItemValue::Choice(choice),
             enabled: true,
+            read_only: false,
+        };
+    }
+
+    pub fn read_only(mut self) -> Self {
+        self.read_only = true;
+        return self;
+    }
+
+    pub fn text(text: impl Into<String>) -> Self {
+        return Self {
+            value: ItemValue::Text(text.into()),
+            enabled: true,
+            read_only: false,
         };
     }
 }
 
 /// What was just done to a [`ReorderableList`], so whatever it shows can follow.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ListEvent {
     /// A new row at the end, showing the first option.
     Add,
@@ -46,6 +88,11 @@ pub enum ListEvent {
         item: usize,
         choice: usize,
     },
+    /// A row's text was typed in.
+    Rename {
+        item: usize,
+        text: String,
+    },
     Enable {
         item: usize,
         enabled: bool,
@@ -56,11 +103,11 @@ pub enum ListEvent {
 
 type OnEvent<S> = Box<dyn FnMut(&mut S, ListEvent)>;
 
-/// Rows that can be put in order with up and down arrows, each picking one of the same options
-/// from a dropdown, with a button to switch it on and off. Edit, remove and add buttons are
+/// Rows that can be put in order with up and down arrows, each either picking one of the same
+/// options from a dropdown or holding text typed into a field, with a button to switch it on and off. Edit, remove and add buttons are
 /// there when asked for, like an effects chain. Its value is the rows.
 pub struct ReorderableList<S, E> {
-    options: Vec<String>,
+    options: ListOptions,
     rows: Vec<Row<S, E>>,
     can_add: bool,
     can_remove: bool,
@@ -71,10 +118,10 @@ pub struct ReorderableList<S, E> {
     on_event: Option<OnEvent<S>>,
 }
 
-impl<S, E> ReorderableList<S, E> {
-    pub fn new(options: &[&str]) -> Self {
+impl<S, E: PointerEvent + TextEvent> ReorderableList<S, E> {
+    pub fn new(options: ListOptions) -> Self {
         return Self {
-            options: options.iter().map(|option| option.to_string()).collect(),
+            options,
             rows: Vec::new(),
             can_add: false,
             can_remove: false,
@@ -123,8 +170,10 @@ impl<S, E> ReorderableList<S, E> {
     }
 
     fn set_items(&mut self, items: &[ListItem]) {
-        let options: Vec<&str> = self.options.iter().map(String::as_str).collect();
-        self.rows = items.iter().map(|item| Row::new(&options, *item)).collect();
+        self.rows = items
+            .iter()
+            .map(|item| Row::new(&self.options, item))
+            .collect();
     }
 
     fn lines(&self) -> i32 {
@@ -172,6 +221,7 @@ impl<S, E> ReorderableList<S, E> {
                 item: index,
                 choice,
             },
+            RowAction::Rename(text) => ListEvent::Rename { item: index, text },
             RowAction::Enable(enabled) => ListEvent::Enable {
                 item: index,
                 enabled,
@@ -187,12 +237,9 @@ impl<S, E> ReorderableList<S, E> {
     }
 }
 
-impl<S, E: PointerEvent> Gadget<S, E> for ReorderableList<S, E> {
+impl<S, E: PointerEvent + TextEvent> Gadget<S, E> for ReorderableList<S, E> {
     fn handle_event(&mut self, state: &mut S, event: &E) -> bool {
-        let open = self
-            .rows
-            .iter()
-            .position(|row| row.choice.captures_events());
+        let open = self.rows.iter().position(|row| row.input.captures_events());
         if open.is_none() && self.can_toggle_all && self.toggle_all.handle_event(state, event) {
             if self.toggle_all.clicked().is_some() {
                 self.toggle_all(state);
@@ -211,8 +258,11 @@ impl<S, E: PointerEvent> Gadget<S, E> for ReorderableList<S, E> {
         }
         if self.can_add && self.add.handle_event(state, event) {
             if self.add.clicked().is_some() {
-                let options: Vec<&str> = self.options.iter().map(String::as_str).collect();
-                self.rows.push(Row::new(&options, ListItem::new(0)));
+                let item = match self.options {
+                    ListOptions::Choices(_) => ListItem::new(0),
+                    ListOptions::Text => ListItem::text(""),
+                };
+                self.rows.push(Row::new(&self.options, &item));
                 self.emit(state, ListEvent::Add);
             }
             return true;
@@ -229,8 +279,8 @@ impl<S, E: PointerEvent> Gadget<S, E> for ReorderableList<S, E> {
         }
         let last = self.rows.len().saturating_sub(1);
         for (index, row) in self.rows.iter_mut().enumerate() {
-            row.up.set_enabled(index > 0);
-            row.down.set_enabled(index < last);
+            row.up.set_enabled(index > 0 && !row.read_only);
+            row.down.set_enabled(index < last && !row.read_only);
             row.render(
                 state,
                 Self::line(area, first_row + index),
@@ -247,7 +297,7 @@ impl<S, E: PointerEvent> Gadget<S, E> for ReorderableList<S, E> {
     }
 }
 
-impl<S, E: PointerEvent> DialogComponent<S, E> for ReorderableList<S, E> {
+impl<S, E: PointerEvent + TextEvent> DialogComponent<S, E> for ReorderableList<S, E> {
     fn height(&self) -> i32 {
         let lines = self.lines();
         return lines * FIELD_HEIGHT + (lines - 1).max(0) * ROW_GAP;
@@ -255,12 +305,12 @@ impl<S, E: PointerEvent> DialogComponent<S, E> for ReorderableList<S, E> {
 
     fn render_overlay(&mut self, state: &S, painter: &mut Painter) {
         for row in &mut self.rows {
-            row.choice.render_overlay(state, painter);
+            row.input.render_overlay(state, painter);
         }
     }
 
     fn captures_events(&self) -> bool {
-        return self.rows.iter().any(|row| row.choice.captures_events());
+        return self.rows.iter().any(|row| row.input.captures_events());
     }
 
     fn set_enabled(&mut self, enabled: bool) {
@@ -272,7 +322,7 @@ impl<S, E: PointerEvent> DialogComponent<S, E> for ReorderableList<S, E> {
     }
 }
 
-impl<S, E: PointerEvent> DialogInput<S, E> for ReorderableList<S, E> {
+impl<S, E: PointerEvent + TextEvent> DialogInput<S, E> for ReorderableList<S, E> {
     type Value = Vec<ListItem>;
 
     fn value(&self) -> Vec<ListItem> {
@@ -288,6 +338,7 @@ enum RowAction {
     Up,
     Down,
     Choose(usize),
+    Rename(String),
     Enable(bool),
     Edit,
     Remove,
@@ -295,39 +346,129 @@ enum RowAction {
     Took,
 }
 
+enum RowInput<S, E> {
+    Choice(Dropdown<S, E>),
+    Text(Textbox<S, E>),
+}
+
+impl<S, E: PointerEvent + TextEvent> RowInput<S, E> {
+    fn value(&self) -> ItemValue {
+        return match self {
+            Self::Choice(dropdown) => ItemValue::Choice(dropdown.value()),
+            Self::Text(textbox) => ItemValue::Text(textbox.text().to_owned()),
+        };
+    }
+
+    fn width(&self) -> i32 {
+        return match self {
+            Self::Choice(dropdown) => dropdown.button_width(),
+            Self::Text(_) => TEXT_WIDTH,
+        };
+    }
+
+    fn captures_events(&self) -> bool {
+        return match self {
+            Self::Choice(dropdown) => dropdown.captures_events(),
+            Self::Text(_) => false,
+        };
+    }
+
+    fn render_overlay(&mut self, state: &S, painter: &mut Painter) {
+        if let Self::Choice(dropdown) = self {
+            dropdown.render_overlay(state, painter);
+        }
+    }
+
+    fn set_enabled(&mut self, enabled: bool) {
+        match self {
+            Self::Choice(dropdown) => DialogComponent::set_enabled(dropdown, enabled),
+            Self::Text(textbox) => textbox.set_enabled(enabled),
+        }
+    }
+
+    fn render(&mut self, state: &S, area: Rect, painter: &mut Painter) {
+        match self {
+            Self::Choice(dropdown) => dropdown.render(state, area, painter),
+            Self::Text(textbox) => textbox.render(state, area, painter),
+        }
+    }
+
+    // what was done to it, if the event was for it
+    fn handle(&mut self, state: &mut S, event: &E) -> Option<RowAction> {
+        let before = self.value();
+        let taken = match self {
+            Self::Choice(dropdown) => dropdown.handle_event(state, event),
+            Self::Text(textbox) => textbox.handle_event(state, event),
+        };
+        if !taken {
+            return None;
+        }
+        return Some(match (self.value(), before) {
+            (ItemValue::Choice(now), ItemValue::Choice(was)) if now != was => {
+                RowAction::Choose(now)
+            }
+            (ItemValue::Text(now), ItemValue::Text(was)) if now != was => RowAction::Rename(now),
+            _ => RowAction::Took,
+        });
+    }
+}
+
 struct Row<S, E> {
     up: Button<S, E>,
     down: Button<S, E>,
-    choice: Dropdown<S, E>,
+    input: RowInput<S, E>,
+    read_only: bool,
     enabled: Button<S, E>,
     edit: Button<S, E>,
     remove: Button<S, E>,
 }
 
-impl<S, E> Row<S, E> {
-    fn new(options: &[&str], item: ListItem) -> Self {
+impl<S, E: PointerEvent + TextEvent> Row<S, E> {
+    fn new(options: &ListOptions, item: &ListItem) -> Self {
         let mut enabled = Button::new("On");
         enabled.set_toggled(item.enabled);
-        return Self {
+        let input = match (options, &item.value) {
+            (ListOptions::Choices(options), value) => {
+                let chosen = match value {
+                    ItemValue::Choice(choice) => *choice,
+                    ItemValue::Text(_) => 0,
+                };
+                let options: Vec<&str> = options.iter().map(String::as_str).collect();
+                RowInput::Choice(Dropdown::new("", &options).chosen(chosen))
+            }
+            (ListOptions::Text, value) => {
+                let mut textbox = Textbox::new().sunken();
+                if let ItemValue::Text(text) = value {
+                    textbox.set_text(text.clone());
+                }
+                RowInput::Text(textbox)
+            }
+        };
+        let mut row = Self {
             up: Button::new(Triangle::arrow(Direction::Up)),
             down: Button::new(Triangle::arrow(Direction::Down)),
-            choice: Dropdown::new("", options).chosen(item.choice),
+            input,
+            read_only: item.read_only,
             enabled,
             edit: Button::new("Edit"),
             remove: Button::new("Del"),
         };
+        row.set_enabled(true);
+        return row;
     }
 }
 
-impl<S, E: PointerEvent> Row<S, E> {
+impl<S, E: PointerEvent + TextEvent> Row<S, E> {
     fn item(&self) -> ListItem {
         return ListItem {
-            choice: self.choice.value(),
+            value: self.input.value(),
             enabled: self.enabled.is_toggled(),
+            read_only: self.read_only,
         };
     }
 
     fn set_enabled(&mut self, enabled: bool) {
+        let enabled = enabled && !self.read_only;
         for button in [
             &mut self.up,
             &mut self.down,
@@ -337,18 +478,12 @@ impl<S, E: PointerEvent> Row<S, E> {
         ] {
             button.set_enabled(enabled);
         }
-        DialogComponent::set_enabled(&mut self.choice, enabled);
+        self.input.set_enabled(enabled);
     }
 
     fn handle(&mut self, state: &mut S, event: &E) -> Option<RowAction> {
-        let chosen = self.choice.value();
-        if self.choice.handle_event(state, event) {
-            let now = self.choice.value();
-            return Some(if now == chosen {
-                RowAction::Took
-            } else {
-                RowAction::Choose(now)
-            });
+        if let Some(action) = self.input.handle(state, event) {
+            return Some(action);
         }
         let buttons = [
             (&mut self.up, RowAction::Up),
@@ -390,8 +525,8 @@ impl<S, E: PointerEvent> Row<S, E> {
         self.up.render(state, next(ARROW_BUTTON_WIDTH, 0), painter);
         self.down
             .render(state, next(ARROW_BUTTON_WIDTH, BUTTON_GAP), painter);
-        let choice = next(self.choice.button_width(), BUTTON_GAP);
-        self.choice.render(state, choice, painter);
+        let input = next(self.input.width(), BUTTON_GAP);
+        self.input.render(state, input, painter);
         self.enabled
             .render(state, next(label_width("On"), BUTTON_GAP), painter);
         if editable {
@@ -427,7 +562,7 @@ mod tests {
     type TestList = ReorderableList<Events, MouseEvent>;
 
     fn list(items: &[ListItem]) -> TestList {
-        return ReorderableList::new(&OPTIONS)
+        return ReorderableList::new(ListOptions::choices(&OPTIONS))
             .items(items)
             .can_add(true)
             .can_remove(true)
@@ -476,8 +611,8 @@ mod tests {
         click(&mut list, &mut events, down);
         let up = list.rows[2].up.area();
         click(&mut list, &mut events, up);
-        let choices: Vec<usize> = list.value().iter().map(|item| item.choice).collect();
-        assert_eq!(choices, [1, 2, 0]);
+        let choices: Vec<ItemValue> = list.value().into_iter().map(|item| item.value).collect();
+        assert_eq!(choices, [1, 2, 0].map(ItemValue::Choice));
         assert_eq!(
             events,
             [
@@ -525,8 +660,9 @@ mod tests {
         assert_eq!(
             list.value(),
             [ListItem {
-                choice: 0,
-                enabled: false
+                value: ItemValue::Choice(0),
+                enabled: false,
+                read_only: false
             }]
         );
     }
@@ -573,14 +709,52 @@ mod tests {
     fn height_fits_toggle_all_the_rows_and_add() {
         let list = list(&three());
         assert_eq!(list.height(), 5 * FIELD_HEIGHT + 4 * ROW_GAP);
-        let without_add = ReorderableList::<Events, MouseEvent>::new(&OPTIONS);
+        let without_add =
+            ReorderableList::<Events, MouseEvent>::new(ListOptions::choices(&OPTIONS));
         assert_eq!(without_add.height(), 0);
     }
 
-    impl<S, E> Row<S, E> {
+    #[test]
+    fn text_rows_hold_their_text() {
+        let mut events = Events::new();
+        let mut list: TestList = ReorderableList::new(ListOptions::Text)
+            .items(&[ListItem::text("Samples")])
+            .can_add(true)
+            .on_event(|events: &mut Events, event| events.push(event));
+        render(&mut list, &events);
+        let add = list.add.area();
+        click(&mut list, &mut events, add);
+        assert_eq!(events, [ListEvent::Add]);
+        assert_eq!(
+            list.value(),
+            [ListItem::text("Samples"), ListItem::text("")]
+        );
+        list.set_value(vec![ListItem::text("Music")]);
+        assert_eq!(list.value(), [ListItem::text("Music")]);
+    }
+
+    #[test]
+    fn read_only_rows_stay_put() {
+        let mut events = Events::new();
+        let mut items = three();
+        items[1] = items[1].clone().read_only();
+        let mut list = list(&items);
+        render(&mut list, &events);
+        assert!(!list.rows[1].up.is_enabled());
+        assert!(!list.rows[1].down.is_enabled());
+        assert!(!list.rows[1].remove.is_enabled());
+        assert!(!list.rows[1].enabled.is_enabled());
+        // the row above can still move past it
+        let down = list.rows[0].down.area();
+        click(&mut list, &mut events, down);
+        assert_eq!(events, [ListEvent::Move { from: 0, to: 1 }]);
+        assert!(list.value()[0].read_only);
+    }
+
+    impl<S, E: PointerEvent + TextEvent> Row<S, E> {
         fn choice_button(&self) -> Rect {
             let x = self.up.area().x + 2 * ARROW_BUTTON_WIDTH + BUTTON_GAP;
-            let width = self.choice.button_width();
+            let width = self.input.width();
             return Rect::new(x, self.up.area().y, width, FIELD_HEIGHT);
         }
     }

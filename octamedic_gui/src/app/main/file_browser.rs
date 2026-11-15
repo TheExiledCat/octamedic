@@ -4,18 +4,22 @@ use bytesize::ByteSize;
 use rustuition::{
     event::{MouseButton, MouseEvent, PointerEvent},
     gadget::Gadget,
+    gadgets::reorderable_list::{ListEvent, ListItem, ListOptions, ReorderableList},
     painter::{CHAR_HEIGHT, CHAR_WIDTH, Painter, Pen, text_width},
     rect::{Point, Rect},
 };
 
 use crate::{
     app::{
-        files::browser::Browser,
+        files::{browser::Browser, get_shortcuts, shortcuts::ShortcutKind},
         fonts,
         main::list_scroller::{ListScroller, SCROLLER_WIDTH},
         state::AppState,
     },
-    framework::{event::Event, widgets::Button},
+    framework::{
+        event::Event,
+        widgets::{Button, Dialog},
+    },
 };
 
 // from the screen's top left. the lists take the height that's left, so they still fit when NTSC
@@ -34,6 +38,7 @@ const ENTRY_OFFSET: [i32; 2] = [3, 1];
 const SIZE_RIGHT_MARGIN: i32 = 2;
 const PARENT_ENTRY: &str = "(dir) / Parent Dir";
 const FOLDER_PREFIX: &str = "(dir) ";
+const ADD_SHORTCUT: &str = "ADD SHORTCUT";
 // so a long list's handle can still be grabbed
 
 // index of the file list in the two lists, the shortcuts are the other one
@@ -55,7 +60,7 @@ impl FileBrowser {
             scrollers: [ListScroller::new(), ListScroller::new()],
             scrolled_folder: None,
             list_areas: [Rect::default(); 2],
-            add_shortcut: Button::new("ADD SHORTCUT").font(fonts::LABEL),
+            add_shortcut: Button::new(ADD_SHORTCUT).font(fonts::LABEL),
         };
     }
 
@@ -102,6 +107,12 @@ impl Gadget<AppState, Event> for FileBrowser {
             .iter_mut()
             .any(|scroller| scroller.handle_event(state, event))
         {
+            return true;
+        }
+        if let Some(b) = self.add_shortcut.clicked()
+            && b.button == MouseButton::Left
+        {
+            open_shortcut_dialog(state);
             return true;
         }
         return match event.mouse() {
@@ -157,6 +168,36 @@ fn disk_usage(browser: &Browser) -> Option<String> {
         "Disk {:>3} % full ({free} free)",
         space.percent_full()
     ));
+}
+
+// every shortcut's folder as text, in the order they're listed, the system ones read-only. changes
+// aren't kept yet
+fn open_shortcut_dialog(state: &mut AppState) {
+    let items: Vec<ListItem> = get_shortcuts()
+        .iter()
+        .map(|shortcut| {
+            let item = ListItem::text(shortcut.path.to_string_lossy());
+            return match shortcut.kind {
+                ShortcutKind::System => item.read_only(),
+                ShortcutKind::User { .. } => item,
+            };
+        })
+        .collect();
+    let list = ReorderableList::new(ListOptions::Text)
+        .items(&items)
+        .can_add(true)
+        .can_remove(true)
+        .on_event(|state, event| match event {
+            ListEvent::Add => todo!(),
+            ListEvent::Remove(_) => todo!(),
+            ListEvent::Move { from, to } => todo!(),
+            ListEvent::Choose { item, choice } => todo!(),
+            ListEvent::Enable { item, enabled } => todo!(),
+            ListEvent::Edit(_) => todo!(),
+        });
+    let mut dialog = Dialog::new("Shortcuts").submit_button("Close");
+    dialog.add_field(list);
+    state.open_dialog(dialog);
 }
 
 fn has_parent(browser: &Browser) -> bool {

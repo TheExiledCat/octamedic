@@ -5,7 +5,7 @@ use rustuition::{
     },
     gadgets::{
         dialog::{Field, NumberField},
-        reorderable_list::{ListEvent, ListItem, ReorderableList},
+        reorderable_list::{ItemValue, ListEvent, ListItem, ListOptions, ReorderableList},
     },
     target::Framebuffer,
 };
@@ -179,11 +179,14 @@ impl ScreenFilters {
             .filters
             .iter()
             .map(|filter| ListItem {
-                choice: FilterKind::ALL
-                    .iter()
-                    .position(|kind| *kind == filter.kind)
-                    .unwrap_or(0),
+                value: ItemValue::Choice(
+                    FilterKind::ALL
+                        .iter()
+                        .position(|kind| *kind == filter.kind)
+                        .unwrap_or(0),
+                ),
                 enabled: filter.enabled,
+                read_only: false,
             })
             .collect();
     }
@@ -210,7 +213,10 @@ impl ScreenFilters {
                     filter.enabled = enabled;
                 }
             }
-            ListEvent::Remove(_) | ListEvent::Move { .. } | ListEvent::Edit(_) => {}
+            ListEvent::Remove(_)
+            | ListEvent::Move { .. }
+            | ListEvent::Rename { .. }
+            | ListEvent::Edit(_) => {}
         }
     }
 }
@@ -218,7 +224,7 @@ impl ScreenFilters {
 /// The filters in order, changed as they're edited, so there's only a Close button.
 pub fn open_filters_dialog(state: &mut AppState) {
     let names = FilterKind::ALL.map(FilterKind::name);
-    let list = ReorderableList::new(&names)
+    let list = ReorderableList::new(ListOptions::choices(&names))
         .items(&state.screen_filters.items())
         .can_add(true)
         .can_remove(true)
@@ -304,12 +310,14 @@ mod tests {
             filters.items(),
             [
                 ListItem {
-                    choice: 2,
-                    enabled: true
+                    value: ItemValue::Choice(2),
+                    enabled: true,
+                    read_only: false
                 },
                 ListItem {
-                    choice: 0,
-                    enabled: false
+                    value: ItemValue::Choice(0),
+                    enabled: false,
+                    read_only: false
                 }
             ]
         );
