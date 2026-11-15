@@ -4,21 +4,24 @@ use bytesize::ByteSize;
 use rustuition::{
     event::{MouseButton, MouseEvent, PointerEvent},
     gadget::Gadget,
-    gadgets::reorderable_list::{ListEvent, ListItem, ListOptions, ReorderableList},
+    gadgets::{
+        dialog::TextField,
+        reorderable_list::{ListEvent, ListItem, ListOptions},
+    },
     painter::{CHAR_HEIGHT, CHAR_WIDTH, Painter, Pen, text_width},
     rect::{Point, Rect},
 };
 
 use crate::{
     app::{
-        files::{browser::Browser, get_shortcuts, shortcuts::ShortcutKind},
+        files::{Shortcut, browser::Browser, shortcuts::ShortcutKind},
         fonts,
         main::list_scroller::{ListScroller, SCROLLER_WIDTH},
         state::AppState,
     },
     framework::{
         event::Event,
-        widgets::{Button, Dialog},
+        widgets::{Button, Dialog, ReorderableList},
     },
 };
 
@@ -38,7 +41,7 @@ const ENTRY_OFFSET: [i32; 2] = [3, 1];
 const SIZE_RIGHT_MARGIN: i32 = 2;
 const PARENT_ENTRY: &str = "(dir) / Parent Dir";
 const FOLDER_PREFIX: &str = "(dir) ";
-const ADD_SHORTCUT: &str = "ADD SHORTCUT";
+const ADD_SHORTCUT: &str = "EDIT SHORTCUTS";
 // so a long list's handle can still be grabbed
 
 // index of the file list in the two lists, the shortcuts are the other one
@@ -170,33 +173,87 @@ fn disk_usage(browser: &Browser) -> Option<String> {
     ));
 }
 
-// every shortcut's folder as text, in the order they're listed, the system ones read-only. changes
-// aren't kept yet
-fn open_shortcut_dialog(state: &mut AppState) {
-    let items: Vec<ListItem> = get_shortcuts()
+fn shortcut_items(browser: &Browser) -> Vec<ListItem> {
+    return browser
+        .shortcuts()
         .iter()
         .map(|shortcut| {
-            let item = ListItem::text(shortcut.path.to_string_lossy());
+            let item = ListItem::text(&shortcut.name);
             return match shortcut.kind {
                 ShortcutKind::System => item.read_only(),
                 ShortcutKind::User { .. } => item,
             };
         })
         .collect();
-    let list = ReorderableList::new(ListOptions::Text)
-        .items(&items)
+}
+
+// every shortcut's name in the order they're listed, the system ones read-only. each change is
+// made to the browser's shortcuts, which the list follows, and saved
+fn open_shortcut_dialog(state: &mut AppState) {
+    let list = ReorderableList::new(ListOptions::Label)
+        .items(&shortcut_items(&state.browser))
+        .follow(|state: &AppState| shortcut_items(&state.browser))
         .can_add(true)
         .can_remove(true)
+        .can_edit(true)
         .on_event(|state, event| match event {
-            ListEvent::Add => todo!(),
-            ListEvent::Remove(_) => todo!(),
-            ListEvent::Move { from, to } => todo!(),
-            ListEvent::Choose { item, choice } => todo!(),
-            ListEvent::Enable { item, enabled } => todo!(),
-            ListEvent::Edit(_) => todo!(),
+            ListEvent::Add => {
+                state.browser.add_shortcut(Shortcut {
+                    name: String::new(),
+                    path: PathBuf::default(),
+                    kind: ShortcutKind::User {
+                        priority: usize::MAX,
+                    },
+                });
+                // thrown out again if it's closed without a name and a path
+                let index = state.browser.shortcuts().len() - 1;
+                open_shortcut_edit_dialog(state, index);
+            }
+            ListEvent::Remove(index) => {
+                state.browser.remove_user_shortcut(index);
+                save_shortcuts(state);
+            }
+            ListEvent::Move { from, to } => {
+                state.browser.reorder_shortcut(from, to);
+                save_shortcuts(state);
+            }
+            ListEvent::Edit(index) => open_shortcut_edit_dialog(state, index),
+            _ => (),
         });
-    let mut dialog = Dialog::new("Shortcuts").submit_button("Close");
+    let mut dialog = Dialog::new("Shortcuts").width(350).submit_button("Close");
     dialog.add_field(list);
+    state.open_dialog(dialog);
+}
+
+fn save_shortcuts(state: &mut AppState) {
+    if state.browser.save_shortcuts().is_err() {
+        state.notify("Can't save shortcuts");
+    }
+}
+
+fn discard_blank_shortcut(state: &mut AppState, index: usize) {
+    state.browser.discard_blank_shortcut(index);
+    save_shortcuts(state);
+}
+
+fn open_shortcut_edit_dialog(state: &mut AppState, index: usize) {
+    let Some(shortcut) = state.browser.shortcuts().get(index) else {
+        return;
+    };
+    let mut dialog = Dialog::new("Edit").submit_button("Close");
+    let name = dialog.add_field(TextField::new("Name").text(&shortcut.name));
+    let path = dialog.add_field(TextField::new("Path").text(&shortcut.path.to_string_lossy()));
+    let dialog = dialog
+        .on_change(move |state, fields| {
+            state.browser.update_user_shortcut(
+                index,
+                fields.get(name),
+                PathBuf::from(fields.get(path)),
+            );
+            save_shortcuts(state);
+        })
+        .on_submit(move |state, _| discard_blank_shortcut(state, index))
+        .on_cancel(move |state| discard_blank_shortcut(state, index));
     state.open_dialog(dialog);
 }
 

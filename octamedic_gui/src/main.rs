@@ -15,7 +15,8 @@ use rustuition::screen::Screen;
 use crate::app::{
     app::App,
     config::{Config, GraphicsBackend, LoadedConfig},
-    files, icon, screen,
+    files::{self, shortcuts::ShortcutsConfig},
+    icon, screen,
 };
 
 mod alert;
@@ -59,6 +60,10 @@ fn main() {
         error: config_error,
     } = Config::load();
     if let Some(error) = config_error {
+        errors.push(error);
+    }
+    // loaded again by the file browser, this is for reporting what's wrong with the file
+    if let (_, Some(error)) = ShortcutsConfig::load() {
         errors.push(error);
     }
     let graphics = graphics_backend(&config, &mut errors);

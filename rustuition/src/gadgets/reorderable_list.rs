@@ -6,7 +6,7 @@ use crate::{
         dialog::{BUTTON_LABEL_PADDING, DialogComponent, DialogInput, Dropdown, FIELD_HEIGHT},
         textbox::Textbox,
     },
-    painter::{CHAR_WIDTH, Painter, text_width},
+    painter::{CHAR_HEIGHT, CHAR_WIDTH, Painter, Pen, text_width},
     rect::Rect,
     shape::Direction,
 };
@@ -24,6 +24,8 @@ pub enum ListOptions {
     Choices(Vec<String>),
     /// Text typed into a field.
     Text,
+    /// Text that's only shown. It's a row's [`ItemValue::Text`], but nothing can change it.
+    Label,
 }
 
 impl ListOptions {
@@ -73,6 +75,14 @@ impl ListItem {
     }
 }
 
+/// What changed in a row's value, to match the list's [`ListOptions`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ItemUpdate {
+    /// The option at this index was picked.
+    Choice(usize),
+    Text(String),
+}
+
 /// What was just done to a [`ReorderableList`], so whatever it shows can follow.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ListEvent {
@@ -84,14 +94,10 @@ pub enum ListEvent {
         from: usize,
         to: usize,
     },
-    Choose {
+    /// A row's option was picked or its text typed in.
+    Update {
         item: usize,
-        choice: usize,
-    },
-    /// A row's text was typed in.
-    Rename {
-        item: usize,
-        text: String,
+        update: ItemUpdate,
     },
     Enable {
         item: usize,
@@ -111,10 +117,12 @@ pub struct ReorderableList<S, E> {
     rows: Vec<Row<S, E>>,
     can_add: bool,
     can_remove: bool,
-    editable: bool,
+    can_edit: bool,
+    can_toggle: bool,
     can_toggle_all: bool,
     add: Button<S, E>,
     toggle_all: Button<S, E>,
+    follow: Option<Box<dyn Fn(&S) -> Vec<ListItem>>>,
     on_event: Option<OnEvent<S>>,
 }
 
@@ -125,10 +133,12 @@ impl<S, E: PointerEvent + TextEvent> ReorderableList<S, E> {
             rows: Vec::new(),
             can_add: false,
             can_remove: false,
-            editable: false,
+            can_edit: false,
+            can_toggle: false,
             can_toggle_all: false,
             add: Button::new("Add"),
             toggle_all: Button::new(TOGGLE_ALL),
+            follow: None,
             on_event: None,
         };
     }
@@ -151,15 +161,30 @@ impl<S, E: PointerEvent + TextEvent> ReorderableList<S, E> {
     }
 
     /// Gives each row an Edit button, which sends [`ListEvent::Edit`].
-    pub fn editable(mut self, editable: bool) -> Self {
-        self.editable = editable;
+    pub fn can_edit(mut self, can_edit: bool) -> Self {
+        self.can_edit = can_edit;
+        return self;
+    }
+
+    /// Gives each row an On button to switch it off and on, which sends [`ListEvent::Enable`].
+    pub fn can_toggle(mut self, can_toggle: bool) -> Self {
+        self.can_toggle = can_toggle;
         return self;
     }
 
     /// Shows a Toggle all button above the rows, which switches every row off when they're all on
-    /// and on otherwise, sending [`ListEvent::Enable`] for each one it changes.
+    /// and on otherwise, sending [`ListEvent::Enable`] for each one it changes. Only there along
+    /// with [`can_toggle`](Self::can_toggle).
     pub fn can_toggle_all(mut self, can_toggle_all: bool) -> Self {
         self.can_toggle_all = can_toggle_all;
+        return self;
+    }
+
+    /// Keeps the rows the same as what `source` gives from the state, every frame. Whatever
+    /// changes the rows (typing, moving, adding) has to change the state to match, or the change
+    /// is undone, and a change made to the state elsewhere shows up in the rows.
+    pub fn follow(mut self, source: impl Fn(&S) -> Vec<ListItem> + 'static) -> Self {
+        self.follow = Some(Box::new(source));
         return self;
     }
 
@@ -176,8 +201,12 @@ impl<S, E: PointerEvent + TextEvent> ReorderableList<S, E> {
             .collect();
     }
 
+    fn shows_toggle_all(&self) -> bool {
+        return self.can_toggle && self.can_toggle_all;
+    }
+
     fn lines(&self) -> i32 {
-        return self.can_toggle_all as i32 + self.rows.len() as i32 + self.can_add as i32;
+        return self.shows_toggle_all() as i32 + self.rows.len() as i32 + self.can_add as i32;
     }
 
     fn toggle_all(&mut self, state: &mut S) {
@@ -217,11 +246,10 @@ impl<S, E: PointerEvent + TextEvent> ReorderableList<S, E> {
                     to: index + 1,
                 }
             }
-            RowAction::Choose(choice) => ListEvent::Choose {
+            RowAction::Update(update) => ListEvent::Update {
                 item: index,
-                choice,
+                update,
             },
-            RowAction::Rename(text) => ListEvent::Rename { item: index, text },
             RowAction::Enable(enabled) => ListEvent::Enable {
                 item: index,
                 enabled,
@@ -238,9 +266,19 @@ impl<S, E: PointerEvent + TextEvent> ReorderableList<S, E> {
 }
 
 impl<S, E: PointerEvent + TextEvent> Gadget<S, E> for ReorderableList<S, E> {
+    fn update(&mut self, state: &mut S) {
+        let Some(source) = &self.follow else {
+            return;
+        };
+        let items = source(state);
+        if items != self.value() {
+            self.set_items(&items);
+        }
+    }
+
     fn handle_event(&mut self, state: &mut S, event: &E) -> bool {
         let open = self.rows.iter().position(|row| row.input.captures_events());
-        if open.is_none() && self.can_toggle_all && self.toggle_all.handle_event(state, event) {
+        if open.is_none() && self.shows_toggle_all() && self.toggle_all.handle_event(state, event) {
             if self.toggle_all.clicked().is_some() {
                 self.toggle_all(state);
             }
@@ -260,7 +298,7 @@ impl<S, E: PointerEvent + TextEvent> Gadget<S, E> for ReorderableList<S, E> {
             if self.add.clicked().is_some() {
                 let item = match self.options {
                     ListOptions::Choices(_) => ListItem::new(0),
-                    ListOptions::Text => ListItem::text(""),
+                    ListOptions::Text | ListOptions::Label => ListItem::text(""),
                 };
                 self.rows.push(Row::new(&self.options, &item));
                 self.emit(state, ListEvent::Add);
@@ -271,8 +309,8 @@ impl<S, E: PointerEvent + TextEvent> Gadget<S, E> for ReorderableList<S, E> {
     }
 
     fn render(&mut self, state: &S, area: Rect, painter: &mut Painter) {
-        let first_row = self.can_toggle_all as usize;
-        if self.can_toggle_all {
+        let first_row = self.shows_toggle_all() as usize;
+        if self.shows_toggle_all() {
             let line = Self::line(area, 0);
             let toggle_all = Rect::new(line.x, line.y, label_width(TOGGLE_ALL), line.h);
             self.toggle_all.render(state, toggle_all, painter);
@@ -284,7 +322,8 @@ impl<S, E: PointerEvent + TextEvent> Gadget<S, E> for ReorderableList<S, E> {
             row.render(
                 state,
                 Self::line(area, first_row + index),
-                self.editable,
+                self.can_edit,
+                self.can_toggle,
                 self.can_remove,
                 painter,
             );
@@ -337,8 +376,7 @@ impl<S, E: PointerEvent + TextEvent> DialogInput<S, E> for ReorderableList<S, E>
 enum RowAction {
     Up,
     Down,
-    Choose(usize),
-    Rename(String),
+    Update(ItemUpdate),
     Enable(bool),
     Edit,
     Remove,
@@ -349,6 +387,7 @@ enum RowAction {
 enum RowInput<S, E> {
     Choice(Dropdown<S, E>),
     Text(Textbox<S, E>),
+    Label(String),
 }
 
 impl<S, E: PointerEvent + TextEvent> RowInput<S, E> {
@@ -356,20 +395,21 @@ impl<S, E: PointerEvent + TextEvent> RowInput<S, E> {
         return match self {
             Self::Choice(dropdown) => ItemValue::Choice(dropdown.value()),
             Self::Text(textbox) => ItemValue::Text(textbox.text().to_owned()),
+            Self::Label(text) => ItemValue::Text(text.clone()),
         };
     }
 
     fn width(&self) -> i32 {
         return match self {
             Self::Choice(dropdown) => dropdown.button_width(),
-            Self::Text(_) => TEXT_WIDTH,
+            Self::Text(_) | Self::Label(_) => TEXT_WIDTH,
         };
     }
 
     fn captures_events(&self) -> bool {
         return match self {
             Self::Choice(dropdown) => dropdown.captures_events(),
-            Self::Text(_) => false,
+            Self::Text(_) | Self::Label(_) => false,
         };
     }
 
@@ -383,6 +423,7 @@ impl<S, E: PointerEvent + TextEvent> RowInput<S, E> {
         match self {
             Self::Choice(dropdown) => DialogComponent::set_enabled(dropdown, enabled),
             Self::Text(textbox) => textbox.set_enabled(enabled),
+            Self::Label(_) => {}
         }
     }
 
@@ -390,6 +431,10 @@ impl<S, E: PointerEvent + TextEvent> RowInput<S, E> {
         match self {
             Self::Choice(dropdown) => dropdown.render(state, area, painter),
             Self::Text(textbox) => textbox.render(state, area, painter),
+            Self::Label(text) => painter.clipped(area, |painter| {
+                let y = area.y + (area.h - CHAR_HEIGHT) / 2;
+                painter.text(area.x, y, text, Pen::BACKGROUND);
+            }),
         }
     }
 
@@ -399,15 +444,18 @@ impl<S, E: PointerEvent + TextEvent> RowInput<S, E> {
         let taken = match self {
             Self::Choice(dropdown) => dropdown.handle_event(state, event),
             Self::Text(textbox) => textbox.handle_event(state, event),
+            Self::Label(_) => false,
         };
         if !taken {
             return None;
         }
         return Some(match (self.value(), before) {
             (ItemValue::Choice(now), ItemValue::Choice(was)) if now != was => {
-                RowAction::Choose(now)
+                RowAction::Update(ItemUpdate::Choice(now))
             }
-            (ItemValue::Text(now), ItemValue::Text(was)) if now != was => RowAction::Rename(now),
+            (ItemValue::Text(now), ItemValue::Text(was)) if now != was => {
+                RowAction::Update(ItemUpdate::Text(now))
+            }
             _ => RowAction::Took,
         });
     }
@@ -436,6 +484,10 @@ impl<S, E: PointerEvent + TextEvent> Row<S, E> {
                 let options: Vec<&str> = options.iter().map(String::as_str).collect();
                 RowInput::Choice(Dropdown::new("", &options).chosen(chosen))
             }
+            (ListOptions::Label, value) => RowInput::Label(match value {
+                ItemValue::Text(text) => text.clone(),
+                ItemValue::Choice(_) => String::new(),
+            }),
             (ListOptions::Text, value) => {
                 let mut textbox = Textbox::new().sunken();
                 if let ItemValue::Text(text) = value {
@@ -513,6 +565,7 @@ impl<S, E: PointerEvent + TextEvent> Row<S, E> {
         state: &S,
         line: Rect,
         editable: bool,
+        toggleable: bool,
         removable: bool,
         painter: &mut Painter,
     ) {
@@ -527,8 +580,10 @@ impl<S, E: PointerEvent + TextEvent> Row<S, E> {
             .render(state, next(ARROW_BUTTON_WIDTH, BUTTON_GAP), painter);
         let input = next(self.input.width(), BUTTON_GAP);
         self.input.render(state, input, painter);
-        self.enabled
-            .render(state, next(label_width("On"), BUTTON_GAP), painter);
+        if toggleable {
+            self.enabled
+                .render(state, next(label_width("On"), BUTTON_GAP), painter);
+        }
         if editable {
             self.edit
                 .render(state, next(label_width("Edit"), BUTTON_GAP), painter);
@@ -566,7 +621,8 @@ mod tests {
             .items(items)
             .can_add(true)
             .can_remove(true)
-            .editable(true)
+            .can_edit(true)
+            .can_toggle(true)
             .can_toggle_all(true)
             .on_event(|events: &mut Events, event| events.push(event));
     }
@@ -702,7 +758,13 @@ mod tests {
         let y = button.bottom() + 1 + 2 * DROPDOWN_ROW_HEIGHT;
         let third = Rect::new(button.x, y, button.w, DROPDOWN_ROW_HEIGHT);
         click(&mut list, &mut events, third);
-        assert_eq!(events, [ListEvent::Choose { item: 0, choice: 2 }]);
+        assert_eq!(
+            events,
+            [ListEvent::Update {
+                item: 0,
+                update: ItemUpdate::Choice(2)
+            }]
+        );
     }
 
     #[test]
@@ -734,6 +796,53 @@ mod tests {
     }
 
     #[test]
+    fn rows_follow_the_state() {
+        let mut events = vec![ListEvent::Add, ListEvent::Add];
+        let mut list: TestList =
+            ReorderableList::new(ListOptions::Label).follow(|events: &Events| {
+                events
+                    .iter()
+                    .enumerate()
+                    .map(|(index, _)| ListItem::text(index.to_string()))
+                    .collect()
+            });
+        list.update(&mut events);
+        assert_eq!(list.value(), [ListItem::text("0"), ListItem::text("1")]);
+        events.pop();
+        list.update(&mut events);
+        assert_eq!(list.value(), [ListItem::text("0")]);
+    }
+
+    #[test]
+    fn toggle_all_needs_can_toggle() {
+        let events = Events::new();
+        let mut with = list(&three());
+        let mut without = list(&three()).can_toggle(false);
+        render(&mut with, &events);
+        render(&mut without, &events);
+        assert_eq!(with.height() - without.height(), FIELD_HEIGHT + ROW_GAP);
+        assert_eq!(without.toggle_all.area(), Rect::default());
+    }
+
+    #[test]
+    fn label_rows_only_show_text() {
+        let mut events = Events::new();
+        let mut list: TestList = ReorderableList::new(ListOptions::Label)
+            .items(&[ListItem::text("Home")])
+            .can_remove(true)
+            .on_event(|events: &mut Events, event| events.push(event));
+        render(&mut list, &events);
+        let area = list.rows[0].input_area();
+        let press = MouseEvent::Down {
+            pos: Point::new(area.x + 2, area.y + 2),
+            button: MouseButton::Left,
+        };
+        assert!(!list.handle_event(&mut events, &press));
+        assert!(events.is_empty());
+        assert_eq!(list.value(), [ListItem::text("Home")]);
+    }
+
+    #[test]
     fn read_only_rows_stay_put() {
         let mut events = Events::new();
         let mut items = three();
@@ -752,6 +861,11 @@ mod tests {
     }
 
     impl<S, E: PointerEvent + TextEvent> Row<S, E> {
+        fn input_area(&self) -> Rect {
+            let x = self.up.area().x + 2 * ARROW_BUTTON_WIDTH + BUTTON_GAP;
+            return Rect::new(x, self.up.area().y, self.input.width(), FIELD_HEIGHT);
+        }
+
         fn choice_button(&self) -> Rect {
             let x = self.up.area().x + 2 * ARROW_BUTTON_WIDTH + BUTTON_GAP;
             let width = self.input.width();

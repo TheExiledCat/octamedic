@@ -88,15 +88,12 @@ impl ShortcutsConfig {
         return fs::write(path, toml_string);
     }
 
-    /// Inserts the saved shortcuts whose folder still exists into `list`, each at the index its
-    /// priority names, counting the system shortcuts. A shortcut past the end goes last, and
-    /// ones sharing an index keep their order from the file.
+    /// Inserts the saved shortcuts into `list`, each at the index its priority names, counting
+    /// the system shortcuts. A shortcut past the end goes last, and ones sharing an index keep
+    /// their order from the file. One whose folder is missing stays, like an unplugged drive's,
+    /// so saving the list doesn't lose it.
     fn insert_into(self, list: &mut Vec<Shortcut>) {
-        let mut saved: Vec<UserShortcut> = self
-            .shortcuts
-            .into_iter()
-            .filter(|saved| saved.path.is_dir())
-            .collect();
+        let mut saved = self.shortcuts;
         saved.sort_by_key(|saved| saved.priority);
         let mut next_free = 0;
         for saved in saved {
@@ -114,6 +111,29 @@ impl ShortcutsConfig {
             next_free = index + 1;
         }
     }
+}
+
+/// Writes the user shortcuts in `list` to `shortcuts.toml`, each with its place in the list as
+/// its priority.
+pub fn save_user_shortcuts(list: &[Shortcut]) -> io::Result<()> {
+    let path = files::get_shortcuts_file_path()?;
+    return ShortcutsConfig {
+        shortcuts: user_entries(list),
+    }
+    .save_to_path(&path);
+}
+
+fn user_entries(list: &[Shortcut]) -> Vec<UserShortcut> {
+    return list
+        .iter()
+        .enumerate()
+        .filter(|(_, shortcut)| matches!(shortcut.kind, ShortcutKind::User { .. }))
+        .map(|(index, shortcut)| UserShortcut {
+            name: shortcut.name.clone(),
+            path: shortcut.path.clone(),
+            priority: index,
+        })
+        .collect();
 }
 
 pub fn get_shortcuts() -> Vec<Shortcut> {
@@ -293,10 +313,25 @@ mod tests {
     }
 
     #[test]
-    fn missing_folders_are_skipped() {
+    fn missing_folders_are_kept() {
         let mut gone = saved("gone", 0);
         gone.path = gone.path.join("octamedic-no-such-folder");
         let names = names_after_inserting(vec![gone]);
-        assert_eq!(names, ["s0", "s1", "s2"].map(String::from));
+        assert_eq!(names, ["gone", "s0", "s1", "s2"].map(String::from));
+    }
+
+    #[test]
+    fn saving_numbers_user_shortcuts_by_place() {
+        let mut list = vec![system("s0"), system("s1")];
+        ShortcutsConfig {
+            shortcuts: vec![saved("a", 0), saved("b", 3)],
+        }
+        .insert_into(&mut list);
+        let entries = user_entries(&list);
+        let places: Vec<_> = entries
+            .iter()
+            .map(|entry| (entry.name.as_str(), entry.priority))
+            .collect();
+        assert_eq!(places, [("a", 0), ("b", 3)]);
     }
 }

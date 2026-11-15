@@ -191,7 +191,10 @@ mod tests {
     fn shortcuts_are_folders() {
         let shortcuts = get_shortcuts();
         assert!(!shortcuts.is_empty());
-        for shortcut in &shortcuts {
+        for shortcut in shortcuts
+            .iter()
+            .filter(|shortcut| shortcut.kind == shortcuts::ShortcutKind::System)
+        {
             assert!(!shortcut.name.is_empty());
             assert!(shortcut.path.is_dir(), "{shortcut:?}");
         }
