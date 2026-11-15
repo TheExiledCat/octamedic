@@ -1,5 +1,5 @@
 use rustuition::{
-    gadgets::{button, dialog, slider, stepped_slider, textbox},
+    gadgets::{button, dialog, reorderable_list, slider, stepped_slider, textbox},
     palette::Pen,
 };
 
@@ -21,6 +21,7 @@ pub type DialogFields<'a> = dialog::DialogFields<'a, AppState, Event>;
 pub type Slider = slider::Slider<AppState, Event>;
 pub type SteppedSlider = stepped_slider::SteppedSlider<AppState, Event>;
 pub type Textbox = textbox::Textbox<AppState, Event>;
+pub type ReorderableList = reorderable_list::ReorderableList<AppState, Event>;
 
 /// A text box the way OctaMED draws them: the cursor and selection in pink, and the text over
 /// them in pink and white mixed, which is blush.

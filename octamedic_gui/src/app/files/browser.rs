@@ -103,6 +103,59 @@ impl Browser {
         self.selected_file = None;
         return Ok(());
     }
+
+    pub fn add_shortcut(&mut self, shortcut: Shortcut) {
+        self.shortcuts.push(shortcut);
+    }
+
+    /// Moves a shortcut one place, as the list it's shown in does.
+    pub fn reorder_shortcut(&mut self, from: usize, to: usize) {
+        if from.max(to) < self.shortcuts.len() {
+            self.shortcuts.swap(from, to);
+        }
+    }
+
+    pub fn save_shortcuts(&self) -> io::Result<()> {
+        return files::shortcuts::save_user_shortcuts(&self.shortcuts);
+    }
+
+    /// Takes out a user shortcut that has no name or no path, like one that was just added and
+    /// never filled in.
+    pub fn discard_blank_shortcut(&mut self, index: usize) {
+        let blank = self.shortcuts.get(index).is_some_and(|shortcut| {
+            matches!(shortcut.kind, files::shortcuts::ShortcutKind::User { .. })
+                && (shortcut.name.trim().is_empty() || shortcut.path.as_os_str().is_empty())
+        });
+        if blank {
+            self.shortcuts.remove(index);
+        }
+    }
+
+    pub fn remove_user_shortcut(&mut self, i: usize) {
+        if i >= self.shortcuts.len() {
+            return;
+        }
+        let Shortcut {
+            kind: files::shortcuts::ShortcutKind::User { .. },
+            ..
+        } = self.shortcuts[i]
+        else {
+            return;
+        };
+
+        self.shortcuts.remove(i);
+    }
+
+    pub fn update_user_shortcut(&mut self, index: usize, name: impl Into<String>, path: PathBuf) {
+        let Some(shortcut) = self.shortcuts.get_mut(index) else {
+            return;
+        };
+        if !matches!(shortcut.kind, files::shortcuts::ShortcutKind::User { .. }) {
+            return;
+        }
+        shortcut.name = name.into();
+        shortcut.path = path;
+    }
 }
 
 // fs::metadata follows links, so a link to a folder is listed as a folder

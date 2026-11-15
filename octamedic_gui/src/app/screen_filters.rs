@@ -5,7 +5,9 @@ use rustuition::{
     },
     gadgets::{
         dialog::{Field, NumberField},
-        reorderable_list::{ListEvent, ListItem, ReorderableList},
+        reorderable_list::{
+            ItemUpdate, ItemValue, ListEvent, ListItem, ListOptions, ReorderableList,
+        },
     },
     target::Framebuffer,
 };
@@ -179,11 +181,14 @@ impl ScreenFilters {
             .filters
             .iter()
             .map(|filter| ListItem {
-                choice: FilterKind::ALL
-                    .iter()
-                    .position(|kind| *kind == filter.kind)
-                    .unwrap_or(0),
+                value: ItemValue::Choice(
+                    FilterKind::ALL
+                        .iter()
+                        .position(|kind| *kind == filter.kind)
+                        .unwrap_or(0),
+                ),
                 enabled: filter.enabled,
+                read_only: false,
             })
             .collect();
     }
@@ -197,7 +202,10 @@ impl ScreenFilters {
             ListEvent::Move { from, to } if from.max(to) < self.filters.len() => {
                 self.filters.swap(from, to)
             }
-            ListEvent::Choose { item, choice } => {
+            ListEvent::Update {
+                item,
+                update: ItemUpdate::Choice(choice),
+            } => {
                 if let (Some(filter), Some(&kind)) =
                     (self.filters.get_mut(item), FilterKind::ALL.get(choice))
                 {
@@ -210,7 +218,10 @@ impl ScreenFilters {
                     filter.enabled = enabled;
                 }
             }
-            ListEvent::Remove(_) | ListEvent::Move { .. } | ListEvent::Edit(_) => {}
+            ListEvent::Remove(_)
+            | ListEvent::Move { .. }
+            | ListEvent::Update { .. }
+            | ListEvent::Edit(_) => {}
         }
     }
 }
@@ -218,11 +229,12 @@ impl ScreenFilters {
 /// The filters in order, changed as they're edited, so there's only a Close button.
 pub fn open_filters_dialog(state: &mut AppState) {
     let names = FilterKind::ALL.map(FilterKind::name);
-    let list = ReorderableList::new(&names)
+    let list = ReorderableList::new(ListOptions::choices(&names))
         .items(&state.screen_filters.items())
         .can_add(true)
         .can_remove(true)
-        .editable(true)
+        .can_edit(true)
+        .can_toggle(true)
         .can_toggle_all(true)
         .on_event(|state: &mut AppState, event| match event {
             ListEvent::Edit(index) => open_params_dialog(state, index),
@@ -282,7 +294,10 @@ mod tests {
         let mut filters = ScreenFilters::default();
         filters.apply_event(ListEvent::Add);
         filters.apply_event(ListEvent::Add);
-        filters.apply_event(ListEvent::Choose { item: 1, choice: 2 });
+        filters.apply_event(ListEvent::Update {
+            item: 1,
+            update: ItemUpdate::Choice(2),
+        });
         filters.apply_event(ListEvent::Move { from: 1, to: 0 });
         filters.apply_event(ListEvent::Enable {
             item: 1,
@@ -304,12 +319,14 @@ mod tests {
             filters.items(),
             [
                 ListItem {
-                    choice: 2,
-                    enabled: true
+                    value: ItemValue::Choice(2),
+                    enabled: true,
+                    read_only: false
                 },
                 ListItem {
-                    choice: 0,
-                    enabled: false
+                    value: ItemValue::Choice(0),
+                    enabled: false,
+                    read_only: false
                 }
             ]
         );
