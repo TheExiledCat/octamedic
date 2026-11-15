@@ -11,10 +11,11 @@ use rustuition::{
 use crate::{
     app::{
         files::browser::Browser,
+        fonts,
         main::list_scroller::{ListScroller, SCROLLER_WIDTH},
         state::AppState,
     },
-    framework::event::Event,
+    framework::{event::Event, widgets::Button},
 };
 
 // from the screen's top left. the lists take the height that's left, so they still fit when NTSC
@@ -25,6 +26,9 @@ const LISTS_BOTTOM_MARGIN: i32 = 3;
 // x, width
 const FILE_LIST: [i32; 2] = [6, 428];
 const SHORTCUT_LIST: [i32; 2] = [454, 164];
+// the button under the shortcut list, which is that much shorter
+const BUTTON_HEIGHT: i32 = 11;
+const BUTTON_GAP: i32 = 2;
 // from the list's top left
 const ENTRY_OFFSET: [i32; 2] = [3, 1];
 const SIZE_RIGHT_MARGIN: i32 = 2;
@@ -41,6 +45,8 @@ pub struct FileBrowser {
     scrolled_folder: Option<PathBuf>,
     // from the last render, for clicks
     list_areas: [Rect; 2],
+    // not hooked up to anything yet
+    add_shortcut: Button,
 }
 
 impl FileBrowser {
@@ -49,6 +55,7 @@ impl FileBrowser {
             scrollers: [ListScroller::new(), ListScroller::new()],
             scrolled_folder: None,
             list_areas: [Rect::default(); 2],
+            add_shortcut: Button::new("ADD SHORTCUT").font(fonts::LABEL),
         };
     }
 
@@ -87,6 +94,9 @@ impl Gadget<AppState, Event> for FileBrowser {
     }
 
     fn handle_event(&mut self, state: &mut AppState, event: &Event) -> bool {
+        if self.add_shortcut.handle_event(state, event) {
+            return true;
+        }
         if self
             .scrollers
             .iter_mut()
@@ -115,7 +125,13 @@ impl Gadget<AppState, Event> for FileBrowser {
             .into_iter()
             .zip(list_entries(&state.browser))
             .zip(&mut self.list_areas);
-        for ((([x, w], entries), list_area), scroller) in lists.zip(&mut self.scrollers) {
+        for (index, ((([x, w], entries), list_area), scroller)) in
+            lists.zip(&mut self.scrollers).enumerate()
+        {
+            let height = match index == FILES {
+                true => height,
+                false => height - BUTTON_HEIGHT - BUTTON_GAP,
+            };
             let list = Rect::new(x, LISTS_TOP, w, height).within(area);
             *list_area = list;
             let inside = painter.frame(list, 1);
@@ -126,6 +142,10 @@ impl Gadget<AppState, Event> for FileBrowser {
             let scroller_area = Rect::new(list.right(), list.y, SCROLLER_WIDTH, height);
             scroller.render(state, scroller_area, entries.len(), painter);
         }
+        let [x, w] = SHORTCUT_LIST;
+        let button_top = LISTS_TOP + height - BUTTON_HEIGHT;
+        let button = Rect::new(x, button_top, w, BUTTON_HEIGHT).within(area);
+        self.add_shortcut.render(state, button, painter);
     }
 }
 

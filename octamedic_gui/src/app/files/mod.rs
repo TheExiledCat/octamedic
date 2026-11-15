@@ -3,6 +3,7 @@
 
 pub mod browser;
 pub mod load_instrument;
+pub mod shortcuts;
 
 use std::{
     fmt::Display,
@@ -14,9 +15,12 @@ use std::{
 
 use mmd::mmd::{conversion::FromModule, error::MmdError, parser::OctamedMMDParser};
 use octamedic_core::data::project::OctamedicProject;
+pub use shortcuts::{Shortcut, get_shortcuts};
 
 const FOLDER_ROOT_NAME: &str = "octamedic";
 const CONFIG_FILE_NAME: &str = "config.toml";
+const SHORTCUTS_FILE_NAME: &str = "shortcuts.toml";
+
 pub const KEYBINDS_FILE_NAME: &str = "keybinds.toml";
 
 pub fn initialize() -> io::Result<()> {
@@ -34,87 +38,6 @@ pub fn get_projects_directory_root() -> Option<PathBuf> {
     return music_dir().map(|dir| dir.join(FOLDER_ROOT_NAME));
 }
 
-/// Where the file browser can jump to, like the Amiga's assigns and devices list.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Shortcut {
-    pub name: String,
-    pub path: PathBuf,
-}
-
-pub fn get_shortcuts() -> Vec<Shortcut> {
-    let places = [
-        ("Projects", get_projects_directory_root()),
-        ("Home", dirs::home_dir()),
-        ("Desktop", dirs::desktop_dir()),
-        ("Documents", dirs::document_dir()),
-        ("Downloads", dirs::download_dir()),
-        ("Music", music_dir()),
-        ("Pictures", dirs::picture_dir()),
-    ];
-    let places = places.into_iter().filter_map(|(name, path)| {
-        let path = path.filter(|path| path.is_dir())?;
-        return Some(Shortcut {
-            name: name.to_owned(),
-            path,
-        });
-    });
-    return places.chain(drives()).collect();
-}
-
-#[cfg(windows)]
-fn drives() -> Vec<Shortcut> {
-    return ('A'..='Z')
-        .map(|letter| Shortcut {
-            name: format!("{letter}:"),
-            path: PathBuf::from(format!("{letter}:\\")),
-        })
-        .filter(|drive| drive.path.is_dir())
-        .collect();
-}
-
-#[cfg(target_os = "macos")]
-fn drives() -> Vec<Shortcut> {
-    return subfolders(Path::new("/Volumes"));
-}
-
-// where removable drives and WSL's windows drives get mounted
-#[cfg(not(any(windows, target_os = "macos")))]
-fn drives() -> Vec<Shortcut> {
-    let root = Shortcut {
-        name: "/".to_owned(),
-        path: PathBuf::from("/"),
-    };
-    let user = std::env::var("USER").unwrap_or_default();
-    let mounts = [
-        PathBuf::from("/mnt"),
-        Path::new("/media").join(&user),
-        Path::new("/run/media").join(&user),
-    ];
-    let mounted = mounts
-        .iter()
-        .flat_map(|folder| subfolders(folder))
-        // WSL's own mounts, not drives
-        .filter(|drive| !drive.name.starts_with("wsl"));
-    return [root].into_iter().chain(mounted).collect();
-}
-
-#[cfg(not(windows))]
-fn subfolders(folder: &Path) -> Vec<Shortcut> {
-    let Ok(entries) = fs::read_dir(folder) else {
-        return Vec::new();
-    };
-    let mut found: Vec<Shortcut> = entries
-        .filter_map(Result::ok)
-        .filter(|entry| entry.path().is_dir())
-        .map(|entry| Shortcut {
-            name: entry.file_name().to_string_lossy().into_owned(),
-            path: entry.path(),
-        })
-        .collect();
-    found.sort_by(|a, b| a.name.cmp(&b.name));
-    return found;
-}
-
 pub fn get_config_directory_root() -> Option<PathBuf> {
     return dirs::config_local_dir().map(|dir| dir.join(FOLDER_ROOT_NAME));
 }
@@ -125,6 +48,9 @@ pub fn get_config_file_path() -> io::Result<PathBuf> {
 
 pub fn get_keybinds_file_path() -> io::Result<PathBuf> {
     return config_file(KEYBINDS_FILE_NAME);
+}
+pub fn get_shortcuts_file_path() -> io::Result<PathBuf> {
+    return config_file(SHORTCUTS_FILE_NAME);
 }
 
 pub fn create_if_missing(path: &Path, default: impl FnOnce() -> String) -> io::Result<()> {
