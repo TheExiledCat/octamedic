@@ -21,6 +21,8 @@ toml = "0.5"
 image = { version = "0.24", default-features = false, features = ["png"] }
 # already in Cargo.lock from ggez and wgpu, whose errors only go through it
 log = "0.4"
+# for text boxes' copy and paste. no image support, only text is copied
+arboard = { version = "3", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 # for the crash alert; dirs and fs4 build this windows-sys already

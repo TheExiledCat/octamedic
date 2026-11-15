@@ -128,6 +128,9 @@ fn run(
     open_window(&mut ctx, mode, config.video)?;
     let app = App::new(&mut ctx, project, config, config_path, errors.to_vec())?;
     icon::set_window_icons(ctx.gfx.window())?;
+    if let Err(error) = framework::system_clipboard::install() {
+        crash_log::note(error);
+    }
     event::run(ctx, event_loop, app);
 }
 

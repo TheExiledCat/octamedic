@@ -5,6 +5,7 @@ use std::{
 };
 
 use crate::{
+    clipboard,
     event::{EditKey, MouseButton, MouseEvent, PointerEvent, TextEvent, TextInput},
     font::Font,
     gadget::Gadget,
@@ -294,6 +295,24 @@ impl<S, E> Textbox<S, E> {
         self.cursor = end;
     }
 
+    fn copy_selection(&self) {
+        if let Some((start, end)) = self.selection() {
+            clipboard::set_text(&self.text[self.byte(start)..self.byte(end)]);
+        }
+    }
+
+    // replaces the selection, a line break and the like left out. true if the text changed
+    fn paste(&mut self) -> bool {
+        let Some(pasted) = clipboard::text() else {
+            return false;
+        };
+        let mut changed = self.delete_selection();
+        for c in pasted.chars().filter(|c| !c.is_control()) {
+            changed |= self.insert(c);
+        }
+        return changed;
+    }
+
     // true if the text changed
     fn edit(&mut self, key: EditKey, shift: bool, ctrl: bool) -> bool {
         let len = self.len();
@@ -346,6 +365,12 @@ impl<S, E> Textbox<S, E> {
                 self.delete(self.cursor, to);
                 return changed;
             }
+            EditKey::Copy => self.copy_selection(),
+            EditKey::Cut => {
+                self.copy_selection();
+                return self.delete_selection();
+            }
+            EditKey::Paste => return self.paste(),
             EditKey::Enter | EditKey::Escape => self.set_focused(false),
         }
         return false;
@@ -561,6 +586,40 @@ mod tests {
         textbox.set_text(text);
         textbox.area = AREA;
         return textbox;
+    }
+
+    #[test]
+    fn copy_cut_and_paste() {
+        let mut textbox = textbox("hello world");
+        textbox.anchor = Some(0);
+        textbox.cursor = 5;
+        typed(&mut textbox, &[key(EditKey::Copy)]);
+        assert_eq!(textbox.text(), "hello world");
+        typed(&mut textbox, &[key(EditKey::Cut)]);
+        assert_eq!(textbox.text(), " world");
+        textbox.cursor = textbox.len();
+        textbox.anchor = None;
+        typed(&mut textbox, &[key(EditKey::Paste)]);
+        assert_eq!(textbox.text(), " worldhello");
+        assert_eq!(textbox.cursor, 11);
+    }
+
+    #[test]
+    fn paste_replaces_the_selection_and_drops_line_breaks() {
+        clipboard::set_text("a\nb\tc");
+        let mut textbox = textbox("xyz");
+        textbox.anchor = Some(0);
+        textbox.cursor = 3;
+        typed(&mut textbox, &[key(EditKey::Paste)]);
+        assert_eq!(textbox.text(), "abc");
+    }
+
+    #[test]
+    fn paste_stops_at_the_max_length() {
+        clipboard::set_text("12345");
+        let mut textbox = textbox("").max_length(3);
+        typed(&mut textbox, &[key(EditKey::Paste)]);
+        assert_eq!(textbox.text(), "123");
     }
 
     fn key(key: EditKey) -> TextInput {

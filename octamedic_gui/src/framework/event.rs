@@ -87,6 +87,9 @@ impl TextEvent for Event {
                     KeyCode::Return | KeyCode::NumpadEnter => EditKey::Enter,
                     KeyCode::Escape => EditKey::Escape,
                     KeyCode::A if ctrl => EditKey::SelectAll,
+                    KeyCode::C if ctrl => EditKey::Copy,
+                    KeyCode::X if ctrl => EditKey::Cut,
+                    KeyCode::V if ctrl => EditKey::Paste,
                     _ => return None,
                 };
                 let shift = mods.contains(KeyMods::SHIFT);

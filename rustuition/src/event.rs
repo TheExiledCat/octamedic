@@ -47,6 +47,9 @@ pub enum EditKey {
     Enter,
     Escape,
     SelectAll,
+    Copy,
+    Cut,
+    Paste,
 }
 
 /// Typing: a character, or an editing key. `shift` extends the selection, `ctrl` goes by words.

@@ -1,4 +1,5 @@
 pub mod clickable;
+pub mod clipboard;
 pub mod event;
 pub mod filters;
 pub mod font;
