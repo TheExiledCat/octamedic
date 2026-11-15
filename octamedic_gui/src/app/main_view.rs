@@ -15,7 +15,7 @@ use crate::{
         main::MainScreens,
         mode::MainMode,
         screen_filters::open_filters_dialog,
-        state::{AppState, PlayStart},
+        state::{AppState, PlayStart, SamplingMode},
         title_bar::TitleBar,
     },
     framework::{
@@ -200,13 +200,30 @@ impl Gadget<AppState, Event> for MainView {
         let (console, _) = area.split_top(CONSOLE_HEIGHT);
         self.console.render(state, console, painter);
         let prompt = state.prompt.as_ref().map(|prompt| prompt.text());
-        if let Some(text) = prompt.or(state.notification.as_deref()) {
+        let sampling = sampling_text(state);
+        let sampling = sampling.as_deref();
+        if let Some(text) = sampling.or(prompt).or(state.notification.as_deref()) {
             let bar = Rect::new(area.x, area.y, area.w, TITLE_HEIGHT);
             let y = bar.y + (bar.h - CHAR_HEIGHT + 1) / 2;
             painter.fill(bar, Pen::BACKGROUND);
             painter.text(bar.x + NOTIFICATION_TEXT_X, y, text, Pen::SHINE);
         }
     }
+}
+
+fn sampling_text(state: &AppState) -> Option<String> {
+    return Some(match state.sampling()? {
+        SamplingMode::Monitor => "Monitoring: press a mouse button to stop".to_owned(),
+        SamplingMode::ReadyToRecord => format!(
+            "Records {}: left mouse button starts, right gives up",
+            seconds(state.record_seconds().unwrap_or(0.0))
+        ),
+        SamplingMode::Recording => "Recording: right mouse button stops".to_owned(),
+    });
+}
+
+fn seconds(seconds: f64) -> String {
+    return format!("{seconds:.2} s");
 }
 
 // a typed character that isn't part of a shortcut
@@ -283,6 +300,17 @@ mod tests {
     use rustuition::rect::Point;
 
     use super::*;
+
+    #[test]
+    fn ready_to_record_says_how_long_it_takes() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        assert_eq!(sampling_text(&state), None);
+        state.start_sampling_without_input(SamplingMode::ReadyToRecord);
+        let text = sampling_text(&state).unwrap();
+        assert!(text.starts_with("Records 0.00 s:"), "{text}");
+        // a 32K buffer at PAL's 428 is a bit under 4 seconds
+        assert_eq!(seconds(32768.0 / 8287.0), "3.95 s");
+    }
 
     fn right_click(view: &mut MainView, state: &mut AppState) -> bool {
         let event = Event::MouseDown {

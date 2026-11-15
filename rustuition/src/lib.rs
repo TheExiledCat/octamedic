@@ -11,3 +11,4 @@ pub mod screen;
 pub mod shape;
 pub mod target;
 pub mod text;
+pub mod wheel;

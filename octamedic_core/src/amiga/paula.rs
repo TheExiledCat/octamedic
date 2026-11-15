@@ -205,7 +205,7 @@ pub struct PaulaRenderer {
     sample_rate: u32,
     clock: AmigaClock,
     channels: Vec<Channel>,
-    // heard on both sides rather than LRRL
+    // heard on both sides rather than LRRL, used for mono and for sample preview
     centre_channel: Option<usize>,
     scopes: Arc<Scopes>,
     filter: LedFilter,

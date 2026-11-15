@@ -49,7 +49,8 @@ can't be used.
 ### Beyond the original
 - Undo and redo in the block editor (Ctrl+Z, and Ctrl+Y or Ctrl+Shift+Z)
 - Renders songs to WAV, from the GUI or the command line
-- Picks the sound device and can mix to mono (VOL's OUTPUT)
+- Picks the sound device and can mix to mono (VOL's OUTPUT), and the device to record from (VOL's
+  INPUT)
 - Switches between PAL and NTSC (Ctrl+F12)
 - CRT style screen filters (Ctrl+F11): scanlines, chroma, VHS wobble, colour, curvature, vignette
   and noise, in any order and each with its own settings

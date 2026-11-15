@@ -59,6 +59,13 @@ impl PointerEvent for Event {
             Event::Wheel(_) | Event::Key { .. } | Event::Text { .. } => None,
         };
     }
+
+    fn wheel(&self) -> Option<(Point, f32)> {
+        let Event::Wheel(Wheel { pos, delta }) = *self else {
+            return None;
+        };
+        return Some((pos, delta[1]));
+    }
 }
 
 impl TextEvent for Event {
