@@ -161,14 +161,16 @@ A few keys that aren't in the original:
 | Ctrl+F11 | Screen filters |
 | Ctrl+F12 | Switch between PAL and NTSC |
 | Ctrl+Z, Ctrl+Y | Undo and redo in the block editor |
+| Ctrl+C, Ctrl+X, Ctrl+V | Copy, cut and paste in text fields, through the system clipboard |
 | Ctrl+` | The debug console, with any startup errors |
 | Ctrl+Q | Quit |
 
 ## Configuration
 
 Settings are saved in `config.toml` as you change them in the app: the video standard, the sound
-device, mono, and the screen filters. The graphics backend is set there too, by hand.
-[docs/CONFIG.md](docs/CONFIG.md) says where it is and what every setting does.
+device, mono, and the screen filters. The graphics backend is set there too, by hand. The FILES
+screen's own shortcuts are in `shortcuts.toml`, next to it.
+[docs/CONFIG.md](docs/CONFIG.md) says where they are and what every setting does.
 
 ## Support
 

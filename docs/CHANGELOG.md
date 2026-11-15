@@ -1,5 +1,68 @@
 # Changelog
 
+## v0.0.3 - 2026-11-15
+
+Sampling from a microphone or line input in the sample editor, shortcuts you can add to the file
+browser, and copy and paste in text fields.
+
+### Added
+
+- Sampling in the sample editor, with a real input. **MONITOR** shows what comes in, a column per
+  sample, until you press a mouse button. **RECORD** fills the sample buffer at PITCH's rate: the
+  notification bar says how long that takes, the left mouse button starts it and the right one
+  stops it (or gives up before it starts). BUFFSIZE sets how much is recorded
+- VOL's **INPUT** button opens a dialog for the input: the device, which channel (left, right or
+  both mixed), gain in decibels for a quiet input, and whether you hear it through the output while
+  sampling. It's saved in `config.toml`, and
+  [CONFIG.md](https://github.com/TheExiledCat/octamedic/blob/main/docs/CONFIG.md#input) has every
+  setting
+- Your own shortcuts on the FILES screen. **ADD SHORTCUT**, under the shortcut list, opens a dialog
+  where you add folders, change their name and path with Edit, remove them and move them up and
+  down. They can go anywhere in the list: before Projects, between the other places, or after the
+  drives. The places OctaMEDIC finds itself are shown grayed out. A shortcut with no name or no path
+  is dropped when you close its Edit dialog. They're kept in `shortcuts.toml` next to `config.toml`,
+  and [CONFIG.md](https://github.com/TheExiledCat/octamedic/blob/main/docs/CONFIG.md#shortcutstoml)
+  says how it works
+- Copy, cut and paste in text fields: Ctrl+C, Ctrl+X and Ctrl+V, through the system clipboard, so
+  you can paste in from other programs. Pasted line breaks are left out
+
+### Changed
+
+- Shortcut names on the FILES screen are followed by a colon, like the Amiga's volume names
+- If `shortcuts.toml` can't be read, it's renamed to `shortcuts.toml.bak` and a notification says
+  what was wrong, the same as for `config.toml`
+
+### Fixed
+
+- Closing a debug build on Windows no longer panics with "attempt to subtract with overflow"
+
+### Known issues
+
+- The input needs a sound device that can record. Without one, MONITOR and RECORD say **NO INPUT**
+  with the reason
+- Copy and paste uses the system clipboard where there is one. Without one, like a Linux session
+  with no display, it only copies between text fields inside OctaMEDIC
+- A shortcut's place in the list counts the drives too, and those differ from one machine to the
+  next, so a shortcut can end up beside different neighbours when drives come and go
+- A shortcut with a folder name that isn't valid text can't be saved
+- On some Windows machines, often with older graphics cards, the window stays white and closes.
+  The cause isn't known yet: try another backend as in v0.0.2's notes, and please add your
+  `crash.log` and graphics card to
+  [issue #53](https://github.com/TheExiledCat/octamedic/issues/53)
+- A crash that ends the program without an error, like a stack overflow or a crash inside the
+  graphics driver, still leaves no crash log.
+  [SUPPORT.md](https://github.com/TheExiledCat/octamedic/blob/main/docs/SUPPORT.md#it-closes-with-no-message-and-no-crash-log)
+  says how to find out what happened
+- Low volume commands go silent when the track or master volume is below 64: `0C01` on a track at
+  63 rounds down to nothing. What the real OctaMED does here still needs checking
+- Sample editor: REV over a range that crosses from one octave of a multi-octave sample into
+  another scrambles the sample, even though its length stays the same
+- macOS: double-clicking a module in Finder doesn't open it. Pass it with
+  `open -a OctaMEDIC --args /path/to/song.mmd1` instead, with OctaMEDIC closed
+- The builds aren't signed or notarized, so Windows and macOS warn the first time they open.
+  [SUPPORT.md](https://github.com/TheExiledCat/octamedic/blob/main/docs/SUPPORT.md) says how to get
+  past it
+
 ## v0.0.2 - 2026-11-11
 
 A hotfix, mostly for the people whose window stays white and closes on Windows: a setting to try

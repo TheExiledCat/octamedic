@@ -13,8 +13,9 @@ changes.
 | Linux | `~/.config/octamedic` |
 | macOS | `~/Library/Application Support/octamedic` |
 
-`crash.log` is in the same folder. It holds the last crash, if there was one, and is worth
-attaching to a bug report. When the app crashes, a message says so and has a button that opens it.
+`shortcuts.toml`, with the shortcuts you add to the FILES screen, is in the same folder, and so is
+`crash.log`. `crash.log` holds the last crash, if there was one, and is worth attaching to a bug
+report. When the app crashes, a message says so and has a button that opens it.
 
 ## An example
 
@@ -48,6 +49,43 @@ roundness = 0.4
 Anything left out takes its default. If the file can't be read, or has a value that makes no sense
 (like `video = "secam"`), it's renamed to `config.toml.bak` so nothing is lost, the app starts with
 the defaults, and a notification says what was wrong.
+
+## shortcuts.toml
+
+The list on the right of the FILES screen holds the places the file browser can jump to. The ones
+OctaMEDIC finds itself (Projects, Home, Desktop, Documents, Downloads, Music, Pictures, and the
+drives) aren't in this file. `shortcuts.toml` has the ones you add, with the ADD SHORTCUT button
+under that list. It's created empty the first time the app starts and saved as you change a
+shortcut, so you rarely need to edit it by hand. Close the app before you do.
+
+```toml
+[[shortcut]]
+name = "Samples"
+path = "/home/me/samples"
+priority = 3
+
+[[shortcut]]
+name = "Songs"
+path = "/home/me/songs"
+priority = 0
+```
+
+| Key | Default | What it does |
+|---|---|---|
+| `name` | | What the list shows, followed by a colon. |
+| `path` | | The folder it opens. A folder that's missing stays in the list, like a drive that's unplugged, and clicking it says "Can't open folder". |
+| `priority` | `0` | Its place in the whole list, counting the shortcuts OctaMEDIC adds itself: `0` puts it first, above Projects, and `3` puts it after the fourth entry. A number past the end puts it last, and shortcuts with the same number keep the order they have in the file. The app saves each one's place as you reorder them. |
+
+The drives are part of that count, and they differ from one machine to the next, so a shortcut
+can end up beside different neighbours when drives come and go.
+
+ADD SHORTCUT opens a dialog to move, add, remove and edit (the Edit button: name and path) your
+shortcuts. The ones OctaMEDIC adds itself are grayed out there. A new shortcut is dropped if its
+name or path is empty when you close its Edit dialog.
+
+If the file can't be read, or isn't valid TOML, it's renamed to `shortcuts.toml.bak` so nothing is
+lost, the list starts without your shortcuts, and a notification says what was wrong, the same as
+for `config.toml`.
 
 ## Settings
 

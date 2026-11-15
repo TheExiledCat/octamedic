@@ -1703,14 +1703,14 @@ dependencies = [
 
 [[package]]
 name = "mmd"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "octamedic_util",
 ]
 
 [[package]]
 name = "mmd_cli"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "clap",
  "clap-num",
@@ -2120,7 +2120,7 @@ dependencies = [
 
 [[package]]
 name = "octamedic_core"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "cpal",
  "mmd",
@@ -2130,7 +2130,7 @@ dependencies = [
 
 [[package]]
 name = "octamedic_gui"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "ab_glyph",
  "arboard",

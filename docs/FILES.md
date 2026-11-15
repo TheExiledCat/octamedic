@@ -8,6 +8,12 @@ documentation) covers, and how OctaMED's own files and samples work.
 Both are in the config folder (`files::get_config_directory_root`). [CONFIG.md](CONFIG.md) has where
 that is and every setting in `config.toml`; it's loaded and saved by `app/config.rs`.
 
+`shortcuts.toml` is in the same folder, loaded and saved by `app/files/shortcuts.rs`, and is also
+described in [CONFIG.md](CONFIG.md#shortcutstoml). Each shortcut's `priority` is its index in the
+list the FILES screen shows, system places and drives included (`ShortcutsConfig::insert_into`),
+and saving writes every user shortcut's current index back. Shortcuts whose folder is missing are
+kept, so saving doesn't lose an unplugged drive's.
+
 `crash.log` is written when the GUI panics, can't open its window, or logs an error, like ggez does
 when a frame can't be drawn (`crash_log.rs`). It starts with the version and system, the graphics
 backend asked for and the adapter wgpu picked, the startup errors and any warnings, then the errors
