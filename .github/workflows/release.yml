@@ -43,7 +43,10 @@ jobs:
             install
           fi
 
+      # winit 0.28's objc2 doesn't build with rustc 1.100, so macOS stays on 1.99.1
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.os == 'macos-latest' && '1.99.1' || 'stable' }}
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -96,8 +99,10 @@ jobs:
             install
           fi
 
+      # winit 0.28's objc2 doesn't build with rustc 1.100, so macOS stays on 1.99.1
       - uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: ${{ matrix.os == 'macos-latest' && '1.99.1' || 'stable' }}
           targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2
