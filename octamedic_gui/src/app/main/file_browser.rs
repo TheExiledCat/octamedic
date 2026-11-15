@@ -41,7 +41,7 @@ const ENTRY_OFFSET: [i32; 2] = [3, 1];
 const SIZE_RIGHT_MARGIN: i32 = 2;
 const PARENT_ENTRY: &str = "(dir) / Parent Dir";
 const FOLDER_PREFIX: &str = "(dir) ";
-const ADD_SHORTCUT: &str = "EDIT SHORTCUTS";
+const EDIT_SHORTCUTS: &str = "EDIT SHORTCUTS";
 // so a long list's handle can still be grabbed
 
 // index of the file list in the two lists, the shortcuts are the other one
@@ -63,7 +63,7 @@ impl FileBrowser {
             scrollers: [ListScroller::new(), ListScroller::new()],
             scrolled_folder: None,
             list_areas: [Rect::default(); 2],
-            add_shortcut: Button::new(ADD_SHORTCUT).font(fonts::LABEL),
+            add_shortcut: Button::new(EDIT_SHORTCUTS).font(fonts::LABEL),
         };
     }
 
