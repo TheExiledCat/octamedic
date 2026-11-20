@@ -10,6 +10,10 @@ use rustuition::{
 // topaz, with OctaMED's own glyphs where they differ
 pub const INTERFACE: Font = Font::new(|| &INTERFACE_FONT);
 
+// Topaz with OctaMED's slashes, for the numbers in the status row and the tempo. Their 1 and 4 are
+// plain Topaz, not the interface font's
+pub const READOUT: Font = Font::new(|| &READOUT_FONT);
+
 // gadget labels
 pub const PANEL: Font = Font::new(|| &PANEL_FONT);
 
@@ -77,6 +81,20 @@ const LABEL_GLYPHS: &str = include_str!("../../assets/fonts/label.txt");
 const QUIT_GLYPHS: &str = include_str!("../../assets/fonts/quit.txt");
 const CONFIRM_GLYPHS: &str = include_str!("../../assets/fonts/confirm.txt");
 const NARROW_GLYPHS: &str = include_str!("../../assets/fonts/narrow.txt");
+
+static READOUT_FONT: LazyLock<BitmapFont> = LazyLock::new(|| {
+    let font = BitmapFont::new("readout", CHAR_HEIGHT).space(CHAR_WIDTH);
+    let font = Font::TOPAZ
+        .bitmap()
+        .glyphs()
+        .fold(font, |font, (c, glyph)| font.with_glyph(c, glyph.clone()));
+    return ['/', POSITION_SLASH].into_iter().fold(font, |font, slash| {
+        let glyph = INTERFACE
+            .glyph(slash)
+            .expect("the interface font has the slashes");
+        font.with_glyph(slash, glyph.clone())
+    });
+});
 
 static PANEL_FONT: LazyLock<BitmapFont> = LazyLock::new(|| panel_font("panel"));
 
@@ -302,5 +320,23 @@ mod tests {
         assert_eq!(INTERFACE.width(&POSITION_SLASH.to_string()), 12);
         // not in the font, falls back to topaz
         assert_eq!(INTERFACE.width("~ "), 16);
+    }
+
+    #[test]
+    fn readout_is_topaz_with_the_slashes() {
+        let same = |a: Font, b: Font, c: char| a.glyph(c) == b.glyph(c);
+        for c in "0123456789".chars() {
+            assert!(same(READOUT, Font::TOPAZ, c), "{c}");
+        }
+        // the interface font's 1 and 4 aren't Topaz's
+        assert!(!same(INTERFACE, Font::TOPAZ, '1'));
+        assert!(!same(INTERFACE, Font::TOPAZ, '4'));
+        let one = READOUT.glyph('1').unwrap();
+        assert_eq!(one.lines[6], Font::TOPAZ.glyph('1').unwrap().lines[6]);
+        assert_eq!(one.lines[6].count_ones(), 2);
+        assert!(same(READOUT, INTERFACE, '/'));
+        assert!(same(READOUT, INTERFACE, POSITION_SLASH));
+        assert_eq!(READOUT.width(&POSITION_SLASH.to_string()), 12);
+        assert_eq!(READOUT.width("0001"), 32);
     }
 }
