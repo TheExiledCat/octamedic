@@ -15,7 +15,7 @@ use octamedic_util::base32;
 use rustuition::{
     clickable::{Click, Clickable},
     event::MouseButton,
-    font::{Font, scale_pixels},
+    font::Font,
     gadget::Gadget,
     painter::{CHAR_HEIGHT, CHAR_WIDTH, Painter, Pen},
     rect::{Point, Rect},
@@ -70,7 +70,7 @@ const FIRST_COMMAND_COLUMN: usize = 2;
 const TRACK_NUMBER_END: i32 = NOTE_CHARS + 1;
 
 // blocks with up to this many tracks use the 4 channel editor font, up to MEDIUM_FONT_TRACKS Topaz
-// and more the small one
+// and more a small one
 const EDITOR_FONT_TRACKS: usize = 4;
 const MEDIUM_FONT_TRACKS: usize = 8;
 
@@ -731,14 +731,13 @@ fn active_band(area: Rect, center_y: i32) -> Rect {
     return Rect::new(area.x, center_y - 1, area.w, CHAR_HEIGHT + 1);
 }
 
-// every block is drawn squeezed across until its tracks fit, with characters that are 16, 8 or
-// 4 pixels wide like OctaMED's, or something in between for 12 tracks
+// the font gets smaller as there are more tracks, so that they all fit: characters are 16, 8 or 4
+// pixels wide
 struct Layout {
     x: i32,
     font: Font,
-    // a character cell at full size
+    // a character cell
     glyph_width: i32,
-    scale: f32,
     tracks: usize,
 }
 
@@ -751,79 +750,37 @@ impl Layout {
         } else {
             fonts::EDITOR_SMALL
         };
-        let glyph_width = font.advance('0');
-        let columns = LINE_NUMBER_CHARS + track_count as i32 * TRACK_CHARS;
         return Self {
             x: area.x,
             font,
-            glyph_width,
-            // whole pixels per character, as many as fit, so every cell is the same width. an area
-            // that hasn't been laid out yet still gets one
-            scale: (area.w / columns).max(1) as f32 / glyph_width as f32,
+            glyph_width: font.advance('0'),
             tracks: track_count,
         };
     }
 
-    // the small font has no slash through its zero and OctaMED shows a capital O, which has none
-    fn shown(&self, character: char) -> char {
-        return if self.font == fonts::EDITOR_SMALL && character == '0' {
-            'O'
-        } else {
-            character
-        };
-    }
-
-    // one pixel of the font, at least one on screen
+    // one pixel of the editor font, at least one on screen
     fn pixel(&self) -> i32 {
-        return self.across(self.glyph_width / CHAR_WIDTH).max(1);
+        return (self.glyph_width / CHAR_WIDTH).max(1);
     }
 
-    fn across(&self, pixels: i32) -> i32 {
-        return scale_pixels(pixels, self.scale);
-    }
-
-    // where the cell for `column` starts. rounded from the left edge rather than added up, so the
-    // cells stay on the same grid however far along they are
     fn column_x(&self, column: i32) -> i32 {
-        return self.x + self.across(column * self.glyph_width);
+        return self.x + column * self.glyph_width;
     }
 
     fn column_at(&self, x: i32) -> i32 {
-        let width = self.glyph_width as f32 * self.scale;
-        let mut column = ((x - self.x) as f32 / width).floor() as i32;
-        while self.column_x(column + 1) <= x {
-            column += 1;
-        }
-        while self.column_x(column) > x {
-            column -= 1;
-        }
-        return column;
+        return (x - self.x).div_euclid(self.glyph_width);
     }
 
     fn text(&self, painter: &mut Painter, column: i32, y: i32, text: &str, pen: Pen) {
-        if self.scale == 1.0 {
-            painter.text_in_font(self.column_x(column), y, text, pen, self.font);
-            return;
-        }
-        for (index, character) in text.chars().enumerate() {
-            let x = self.column_x(column + index as i32);
-            let mut buffer = [0; 4];
-            let character: &str = self.shown(character).encode_utf8(&mut buffer);
-            painter.text_in_font_scaled(x, y, character, pen, self.font, [self.scale, 1.0]);
-        }
+        painter.text_in_font(self.column_x(column), y, text, pen, self.font);
     }
 
     // `(start, length)` of the ink on `line`, on the screen
     fn ink(&self, column: i32, text: &str, line: usize) -> Vec<(i32, i32)> {
-        let mut runs = Vec::new();
-        for (index, character) in text.chars().enumerate() {
-            let x = self.column_x(column + index as i32);
-            let mut buffer = [0; 4];
-            let character: &str = self.shown(character).encode_utf8(&mut buffer);
-            let ink = self.font.scaled_ink(character, line, self.scale);
-            runs.extend(ink.map(|(start, width)| (x + start, width)));
-        }
-        return runs;
+        let x = self.column_x(column);
+        return (self.font.ink(text, line))
+            .map(|(start, width)| (x + start, width))
+            .collect();
     }
 
     fn track_column(&self, track: usize) -> i32 {
@@ -1000,7 +957,7 @@ fn instrument_text(instrument: u8) -> String {
 
 // a length in Topaz pixels, scaled to the font the block is in
 fn scaled(layout: &Layout, pixels: i32) -> i32 {
-    return layout.across(pixels * layout.glyph_width / CHAR_WIDTH);
+    return pixels * layout.glyph_width / CHAR_WIDTH;
 }
 
 fn scope_area(layout: &Layout, area: Rect, index: usize) -> Rect {
@@ -1720,94 +1677,111 @@ mod tests {
         assert_eq!(arguments, [0x60, 0x50, 0x40, 0x30, 0x20]);
     }
 
-    #[test]
-    fn cells_are_whole_pixels_that_fit() {
-        let area = Rect::new(0, 0, 640, 200);
-        for (count, cell) in [(4, 16), (8, 8), (12, 5), (16, 4)] {
-            let layout = Layout::new(area, count);
-            assert_eq!(layout.tracks, count, "{count}");
-            assert_eq!(layout.column_x(1) - layout.column_x(0), cell, "{count}");
-            let end = layout.track_x(count);
-            assert!(end <= area.w, "{count}: {end}");
-            // the room left is less than a pixel a column
-            let columns = LINE_NUMBER_CHARS + count as i32 * TRACK_CHARS;
-            assert!(area.w - end < columns, "{count}");
-            assert_eq!(layout.track_at(end - 1), Some(count - 1), "{count}");
-            assert_eq!(layout.track_at(layout.track_x(count - 1)), Some(count - 1));
-        }
-        // OctaMED's 4 and 8 tracks are unscaled and 16 is half of Topaz
-        assert_eq!(Layout::new(area, 4).scale, 1.0);
-        assert_eq!(Layout::new(area, 8).scale, 1.0);
-        assert_eq!(Layout::new(area, 16).scale, 0.5);
+    // the ink of `text` in `layout`, one string a line, as `.` and `#` like the font files
+    fn picture(layout: &Layout, text: &str) -> Vec<String> {
+        return (0..CHAR_HEIGHT as usize)
+            .map(|line| {
+                let mut row = vec!['.'; layout.glyph_width as usize * text.len()];
+                for (start, width) in layout.ink(0, text, line) {
+                    (start..start + width).for_each(|x| row[x as usize] = '#');
+                }
+                return row.into_iter().collect();
+            })
+            .collect();
     }
 
     #[test]
-    fn small_font_from_nine_tracks_with_zero_as_o() {
+    fn the_font_shrinks_with_the_tracks() {
         let area = Rect::new(0, 0, 640, 200);
-        assert_eq!(Layout::new(area, 4).font, fonts::EDITOR);
-        assert_eq!(Layout::new(area, 8).font, fonts::EDITOR_MEDIUM);
-        for count in [12, 16] {
+        for (count, font, cell) in [
+            (4, fonts::EDITOR, 16),
+            (8, fonts::EDITOR_MEDIUM, 8),
+            (12, fonts::EDITOR_SMALL, 4),
+            (16, fonts::EDITOR_SMALL, 4),
+        ] {
             let layout = Layout::new(area, count);
-            assert_eq!(layout.font, fonts::EDITOR_SMALL, "{count}");
-            for line in 0..8 {
-                assert_eq!(layout.ink(0, "0", line), layout.ink(0, "O", line), "{line}");
+            assert_eq!((layout.font, layout.glyph_width), (font, cell), "{count}");
+            assert_eq!(layout.tracks, count, "{count}");
+            let end = layout.track_x(count);
+            assert!(end <= area.w, "{count}: {end}");
+            assert_eq!(layout.track_at(end - 1), Some(count - 1), "{count}");
+            assert_eq!(layout.track_at(layout.track_x(count - 1)), Some(count - 1));
+            for column in 0..60 {
+                assert_eq!(layout.column_at(layout.column_x(column)), column);
+                assert_eq!(layout.column_at(layout.column_x(column + 1) - 1), column);
             }
-            assert_ne!(layout.ink(0, "0", 0), layout.ink(0, "1", 0));
         }
-        let eight = Layout::new(area, 8);
-        // the slash through the zero is still there
-        assert!((0..8).any(|line| eight.ink(0, "0", line) != eight.ink(0, "O", line)));
     }
 
     // read off OctaMED's 8 track screen
     #[test]
     fn eight_tracks_are_plain_topaz_with_a_short_dash() {
         let layout = Layout::new(Rect::new(0, 0, 640, 200), 8);
-        let rows = |text: &str| -> Vec<String> {
-            return (0..8)
-                .map(|line| {
-                    let mut row = vec!['.'; 8 * text.len()];
-                    for (start, width) in layout.ink(0, text, line) {
-                        (start..start + width).for_each(|x| row[x as usize] = '#');
-                    }
-                    return row.into_iter().collect();
-                })
-                .collect();
-        };
         assert_eq!(
-            rows("0"),
+            picture(&layout, "0"),
             [
                 "..####..", ".##..##.", ".##.###.", ".######.", ".###.##.", ".##..##.", "..####..",
                 "........"
             ]
         );
-        assert_eq!(rows("-")[3], ".######.");
-        assert_eq!(rows("1")[6], "...##...");
-        let dashes = layout.ink(0, "---", 3);
-        assert_eq!(dashes, [(1, 6), (9, 6), (17, 6)]);
+        assert_eq!(picture(&layout, "-")[3], ".######.");
+        assert_eq!(layout.ink(0, "---", 3), [(1, 6), (9, 6), (17, 6)]);
     }
 
+    // read off OctaMED's 16 track screen
     #[test]
-    fn small_font_ones_have_a_foot() {
-        let one = fonts::EDITOR_SMALL.glyph('1').unwrap();
-        let foot = one.lines.iter().rposition(|&line| line != 0).unwrap();
-        assert_eq!(foot, 6);
-        assert!(one.lines[foot].count_ones() > one.lines[0].count_ones());
-        // digits sit on the same lines as Topaz's
-        let topaz = Font::TOPAZ.glyph('1').unwrap();
-        assert_eq!(
-            one.lines.iter().rposition(|&line| line != 0),
-            topaz.lines.iter().rposition(|&line| line != 0)
-        );
-    }
-
-    #[test]
-    fn columns_stay_on_one_grid() {
+    fn sixteen_tracks_are_the_small_font() {
         let layout = Layout::new(Rect::new(0, 0, 640, 200), 16);
-        for column in 0..150 {
-            assert_eq!(layout.column_at(layout.column_x(column)), column);
-            assert_eq!(layout.column_at(layout.column_x(column + 1) - 1), column);
+        let rows = |text: &str| picture(&layout, text);
+        assert_eq!(
+            rows("0"),
+            [
+                "....", "..#.", ".#.#", ".#.#", ".#.#", ".#.#", "..#.", "...."
+            ]
+        );
+        assert_eq!(
+            rows("1"),
+            [
+                "....", "..#.", ".##.", "..#.", "..#.", "..#.", ".###", "...."
+            ]
+        );
+        assert_eq!(
+            rows("2"),
+            [
+                "....", ".##.", "...#", "...#", "..#.", ".#..", ".###", "...."
+            ]
+        );
+        assert_eq!(
+            rows("3"),
+            [
+                "....", ".##.", "...#", ".##.", "...#", "...#", ".##.", "...."
+            ]
+        );
+        assert_eq!(
+            rows("4"),
+            [
+                "....", ".#.#", ".#.#", ".###", "...#", "...#", "...#", "...."
+            ]
+        );
+        assert_eq!(
+            rows("C"),
+            [
+                "....", "..##", ".#..", ".#..", ".#..", ".#..", "..##", "...."
+            ]
+        );
+        assert_eq!(rows("-")[3], ".###");
+        assert_eq!(layout.ink(0, "---", 3), [(1, 3), (5, 3), (9, 3)]);
+    }
+
+    #[test]
+    fn the_small_font_has_everything_a_cell_prints() {
+        let font = fonts::EDITOR_SMALL;
+        let base32 = "0123456789ABCDEFGHIJKLMNOPQRSTUV";
+        for c in base32.chars().chain("WXYZ#-|".chars()) {
+            assert!(font.glyph(c).is_some_and(|glyph| glyph.ink() != 0), "{c}");
+            assert_eq!(font.advance(c), 4, "{c}");
         }
+        assert_eq!(font.advance(' '), 4);
     }
 
     #[test]

@@ -50,10 +50,10 @@ pub const CONFIRM_LABEL: Font = Font::new(|| &CONFIRM_LABEL_FONT);
 // 16px wide block editor chars for blocks with few tracks, double width topaz otherwise
 pub const EDITOR: Font = Font::new(|| &EDITOR_FONT);
 
-// Topaz for 5 to 8 tracks, with the shorter dash of the small font so a row of them keeps its gaps
+// Topaz for 5 to 8 tracks, with a shorter dash so a row of them keeps its gaps
 pub const EDITOR_MEDIUM: Font = Font::new(|| &EDITOR_MEDIUM_FONT);
 
-// the Topaz OctaMED squeezes for 12 and 16 tracks, with a footed 1 and a flat topped dash
+// 4 pixels a character, for 12 and 16 tracks
 pub const EDITOR_SMALL: Font = Font::new(|| &EDITOR_SMALL_FONT);
 
 // OctaMED's fatter slash between a position and a length, e.g. 0001/0022
@@ -64,6 +64,8 @@ const SMALL_GLYPHS: &str = include_str!("../../assets/fonts/small.txt");
 const TITLE_GLYPHS: &str = include_str!("../../assets/fonts/title.txt");
 const AUTHOR_GLYPHS: &str = include_str!("../../assets/fonts/author.txt");
 const EDITOR_GLYPHS: &str = include_str!("../../assets/fonts/editor.txt");
+const EDITOR_MEDIUM_GLYPHS: &str = include_str!("../../assets/fonts/editor_medium.txt");
+const EDITOR_SMALL_GLYPHS: &str = include_str!("../../assets/fonts/editor_small.txt");
 const INTERFACE_GLYPHS: &str = include_str!("../../assets/fonts/interface.txt");
 const TRACKS_GLYPHS: &str = include_str!("../../assets/fonts/tracks.txt");
 const TRACKS_BOLD_GLYPHS: &str = include_str!("../../assets/fonts/tracks_bold.txt");
@@ -162,21 +164,20 @@ static EDITOR_FONT: LazyLock<BitmapFont> = LazyLock::new(|| {
         .with_fallback(Font::TOPAZ, Glyph::widened)
 });
 
-static EDITOR_SMALL_FONT: LazyLock<BitmapFont> = LazyLock::new(|| {
-    // its baseline is a line lower than the Topaz in rustuition
-    let outlines = include_bytes!("../../assets/fonts/amiga-topaz.otf");
-    return BitmapFont::from_outlines("editor small", outlines, -1)
-        .unwrap_or_else(|| panic!("the small editor font couldn't be read"));
-});
-
 static EDITOR_MEDIUM_FONT: LazyLock<BitmapFont> = LazyLock::new(|| {
     let font = BitmapFont::new("editor medium", CHAR_HEIGHT).space(CHAR_WIDTH);
-    let font = Font::TOPAZ
+    return Font::TOPAZ
         .bitmap()
         .glyphs()
-        .fold(font, |font, (c, glyph)| font.with_glyph(c, glyph.clone()));
-    let dash = EDITOR_SMALL.glyph('-').expect("the small font has a dash");
-    return font.with_glyph('-', dash.clone());
+        .fold(font, |font, (c, glyph)| font.with_glyph(c, glyph.clone()))
+        .with_glyphs(EDITOR_MEDIUM_GLYPHS);
+});
+
+static EDITOR_SMALL_FONT: LazyLock<BitmapFont> = LazyLock::new(|| {
+    BitmapFont::new("editor small", CHAR_HEIGHT)
+        .space(CHAR_WIDTH / 2)
+        .capitals_only()
+        .with_glyphs(EDITOR_SMALL_GLYPHS)
 });
 
 static LABEL_FONT: LazyLock<BitmapFont> = LazyLock::new(|| label_font("label"));
