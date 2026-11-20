@@ -140,7 +140,7 @@ impl StatusBar {
         // labels start at the left, as in OctaMED
         let mut boxes: Vec<Button> = labels
             .into_iter()
-            .map(|label| Button::new(label).align(Align::Left).font(fonts::INTERFACE))
+            .map(|label| Button::new(label).align(Align::Left).font(fonts::READOUT))
             .collect();
 
         boxes[SONG_POSITION].set_on_click(|state, click| {
@@ -190,13 +190,13 @@ impl StatusBar {
         });
         boxes[PREVIOUS_SONG] = Button::new(Triangle::arrow(Direction::Left)).enabled(false);
         boxes[NEXT_SONG] = Button::new(Triangle::arrow(Direction::Right)).enabled(false);
-        boxes[SONG] = Button::new("").align(Align::Right).font(fonts::INTERFACE);
+        boxes[SONG] = Button::new("").align(Align::Right).font(fonts::READOUT);
         boxes[EDIT] = flag("E", 3).on_click(|state, _| state.cursor.edit_mode.flip());
         boxes[SP] = flag("SP", 2).on_click(|state, _| state.spacing.flip());
         boxes[CHRD] = flag("CHRD", 2).on_click(|state, _| state.chord_mode.flip());
         boxes[INSTRUMENT] = Button::new("")
             .align(Align::Left)
-            .font(fonts::INTERFACE)
+            .font(fonts::READOUT)
             .on_click(|state, click| {
                 let advance = click.button == MouseButton::Left;
                 let delta = if advance { 1i8 } else { -1i8 };

@@ -370,11 +370,11 @@ fn tempo_readout([primary, secondary]: [u16; 2]) -> impl Fn(ContentArea, Pen, &m
     return move |area, pen, painter| {
         let gaps = [0, TEMPO_SLASH_GAPS[0], TEMPO_SLASH_GAPS[1]];
         let mut x = area.inside.x + TEMPO_INDENT;
-        let y = text_y(area.padded, fonts::INTERFACE.height());
+        let y = text_y(area.padded, fonts::READOUT.height());
         for (part, gap) in parts.iter().zip(gaps) {
             x += gap;
-            painter.text_in_font(x, y, part, pen, fonts::INTERFACE);
-            x += fonts::INTERFACE.width(part);
+            painter.text_in_font(x, y, part, pen, fonts::READOUT);
+            x += fonts::READOUT.width(part);
         }
     };
 }
