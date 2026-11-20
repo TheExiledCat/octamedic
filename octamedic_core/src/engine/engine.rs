@@ -12,7 +12,7 @@ use super::{
 use crate::{
     amiga::{
         clock::AmigaClock,
-        paula::{PaulaRenderer, PaulaWrite, Renderer, SILENCE},
+        paula::{PaulaRenderer, PaulaWrite, PlayerMode, Renderer, SILENCE},
     },
     data::{
         command::SET_VOLUME,
@@ -51,6 +51,17 @@ impl PlayMode {
     }
 }
 
+const SPLIT_REPEAT_STEP: usize = 400;
+
+// the split player only takes loop starts and lengths in steps of 400 bytes, counted from the
+// start of the sample. The song keeps what it has. A loop shorter than a step doesn't loop, which
+// is a guess
+fn split_repeat(repeat: Range<usize>, base: usize) -> Option<Range<usize>> {
+    let start = (repeat.start - base) / SPLIT_REPEAT_STEP * SPLIT_REPEAT_STEP;
+    let len = repeat.len() / SPLIT_REPEAT_STEP * SPLIT_REPEAT_STEP;
+    return (len > 0).then(|| base + start..base + start + len);
+}
+
 /// Lives on the audio thread, the callback calls `process`.
 pub struct OctamedicEngine {
     commands: Receiver<EngineCommand>,
@@ -62,6 +73,7 @@ pub struct OctamedicEngine {
     sequence: Vec<PatternId>,
     instruments: Vec<Option<OctamedicInstrument>>,
     tempo: OctamedicTempo,
+    player_mode: PlayerMode,
     track_volumes: [u8; MAX_TRACKS],
     master_volume: u8,
     global_transpose: i8,
@@ -120,6 +132,7 @@ impl OctamedicEngine {
             sequence: Vec::new(),
             instruments: Vec::new(),
             tempo: OctamedicTempo::new(),
+            player_mode: PlayerMode::Normal,
             track_volumes: [MAX_INSTRUMENT_VOLUME; MAX_TRACKS],
             master_volume: MAX_INSTRUMENT_VOLUME,
             global_transpose: 0,
@@ -207,6 +220,10 @@ impl OctamedicEngine {
                 self.renderer.set_clock(machine);
             }
             EngineCommand::SetFilter(on) => self.renderer.set_filter(on),
+            EngineCommand::SetPlayerMode(mode) => {
+                self.player_mode = mode;
+                self.renderer.set_player_mode(mode);
+            }
             EngineCommand::SetVolumesHex(hex) => self.volumes_hex = hex,
             EngineCommand::SetTrackVolume { track, volume } => {
                 if let Some(track_volume) = self.track_volumes.get_mut(track) {
@@ -350,7 +367,8 @@ impl OctamedicEngine {
 
     fn frames_per_tick(&self) -> f64 {
         // tempo commands will change the tempo used here
-        return self.sample_rate as f64 * self.tempo.tick_seconds(self.machine);
+        let tempo = self.tempo.for_player(self.player_mode);
+        return self.sample_rate as f64 * tempo.tick_seconds(self.machine);
     }
 
     fn tick(&mut self) {
@@ -608,7 +626,14 @@ impl OctamedicEngine {
         volume: u8,
     ) {
         let copy = sample.octave_copy(played.copy);
-        let (end, repeat) = match copy.repeat {
+        let repeat_range = match self.player_mode {
+            PlayerMode::Normal => copy.repeat.clone(),
+            PlayerMode::Split { .. } => copy
+                .repeat
+                .clone()
+                .and_then(|repeat| split_repeat(repeat, copy.data.start)),
+        };
+        let (end, repeat) = match repeat_range {
             Some(repeat) => (
                 repeat.end,
                 PaulaWrite::Sample {
@@ -1813,5 +1838,39 @@ mod tests {
             .unwrap();
         run(&mut engine, 1);
         assert_eq!(engine.status.note_trigger(0).volume, 10);
+    }
+}
+
+#[cfg(test)]
+mod split_tempo_tests {
+    use crate::{amiga::paula::PlayerMode, data::tempo::OctamedicTempo};
+
+    #[test]
+    fn split_player_clamps_and_keeps_the_song() {
+        let mut tempo = OctamedicTempo::new();
+        tempo.is_bpm_mode = true;
+        tempo.primary_tempo = 120;
+        let split = PlayerMode::Split {
+            channels: 8,
+            hq: false,
+        };
+        let played = tempo.for_player(split);
+        assert!(!played.is_bpm_mode);
+        assert_eq!(played.primary_tempo, 10);
+        assert!(tempo.is_bpm_mode && tempo.primary_tempo == 120);
+        assert_eq!(tempo.for_player(PlayerMode::Normal).primary_tempo, 120);
+    }
+}
+
+#[cfg(test)]
+mod split_repeat_tests {
+    use super::split_repeat;
+
+    #[test]
+    fn rounds_down_to_400() {
+        assert_eq!(split_repeat(1000..2500, 0), Some(800..2000));
+        // counted from the start of the sample, here 100
+        assert_eq!(split_repeat(1000..2500, 100), Some(900..2100));
+        assert_eq!(split_repeat(1000..1300, 0), None);
     }
 }

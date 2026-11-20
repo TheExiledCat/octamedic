@@ -34,6 +34,33 @@ pub static SILENCE: LazyLock<Arc<OctamedicSample>> = LazyLock::new(|| {
     });
 });
 
+/// Which of OctaMED's two players is being imitated.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PlayerMode {
+    /// Four tracks, one per hardware channel, LRRL.
+    #[default]
+    Normal,
+    /// 5-8 tracks. The first `channels - 4` hardware channels each play two tracks, summed in
+    /// software and clipped. OctaMED asks to halve the samples when switching to this, so it's
+    /// up to the song not to clip.
+    Split { channels: u8, hq: bool },
+}
+
+impl PlayerMode {
+    /// 4-8.
+    pub fn channels(self) -> u8 {
+        return match self {
+            PlayerMode::Normal => 4,
+            PlayerMode::Split { channels, .. } => channels.clamp(4, 8),
+        };
+    }
+
+    /// How many of the hardware channels play two tracks.
+    pub fn split_channels(self) -> usize {
+        return self.channels() as usize - SCOPE_CHANNELS;
+    }
+}
+
 /// Paula channel register writes. Logged per tick so they can be diffed against the original
 /// player.
 #[derive(Clone, Debug, PartialEq)]
@@ -89,6 +116,9 @@ pub trait Renderer: Send {
 
     #[allow(unused_variables)]
     fn set_filter(&mut self, on: bool) {}
+
+    #[allow(unused_variables)]
+    fn set_player_mode(&mut self, mode: PlayerMode) {}
 
     /// Adds to `out`, interleaved.
     fn render(&mut self, out: &mut [f32], channels: usize);
@@ -199,11 +229,12 @@ impl Channel {
     }
 }
 
-/// One channel per track. The real thing has 4 and OctaMED mixes 5-8 tracks in software, we
-/// don't bother with that.
+/// One voice per track, plus any extra the engine asks for like the preview. In `Normal` only the
+/// first 4 are heard, in `Split` the first 8 are mixed down onto the 4 hardware channels.
 pub struct PaulaRenderer {
     sample_rate: u32,
     clock: AmigaClock,
+    mode: PlayerMode,
     channels: Vec<Channel>,
     // heard on both sides rather than LRRL, used for mono and for sample preview
     centre_channel: Option<usize>,
@@ -223,6 +254,7 @@ impl PaulaRenderer {
         return Self {
             sample_rate,
             clock,
+            mode: PlayerMode::Normal,
             channels: (0..channel_count).map(|_| Channel::default()).collect(),
             centre_channel: None,
             scopes,
@@ -247,6 +279,11 @@ impl Renderer for PaulaRenderer {
         self.filter.set_on(on);
     }
 
+    fn set_player_mode(&mut self, mode: PlayerMode) {
+        // TODO: HQ split mode is not implemented, it plays like the normal split mode
+        self.mode = mode;
+    }
+
     fn write(&mut self, channel: usize, write: PaulaWrite) {
         if let Some(channel) = self.channels.get_mut(channel) {
             channel.write(write);
@@ -268,35 +305,77 @@ impl Renderer for PaulaRenderer {
     }
 }
 
+// the tracks that share one hardware channel and how it's heard
+#[derive(Clone, Copy)]
+struct Group {
+    voices: [Option<usize>; 2],
+    pan: Pan,
+    scope: Option<usize>,
+}
+
 impl PaulaRenderer {
-    // into `mix`
-    fn render_channels(&mut self, channels: usize) {
-        let frames = self.mix.len() / channels;
-        let start = self.scopes.next.load(Ordering::Relaxed);
-        for (index, channel) in self.channels.iter_mut().enumerate() {
-            let pan = if self.centre_channel == Some(index) {
-                Pan::Centre
-            } else if index % 4 == 0 || index % 4 == 3 {
+    // the 4 hardware channels, then the centre channel if there is one
+    fn groups(&self) -> [Option<Group>; SCOPE_CHANNELS + 1] {
+        let split = self.mode.split_channels();
+        let mut groups = [None; SCOPE_CHANNELS + 1];
+        for hardware in 0..SCOPE_CHANNELS {
+            // the manual's table says RLLR for the split modes but the real player is LRRL too
+            let pan = if hardware == 0 || hardware == 3 {
                 Pan::Left
             } else {
                 Pan::Right
             };
-            let scope = (index < SCOPE_CHANNELS).then_some(index);
-            if channel.playing.is_none() || channel.period == 0 {
-                if let Some(scope) = scope {
+            let second = (hardware < split).then_some(hardware + SCOPE_CHANNELS);
+            groups[hardware] = Some(Group {
+                voices: [Some(hardware), second],
+                pan,
+                scope: Some(hardware),
+            });
+        }
+        groups[SCOPE_CHANNELS] = self.centre_channel.map(|channel| Group {
+            voices: [Some(channel), None],
+            pan: Pan::Centre,
+            scope: None,
+        });
+        return groups;
+    }
+
+    // bytes per output frame, None if the voice isn't making sound
+    fn step(&self, voice: Option<usize>) -> Option<f64> {
+        let channel = self.channels.get(voice?)?;
+        if channel.playing.is_none() || channel.period == 0 {
+            return None;
+        }
+        let rate = self.clock.paula_clock as f64 / channel.period as f64;
+        return Some(rate / self.sample_rate as f64);
+    }
+
+    // into `mix`
+    fn render_channels(&mut self, channels: usize) {
+        let frames = self.mix.len() / channels;
+        let start = self.scopes.next.load(Ordering::Relaxed);
+        for group in self.groups().into_iter().flatten() {
+            let steps = group.voices.map(|voice| self.step(voice));
+            if steps.iter().all(Option::is_none) {
+                if let Some(scope) = group.scope {
                     (0..frames).for_each(|i| self.scopes.write(scope, start + i, 0));
                 }
                 continue;
             }
-            let rate = self.clock.paula_clock as f64 / channel.period as f64;
-            let step = rate / self.sample_rate as f64;
             for (i, frame) in self.mix.chunks_exact_mut(channels).enumerate() {
-                let value = channel.next(step).unwrap_or(0.0);
-                if let Some(scope) = scope {
+                let mut value = 0.0;
+                for (voice, step) in group.voices.iter().zip(steps) {
+                    if let (Some(voice), Some(step)) = (voice, step) {
+                        value += self.channels[*voice].next(step).unwrap_or(0.0);
+                    }
+                }
+                // the software mix is 8 bit, two loud tracks clip
+                let value = value.clamp(-VOICE_FULL_SCALE, VOICE_FULL_SCALE * 127.0 / 128.0);
+                if let Some(scope) = group.scope {
                     let level = (value / MAX_VOLUME as f32).round() as i8;
                     self.scopes.write(scope, start + i, level);
                 }
-                mix(frame, pan, value / VOICE_FULL_SCALE);
+                mix(frame, group.pan, value / VOICE_FULL_SCALE);
             }
         }
         let next = (start + frames) % SCOPE_LENGTH;
@@ -311,7 +390,7 @@ enum Pan {
     Centre,
 }
 
-// amiga stereo is LRRL, extra tracks repeat it. anything past 2 output channels stays silent
+// anything past 2 output channels stays silent
 fn mix(frame: &mut [f32], pan: Pan, value: f32) {
     match (frame, pan) {
         ([mono], _) => *mono += value * MONO_GAIN,
@@ -579,5 +658,119 @@ mod tests {
         let mut frame = [0.0, 0.0];
         mix(&mut frame, Pan::Right, 1.0);
         assert_eq!(frame, [0.0, STEREO_GAIN]);
+    }
+
+    fn start(renderer: &mut PaulaRenderer, channel: usize, data: &Arc<OctamedicSample>) {
+        renderer.write(channel, range(data, 0, data.data.len()));
+        renderer.write(channel, PaulaWrite::Period(5));
+        renderer.write(channel, PaulaWrite::Volume(64));
+        renderer.write(channel, PaulaWrite::DmaOn);
+    }
+
+    fn split(channels: u8) -> PaulaRenderer {
+        let mut renderer = PaulaRenderer::new(SAMPLE_RATE, AmigaClock::PAL, 9, Arc::default());
+        renderer.set_player_mode(PlayerMode::Split {
+            channels,
+            hq: false,
+        });
+        return renderer;
+    }
+
+    #[test]
+    fn normal_plays_four_tracks() {
+        let mut renderer = PaulaRenderer::new(SAMPLE_RATE, AmigaClock::PAL, 9, Arc::default());
+        start(&mut renderer, 4, &sample(vec![127; 4]));
+        assert_near(&render(&mut renderer, 2), &[0.0, 0.0]);
+    }
+
+    #[test]
+    fn split_pair_sums() {
+        let mut renderer = split(8);
+        let data = sample(vec![40; 4]);
+        start(&mut renderer, 0, &data);
+        start(&mut renderer, 4, &data);
+        let both = 80.0 * 64.0 / VOICE_FULL_SCALE * MONO_GAIN;
+        assert_near(&render(&mut renderer, 2), &[both, both]);
+    }
+
+    #[test]
+    fn split_pair_clips() {
+        let mut renderer = split(8);
+        let data = sample(vec![100; 4]);
+        start(&mut renderer, 0, &data);
+        start(&mut renderer, 4, &data);
+        assert_near(&render(&mut renderer, 1), &[FULL]);
+    }
+
+    #[test]
+    fn split_single_track_is_not_halved() {
+        let mut renderer = split(8);
+        start(&mut renderer, 1, &sample(vec![100; 4]));
+        let level = 100.0 * 64.0 / VOICE_FULL_SCALE * MONO_GAIN;
+        assert_near(&render(&mut renderer, 1), &[level]);
+    }
+
+    #[test]
+    fn five_channels_pair_only_the_first() {
+        let data = sample(vec![30; 4]);
+        let one = 30.0 * 64.0 / VOICE_FULL_SCALE * MONO_GAIN;
+        // track 6 would share hardware channel 1, which isn't split
+        let mut renderer = split(5);
+        start(&mut renderer, 5, &data);
+        assert_near(&render(&mut renderer, 1), &[0.0]);
+        let mut renderer = split(5);
+        start(&mut renderer, 0, &data);
+        start(&mut renderer, 4, &data);
+        assert_near(&render(&mut renderer, 1), &[one * 2.0]);
+    }
+
+    #[test]
+    fn split_stereo_is_lrrl() {
+        let mut renderer = split(8);
+        let data = sample(vec![127; 4]);
+        for (track, side) in [
+            (0, 0),
+            (1, 1),
+            (2, 1),
+            (3, 0),
+            (4, 0),
+            (5, 1),
+            (6, 1),
+            (7, 0),
+        ] {
+            start(&mut renderer, track, &data);
+            let mut out = vec![0.0; 2];
+            renderer.render(&mut out, 2);
+            assert!(out[side] > 0.0 && out[1 - side] == 0.0, "{track}: {out:?}");
+            renderer.write(track, PaulaWrite::DmaOff);
+        }
+    }
+
+    #[test]
+    fn split_scope_is_the_mixed_channel() {
+        let scopes = Arc::new(Scopes::default());
+        let mut renderer = PaulaRenderer::new(SAMPLE_RATE, AmigaClock::PAL, 9, scopes.clone());
+        renderer.set_player_mode(PlayerMode::Split {
+            channels: 8,
+            hq: false,
+        });
+        let data = sample(vec![100; 4]);
+        start(&mut renderer, 0, &data);
+        start(&mut renderer, 4, &data);
+        render(&mut renderer, 4);
+        assert_eq!(scopes.read(0)[SCOPE_LENGTH - 1], 127);
+    }
+
+    #[test]
+    fn mode_channels() {
+        assert_eq!(PlayerMode::Normal.channels(), 4);
+        assert_eq!(
+            PlayerMode::Split {
+                channels: 6,
+                hq: false
+            }
+            .split_channels(),
+            2
+        );
     }
 }

@@ -19,17 +19,20 @@ use mmd::{
     utility::bytes::{Byte, Offset, UByte, ULong, UWord, Word},
 };
 
-use crate::data::{
-    instrument::{
-        InstrumentKind, MAX_FINETUNE, MAX_HOLD_DECAY, MAX_INSTRUMENT_VOLUME, MAX_INSTRUMENTS,
-        MIN_FINETUNE, OctamedicInstrument, OctamedicSample, OctamedicSynth, SampleOctaves,
+use crate::{
+    amiga::paula::PlayerMode,
+    data::{
+        instrument::{
+            InstrumentKind, MAX_FINETUNE, MAX_HOLD_DECAY, MAX_INSTRUMENT_VOLUME, MAX_INSTRUMENTS,
+            MIN_FINETUNE, OctamedicInstrument, OctamedicSample, OctamedicSynth, SampleOctaves,
+        },
+        notation::OctamedicNotation,
+        palette::OctamedColorPalette,
+        pattern::{OctamedicPattern, PatternId},
+        song::{OctamedicSong, OctamedicSongFlags, SongId},
+        tempo::OctamedicTempo,
+        volume::OctamedicVolume,
     },
-    notation::OctamedicNotation,
-    palette::OctamedColorPalette,
-    pattern::{OctamedicPattern, PatternId},
-    song::{OctamedicSong, OctamedicSongFlags, SongId},
-    tempo::OctamedicTempo,
-    volume::OctamedicVolume,
 };
 
 pub struct OctamedicProject {
@@ -37,8 +40,6 @@ pub struct OctamedicProject {
     songs: Vec<OctamedicSong>,
     palette: OctamedColorPalette,
     pub annotation: String,
-    /// Channels split into two in 5-8 channel mode.
-    pub split_channels: [bool; AMIGA_CHANNELS],
     pub notation: OctamedicNotation,
 }
 
@@ -49,7 +50,6 @@ impl OctamedicProject {
             songs: vec![OctamedicSong::new("unnamed")],
             palette: OctamedColorPalette::DEFAULT,
             annotation: String::new(),
-            split_channels: [true; AMIGA_CHANNELS],
             notation: OctamedicNotation::default(),
         };
     }
@@ -92,8 +92,6 @@ impl FromModule for OctamedicProject {
                 s.palette = OctamedColorPalette::from_octamed(&expansion.color_palette);
             }
             s.annotation = expansion.annotation.clone();
-            // a byte that isn't 0 means not split
-            s.split_channels = expansion.header.channel_split.map(|byte| byte.0 == 0);
             if !expansion.header.notation_info_ptr.is_null() {
                 s.notation = OctamedicNotation::from_octamed(&expansion.notation_info);
             }
@@ -156,7 +154,7 @@ impl FromModule for OctamedicProject {
             filter_on: flags.filter_is_on(),
             volumes_hex: flags.volumes_are_hex(),
             st_slides: flags.use_st_sliding(),
-            eight_channel: flags.is_8_channels(),
+            player_mode: player_mode(module),
             jumping: flags.jumping_is_on(),
             jump_every_8th_line: flags.jump_every_eight_lines(),
             hq_v2_compatible: flags.is_hq_v2_compatability(),
@@ -281,6 +279,28 @@ fn sequence_to_octamed(song: &OctamedicSong) -> [UByte; SEQUENCE_LENGTH] {
     return sequence;
 }
 
+// the flag says 5-8 channels and the split bytes say how many, see expansion_to_octamed
+fn player_mode(module: &mmd::mmd::module::OctamedMMD) -> PlayerMode {
+    if !module.song.flags.is_8_channels() {
+        return PlayerMode::Normal;
+    }
+    let split = module
+        .expansion_data
+        .as_ref()
+        .map_or(AMIGA_CHANNELS, |expansion| {
+            expansion
+                .header
+                .channel_split
+                .iter()
+                .filter(|byte| byte.0 == 0)
+                .count()
+        });
+    return PlayerMode::Split {
+        channels: (AMIGA_CHANNELS + split) as u8,
+        hq: false,
+    };
+}
+
 fn song_flags_to_octamed(song: &OctamedicSong) -> OctamedMMD0SongFlags {
     let flags = song.flags();
     let tempo = song.tempo();
@@ -289,7 +309,7 @@ fn song_flags_to_octamed(song: &OctamedicSong) -> OctamedMMD0SongFlags {
     byte1 |= (flags.jump_every_8th_line as u8) << 2;
     byte1 |= (flags.volumes_hex as u8) << 4;
     byte1 |= (flags.st_slides as u8) << 5;
-    byte1 |= (flags.eight_channel as u8) << 6;
+    byte1 |= (matches!(flags.player_mode, PlayerMode::Split { .. }) as u8) << 6;
     byte1 |= (flags.hq_v2_compatible as u8) << 7;
     // the file stores one less than the beat length
     let beat_length = tempo.lines_per_beat.clamp(1, 32) - 1;
@@ -488,10 +508,12 @@ fn expansion_to_octamed(
     instrument_infos: Vec<OctamedMMD0InstrumentInfo>,
     external_instruments: Vec<OctamedMMD0ExternalInstrument>,
 ) -> OctamedMMD0Expansion {
-    let channel_split = project
-        .split_channels
-        // a byte that isn't 0 means not split, see from_module
-        .map(|split| UByte(if split { 0 } else { 1 }));
+    // a byte that isn't 0 means not split. 4 channels is written as all 0 like OctaMED does
+    let split = match song.flags().player_mode {
+        PlayerMode::Normal => AMIGA_CHANNELS,
+        mode => mode.split_channels(),
+    };
+    let channel_split = std::array::from_fn(|channel| UByte((channel >= split) as u8));
     let color_palette = OctamedMMD0ColorPalette {
         colors: std::array::from_fn(|pen| OctamedMMD0Color {
             value: UWord(project.palette().get(pen)),
@@ -574,7 +596,10 @@ mod tests {
         assert_eq!(
             flags,
             OctamedicSongFlags {
-                eight_channel: true,
+                player_mode: PlayerMode::Split {
+                    channels: 8,
+                    hq: false
+                },
                 ..OctamedicSongFlags::default()
             }
         );
@@ -706,7 +731,6 @@ mod tests {
             let (original, reloaded) = round_trip(name);
             assert_eq!(reloaded.palette(), original.palette(), "{name}");
             assert_eq!(reloaded.annotation, original.annotation, "{name}");
-            assert_eq!(reloaded.split_channels, original.split_channels, "{name}");
         }
     }
 
