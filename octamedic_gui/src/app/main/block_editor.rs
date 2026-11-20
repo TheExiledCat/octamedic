@@ -451,7 +451,8 @@ impl BlockEditor {
         }
     }
 
-    // only Paula's four hardware channels, the first four tracks, have scopes
+    // only Paula's four hardware channels, the first four tracks, have scopes, and only a block of
+    // 4 tracks or fewer shows them: OctaMED draws none over the smaller fonts
     fn render_scopes(
         &mut self,
         state: &AppState,
@@ -460,6 +461,9 @@ impl BlockEditor {
         area: Rect,
         painter: &mut Painter,
     ) {
+        if !layout.has_scopes() {
+            return;
+        }
         for index in 0..layout.tracks {
             let track = index;
             if track >= SCOPE_CHANNELS {
@@ -758,6 +762,11 @@ impl Layout {
         };
     }
 
+    // the scopes and the VU meters only go over the wide font
+    fn has_scopes(&self) -> bool {
+        return self.font == fonts::EDITOR;
+    }
+
     // one pixel of the editor font, at least one on screen
     fn pixel(&self) -> i32 {
         return (self.glyph_width / CHAR_WIDTH).max(1);
@@ -955,22 +964,17 @@ fn instrument_text(instrument: u8) -> String {
     return base32::format(instrument as u32, 2, ' ');
 }
 
-// a length in Topaz pixels, scaled to the font the block is in
-fn scaled(layout: &Layout, pixels: i32) -> i32 {
-    return pixels * layout.glyph_width / CHAR_WIDTH;
-}
-
 fn scope_area(layout: &Layout, area: Rect, index: usize) -> Rect {
-    let x = layout.track_x(index) + scaled(layout, SCOPE_OFFSET);
+    let x = layout.track_x(index) + SCOPE_OFFSET * layout.pixel();
     let top = active_band(area, area.y + center_row(area) * CHAR_HEIGHT).y;
-    let width = scaled(layout, SCOPE_SAMPLES as i32);
+    let width = SCOPE_SAMPLES as i32 * layout.pixel();
     return Rect::new(x, top, width, area.y + area.h - top);
 }
 
 fn meter_area(layout: &Layout, area: Rect, index: usize) -> Rect {
-    let x = layout.track_x(index) + scaled(layout, METER_OFFSET);
+    let x = layout.track_x(index) + METER_OFFSET * layout.pixel();
     let top = area.h / 2;
-    let width = scaled(layout, METER_WIDTH);
+    let width = METER_WIDTH * layout.pixel();
     return Rect::new(x, area.y + top, width, area.h - top);
 }
 
@@ -1143,6 +1147,21 @@ mod tests {
         let range = state.active_range().unwrap();
         assert_eq!((range.tracks(), range.lines()), (0..1, 0..1));
         assert!(!editor.dragging_range);
+    }
+
+    // OctaMED's 8 and 16 track screens have no scopes or meters
+    #[test]
+    fn no_scopes_or_meters_past_four_tracks() {
+        let (mut editor, state) = (BlockEditor::new(), state());
+        let area = Rect::new(0, 77, 640, 120);
+        let pattern = state.active_pattern().unwrap().clone();
+        for count in [8, 12, 16] {
+            let layout = Layout::new(area, count);
+            let mut fills = Fills::default();
+            let mut painter = Painter::new(&mut fills, &state.palette);
+            editor.render_scopes(&state, &pattern, &layout, area, &mut painter);
+            assert!(fills.0.is_empty(), "{count}: {:?}", fills.0);
+        }
     }
 
     #[test]
