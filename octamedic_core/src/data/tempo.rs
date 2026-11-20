@@ -1,8 +1,11 @@
 use mmd::utility::{frequency::Frequency, octamed_tempo::OctamedTempo};
 
-use crate::amiga::{clock::AmigaClock, m68k::divu};
+use crate::amiga::{clock::AmigaClock, m68k::divu, paula::PlayerMode};
 
 pub const MAX_BPM: u8 = 240;
+
+// the most the split channel player takes
+const MAX_SPLIT_TEMPO: u16 = 10;
 
 pub const MAX_LINES_PER_BEAT: u8 = 32;
 pub const MAX_TICKS_PER_LINE: u8 = 32;
@@ -79,6 +82,17 @@ impl OctamedicTempo {
             return COMPATIBILITY_COUNTS[tempo as usize - 1];
         }
         return divu(TEMPO_TIMER_CONSTANT, tempo);
+    }
+
+    /// What the split channel player does with the tempo: SPD only, and the primary tempo
+    /// stops at 10. The song keeps what it has.
+    pub fn for_player(&self, mode: PlayerMode) -> Self {
+        let mut tempo = *self;
+        if matches!(mode, PlayerMode::Split { .. }) {
+            tempo.is_bpm_mode = false;
+            tempo.primary_tempo = tempo.primary_tempo.min(MAX_SPLIT_TEMPO);
+        }
+        return tempo;
     }
 
     pub fn interrupts_per_tick(&self) -> u32 {

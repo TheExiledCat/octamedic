@@ -1,9 +1,12 @@
 use std::array;
 
 use ggez::input::keyboard::KeyMods;
-use octamedic_core::data::{
-    pattern::PatternId,
-    tempo::{MAX_BPM, MAX_LINES_PER_BEAT, MAX_TICKS_PER_LINE, OctamedicTempo},
+use octamedic_core::{
+    amiga::paula::PlayerMode,
+    data::{
+        pattern::PatternId,
+        tempo::{MAX_BPM, MAX_LINES_PER_BEAT, MAX_TICKS_PER_LINE, OctamedicTempo},
+    },
 };
 use rustuition::{
     gadget::Gadget,
@@ -24,6 +27,7 @@ use crate::{
     app::{
         fonts::{self, POSITION_SLASH},
         header::labels::{Words, draw_words, placed},
+        prompt::Prompt,
         state::{AppState, PlayStart},
     },
     framework::{
@@ -408,12 +412,8 @@ struct Playback {
 
 impl Playback {
     fn new() -> Self {
-        let mut channel_modes: [Button; CHANNEL_MODES_COUNT] =
+        let channel_modes: [Button; CHANNEL_MODES_COUNT] =
             array::from_fn(|mode| label_button(CHANNEL_MODE_LABELS[mode]));
-        channel_modes[0].set_toggled(true);
-        for mode in &mut channel_modes {
-            mode.set_enabled(false);
-        }
         return Self {
             sliders: [MAX_BPM as u16, MAX_LINES_PER_BEAT as u16].map(|max| {
                 SteppedSlider::new(SliderDirection::Horizontal, 1, max, STEP_ARROW, STEP_WIDTH)
@@ -509,6 +509,32 @@ impl Playback {
         self.dec.set_toggled(!hex);
     }
 
+    fn update_channel_mode(&mut self, state: &mut AppState) {
+        for (index, button) in self.channel_modes.iter_mut().enumerate() {
+            if left_clicked(button) {
+                let channels = index as u8 + 4;
+                let was_normal = state.song().flags.player_mode == PlayerMode::Normal;
+                state.set_player_mode(match channels {
+                    4 => PlayerMode::Normal,
+                    channels => PlayerMode::Split {
+                        channels,
+                        hq: false,
+                    },
+                });
+                if was_normal && channels > 4 {
+                    state.open_prompt(Prompt::yes_no(
+                        "Halve the volume of all samples?",
+                        |state| state.halve_samples(),
+                    ));
+                }
+            }
+        }
+        let channels = state.song().flags.player_mode.channels() as usize;
+        for (index, button) in self.channel_modes.iter_mut().enumerate() {
+            button.set_toggled(index + 4 == channels);
+        }
+    }
+
     fn update_filter(&mut self, state: &mut AppState) {
         if left_clicked(&mut self.filter) {
             state.set_filter(!state.song().flags.filter_on);
@@ -541,6 +567,7 @@ impl Gadget<AppState, Event> for Playback {
         self.update_tempo(state);
         self.update_volume_base(state);
         self.update_filter(state);
+        self.update_channel_mode(state);
         self.update_meters(state);
         self.update_playing(state);
     }
@@ -698,5 +725,48 @@ mod tests {
         playback.update(&mut state);
         assert!(!state.song().flags.filter_on);
         assert!(!playback.filter.is_toggled());
+    }
+
+    #[test]
+    fn channel_mode_follows_song() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        let mut playback = Playback::new();
+        let mut screen = Framebuffer::new(460, 50);
+        playback.update(&mut state);
+        playback.render(
+            &state,
+            screen.bounds(),
+            &mut Painter::new(&mut screen, &state.palette),
+        );
+        assert!(playback.channel_modes[0].is_toggled());
+        assert!(!playback.hq.is_enabled());
+        let modes = CHANNEL_MODES.split_columns(CHANNEL_MODES_COUNT as i32);
+        let at = Point::new(modes[3].x + 2, modes[3].y + 2);
+        let press = Event::MouseDown {
+            pos: Point::new(at.x, at.y),
+            button: MouseButton::Left,
+        };
+        playback.handle_event(&mut state, &press);
+        playback.update(&mut state);
+        assert_eq!(
+            state.song().flags.player_mode,
+            PlayerMode::Split {
+                channels: 7,
+                hq: false
+            }
+        );
+        assert!(playback.channel_modes[3].is_toggled());
+        assert!(!playback.channel_modes[0].is_toggled());
+        // asked once when leaving the normal player, not again between split modes
+        assert!(state.prompt.is_some());
+        state.prompt = None;
+        let at = Point::new(modes[4].x + 2, modes[4].y + 2);
+        let press = Event::MouseDown {
+            pos: at,
+            button: MouseButton::Left,
+        };
+        playback.handle_event(&mut state, &press);
+        playback.update(&mut state);
+        assert!(state.prompt.is_none());
     }
 }

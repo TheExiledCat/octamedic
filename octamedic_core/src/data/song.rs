@@ -2,12 +2,15 @@ use std::sync::Arc;
 
 use mmd::mmd::module::SONG_TRACKS;
 
-use crate::data::{
-    command::SET_VOLUME,
-    instrument::{InstrumentId, MAX_INSTRUMENTS, OctamedicInstrument},
-    pattern::{OctamedicPattern, PatternId},
-    tempo::OctamedicTempo,
-    volume::{MAX_VOLUME, OctamedicVolume, volume_argument, volume_from_argument},
+use crate::{
+    amiga::paula::PlayerMode,
+    data::{
+        command::SET_VOLUME,
+        instrument::{InstrumentId, MAX_INSTRUMENTS, OctamedicInstrument},
+        pattern::{OctamedicPattern, PatternId},
+        tempo::OctamedicTempo,
+        volume::{MAX_VOLUME, OctamedicVolume, volume_argument, volume_from_argument},
+    },
 };
 
 #[derive(Clone, Copy)]
@@ -20,8 +23,8 @@ pub struct OctamedicSongFlags {
     pub volumes_hex: bool,
     // ST/NT/PT style slides
     pub st_slides: bool,
-    // 5-8 channel mode, software mixed on the real thing
-    pub eight_channel: bool,
+    // 4 channels, or 5-8 with the extra tracks software mixed like the real thing
+    pub player_mode: PlayerMode,
     // the mouse pointer follows the play position
     pub jumping: bool,
     pub jump_every_8th_line: bool,

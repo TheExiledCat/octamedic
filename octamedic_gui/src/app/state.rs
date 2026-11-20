@@ -8,7 +8,7 @@ use std::{
 use ggez::input::keyboard::KeyMods;
 use mmd::{mmd::module::SONG_TRACKS, utility::note::SEMITONES_PER_OCTAVE};
 use octamedic_core::{
-    amiga::clock::VideoStandard,
+    amiga::{clock::VideoStandard, paula::PlayerMode},
     data::{
         instrument::{InstrumentId, InstrumentKind, MAX_INSTRUMENTS, OctamedicInstrument},
         note::OctamedicNote,
@@ -998,6 +998,20 @@ impl AppState {
         self.engine.set_instrument(id, Some(instrument));
     }
 
+    /// Every sample in the song at half level, what the split channel player wants.
+    pub fn halve_samples(&mut self) {
+        let halved: Vec<_> = (0..MAX_INSTRUMENTS)
+            .filter_map(|index| {
+                let instrument = self.song().instruments[index].as_ref()?;
+                instrument.sample()?;
+                return Some((InstrumentId(index as u8 + 1), instrument.halved()));
+            })
+            .collect();
+        for (id, instrument) in halved {
+            self.replace_instrument(id, instrument);
+        }
+    }
+
     /// Changes the active instrument, putting an empty one in its slot first if there isn't one.
     pub fn edit_active_instrument(&mut self, edit: impl FnOnce(&mut OctamedicInstrument)) {
         let id = self.active_instrument;
@@ -1222,6 +1236,13 @@ impl AppState {
         self.engine.set_filter(on);
     }
 
+    pub fn set_player_mode(&mut self, mode: PlayerMode) {
+        if self.song().flags.player_mode != mode {
+            self.song_mut().flags.player_mode = mode;
+        }
+        self.engine.set_player_mode(mode);
+    }
+
     pub fn key_to_note(&self, key: char) -> Option<OctamedicNote> {
         let key = key.to_ascii_lowercase();
         let semitone = BOTTOM_OCTAVE_KEYS
@@ -1376,7 +1397,8 @@ impl AppState {
     }
 
     pub fn new_default_block(&mut self) {
-        self.append_block(OctamedicPattern::new());
+        let pattern = self.default_pattern();
+        self.append_block(pattern);
     }
 
     pub fn new_block_here(&mut self) {
@@ -1385,7 +1407,17 @@ impl AppState {
     }
 
     pub fn new_default_block_here(&mut self) {
-        self.insert_block_here(OctamedicPattern::new());
+        let pattern = self.default_pattern();
+        self.insert_block_here(pattern);
+    }
+
+    // 64 lines and 4 tracks, 8 for the split channel player
+    fn default_pattern(&self) -> OctamedicPattern {
+        let mut pattern = OctamedicPattern::new();
+        if matches!(self.song().flags.player_mode, PlayerMode::Split { .. }) {
+            pattern.set_track_count(8);
+        }
+        return pattern;
     }
 
     fn blank_pattern_like_active(&self) -> OctamedicPattern {
@@ -2661,5 +2693,24 @@ mod tests {
         state.select_block_range();
         state.active_pattern_mut().unwrap().set_line_count(10);
         assert_eq!(state.active_range().unwrap().lines(), 0..10);
+    }
+
+    #[test]
+    fn default_blocks_have_eight_tracks_in_split_mode() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        state.new_default_block();
+        assert_eq!(state.active_pattern().unwrap().track_count(), 4);
+        state.set_player_mode(PlayerMode::Split {
+            channels: 6,
+            hq: false,
+        });
+        state.new_default_block();
+        assert_eq!(state.active_pattern().unwrap().track_count(), 8);
+        state.new_default_block_here();
+        assert_eq!(state.active_pattern().unwrap().track_count(), 8);
+        // NEW copies the active block instead
+        state.active_pattern_mut().unwrap().set_track_count(5);
+        state.new_block();
+        assert_eq!(state.active_pattern().unwrap().track_count(), 5);
     }
 }
