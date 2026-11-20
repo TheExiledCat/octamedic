@@ -37,11 +37,6 @@ impl EditCursor {
         }
     }
 
-    pub fn move_tracks_clamped(&mut self, delta: isize, tracks: usize) {
-        let last = tracks.saturating_sub(1) as isize;
-        self.track = (self.track as isize + delta).clamp(0, last) as usize;
-    }
-
     pub fn clamp(&mut self, lines: usize, tracks: usize) {
         self.line = self.line.min(lines.saturating_sub(1));
         self.track = self.track.min(tracks.saturating_sub(1));
@@ -89,10 +84,6 @@ mod tests {
         let mut cursor = at(0, 3, 2);
         cursor.move_tracks(1, 4);
         assert_eq!(cursor, at(0, 0, 2));
-        cursor.move_tracks_clamped(-8, 16);
-        assert_eq!(cursor, at(0, 0, 2));
-        cursor.move_tracks_clamped(20, 16);
-        assert_eq!(cursor, at(0, 15, 2));
     }
 
     #[test]
