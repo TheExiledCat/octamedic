@@ -1397,7 +1397,8 @@ impl AppState {
     }
 
     pub fn new_default_block(&mut self) {
-        self.append_block(OctamedicPattern::new());
+        let pattern = self.default_pattern();
+        self.append_block(pattern);
     }
 
     pub fn new_block_here(&mut self) {
@@ -1406,7 +1407,17 @@ impl AppState {
     }
 
     pub fn new_default_block_here(&mut self) {
-        self.insert_block_here(OctamedicPattern::new());
+        let pattern = self.default_pattern();
+        self.insert_block_here(pattern);
+    }
+
+    // 64 lines and 4 tracks, 8 for the split channel player
+    fn default_pattern(&self) -> OctamedicPattern {
+        let mut pattern = OctamedicPattern::new();
+        if matches!(self.song().flags.player_mode, PlayerMode::Split { .. }) {
+            pattern.set_track_count(8);
+        }
+        return pattern;
     }
 
     fn blank_pattern_like_active(&self) -> OctamedicPattern {
@@ -2682,5 +2693,24 @@ mod tests {
         state.select_block_range();
         state.active_pattern_mut().unwrap().set_line_count(10);
         assert_eq!(state.active_range().unwrap().lines(), 0..10);
+    }
+
+    #[test]
+    fn default_blocks_have_eight_tracks_in_split_mode() {
+        let mut state = AppState::new(OctamedicProject::new(), EngineHandle::disconnected());
+        state.new_default_block();
+        assert_eq!(state.active_pattern().unwrap().track_count(), 4);
+        state.set_player_mode(PlayerMode::Split {
+            channels: 6,
+            hq: false,
+        });
+        state.new_default_block();
+        assert_eq!(state.active_pattern().unwrap().track_count(), 8);
+        state.new_default_block_here();
+        assert_eq!(state.active_pattern().unwrap().track_count(), 8);
+        // NEW copies the active block instead
+        state.active_pattern_mut().unwrap().set_track_count(5);
+        state.new_block();
+        assert_eq!(state.active_pattern().unwrap().track_count(), 5);
     }
 }
