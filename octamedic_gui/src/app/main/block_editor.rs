@@ -69,8 +69,10 @@ const FIRST_COMMAND_COLUMN: usize = 2;
 // track numbers end over the instrument's first digit
 const TRACK_NUMBER_END: i32 = NOTE_CHARS + 1;
 
-// blocks with up to this many tracks use the 4 channel editor font, more use the small one
-const EDITOR_FONT_TRACKS: usize = 8;
+// blocks with up to this many tracks use the 4 channel editor font, up to MEDIUM_FONT_TRACKS Topaz
+// and more the small one
+const EDITOR_FONT_TRACKS: usize = 4;
+const MEDIUM_FONT_TRACKS: usize = 8;
 
 const QUARTERS: usize = 4;
 
@@ -729,7 +731,8 @@ fn active_band(area: Rect, center_y: i32) -> Rect {
     return Rect::new(area.x, center_y - 1, area.w, CHAR_HEIGHT + 1);
 }
 
-// every block is drawn in the editor font, squeezed across so its tracks fill the width
+// every block is drawn squeezed across until its tracks fit, with characters that are 16, 8 or
+// 4 pixels wide like OctaMED's, or something in between for 12 tracks
 struct Layout {
     x: i32,
     font: Font,
@@ -743,6 +746,8 @@ impl Layout {
     fn new(area: Rect, track_count: usize) -> Self {
         let font = if track_count <= EDITOR_FONT_TRACKS {
             fonts::EDITOR
+        } else if track_count <= MEDIUM_FONT_TRACKS {
+            fonts::EDITOR_MEDIUM
         } else {
             fonts::EDITOR_SMALL
         };
@@ -752,8 +757,9 @@ impl Layout {
             x: area.x,
             font,
             glyph_width,
-            // an area that hasn't been laid out yet is still a sane scale
-            scale: area.w.max(1) as f32 / (columns * glyph_width) as f32,
+            // whole pixels per character, as many as fit, so every cell is the same width. an area
+            // that hasn't been laid out yet still gets one
+            scale: (area.w / columns).max(1) as f32 / glyph_width as f32,
             tracks: track_count,
         };
     }
@@ -1715,28 +1721,31 @@ mod tests {
     }
 
     #[test]
-    fn every_track_count_fills_the_width() {
+    fn cells_are_whole_pixels_that_fit() {
         let area = Rect::new(0, 0, 640, 200);
-        for count in [4, 8, 12, 16] {
+        for (count, cell) in [(4, 16), (8, 8), (12, 5), (16, 4)] {
             let layout = Layout::new(area, count);
             assert_eq!(layout.tracks, count, "{count}");
+            assert_eq!(layout.column_x(1) - layout.column_x(0), cell, "{count}");
             let end = layout.track_x(count);
-            assert_eq!(end, area.w, "{count}");
+            assert!(end <= area.w, "{count}: {end}");
+            // the room left is less than a pixel a column
+            let columns = LINE_NUMBER_CHARS + count as i32 * TRACK_CHARS;
+            assert!(area.w - end < columns, "{count}");
             assert_eq!(layout.track_at(end - 1), Some(count - 1), "{count}");
             assert_eq!(layout.track_at(layout.track_x(count - 1)), Some(count - 1));
         }
+        // OctaMED's 4 and 8 tracks are unscaled and 16 is half of Topaz
         assert_eq!(Layout::new(area, 4).scale, 1.0);
-        let cell = |count| {
-            let layout = Layout::new(area, count);
-            return layout.column_x(1) - layout.column_x(0);
-        };
-        assert!(cell(4) > cell(8) && cell(8) > cell(12) && cell(12) > cell(16));
+        assert_eq!(Layout::new(area, 8).scale, 1.0);
+        assert_eq!(Layout::new(area, 16).scale, 0.5);
     }
 
     #[test]
     fn small_font_from_nine_tracks_with_zero_as_o() {
         let area = Rect::new(0, 0, 640, 200);
-        assert_eq!(Layout::new(area, 8).font, fonts::EDITOR);
+        assert_eq!(Layout::new(area, 4).font, fonts::EDITOR);
+        assert_eq!(Layout::new(area, 8).font, fonts::EDITOR_MEDIUM);
         for count in [12, 16] {
             let layout = Layout::new(area, count);
             assert_eq!(layout.font, fonts::EDITOR_SMALL, "{count}");
@@ -1748,6 +1757,34 @@ mod tests {
         let eight = Layout::new(area, 8);
         // the slash through the zero is still there
         assert!((0..8).any(|line| eight.ink(0, "0", line) != eight.ink(0, "O", line)));
+    }
+
+    // read off OctaMED's 8 track screen
+    #[test]
+    fn eight_tracks_are_plain_topaz_with_a_short_dash() {
+        let layout = Layout::new(Rect::new(0, 0, 640, 200), 8);
+        let rows = |text: &str| -> Vec<String> {
+            return (0..8)
+                .map(|line| {
+                    let mut row = vec!['.'; 8 * text.len()];
+                    for (start, width) in layout.ink(0, text, line) {
+                        (start..start + width).for_each(|x| row[x as usize] = '#');
+                    }
+                    return row.into_iter().collect();
+                })
+                .collect();
+        };
+        assert_eq!(
+            rows("0"),
+            [
+                "..####..", ".##..##.", ".##.###.", ".######.", ".###.##.", ".##..##.", "..####..",
+                "........"
+            ]
+        );
+        assert_eq!(rows("-")[3], ".######.");
+        assert_eq!(rows("1")[6], "...##...");
+        let dashes = layout.ink(0, "---", 3);
+        assert_eq!(dashes, [(1, 6), (9, 6), (17, 6)]);
     }
 
     #[test]

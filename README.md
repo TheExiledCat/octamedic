@@ -209,6 +209,13 @@ You get the newest changes this way, and also the ones that break things.
 - `octamedic_util`: small helpers shared by the other crates
 - `rustuition`: an Amiga style GUI toolkit recreating AmigaOS's Intuition look
 
+## Credits
+
+- The small editor font for blocks of more than 8 tracks, `octamedic_gui/assets/fonts/amiga-topaz.otf`,
+  is [Amiga Topaz](https://fontstruct.com/fontstructions/show/675155) by Patrick H. Lauke, licensed
+  under [Creative Commons Attribution 3.0](http://creativecommons.org/licenses/by/3.0/). It's
+  rasterized to a bitmap font and drawn at a smaller size
+
 ## Contributing
 
 - [CONTRIBUTING.md](CONTRIBUTING.md) for building, code style and pull requests
