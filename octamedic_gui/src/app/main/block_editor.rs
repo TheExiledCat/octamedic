@@ -40,8 +40,8 @@ use crate::{
 const SCOPE_OFFSET: i32 = 2;
 const SCOPE_SAMPLES: usize = 42;
 
-const METER_OFFSET: i32 = 44;
-const METER_WIDTH: i32 = 12;
+// edges and all
+const METER_WIDTH: i32 = 24;
 
 // 3 digits and a space
 const LINE_NUMBER_CHARS: i32 = 4;
@@ -451,8 +451,9 @@ impl BlockEditor {
         }
     }
 
-    // only Paula's four hardware channels, the first four tracks, have scopes, and only a block of
-    // 4 tracks or fewer shows them: OctaMED draws none over the smaller fonts
+    // only Paula's four hardware channels, the first four tracks, have scopes and meters. The
+    // scopes stay where they are for 4 tracks, over whichever tracks that is, and the meters
+    // follow their tracks, both as big as ever
     fn render_scopes(
         &mut self,
         state: &AppState,
@@ -461,22 +462,19 @@ impl BlockEditor {
         area: Rect,
         painter: &mut Painter,
     ) {
-        if !layout.has_scopes() {
-            return;
-        }
-        for index in 0..layout.tracks {
+        for index in 0..layout.tracks.min(SCOPE_CHANNELS) {
             let track = index;
-            if track >= SCOPE_CHANNELS {
-                break;
-            }
             if state.is_playing() && state.active_meters().scopes {
-                let column = layout.track_column(index);
-                let scope = scope_area(layout, area, index);
+                let scope = scope_area(area, index);
                 for run in self.oscilloscopes[track].runs(scope) {
                     painter.fill(run, pens::PINK);
-                    if let Some(cell) = cell_at(pattern, state.cursor.line, area, run.y, track) {
-                        let text_line = ((run.y - area.y) % CHAR_HEIGHT) as usize;
-                        blend_text(&track_text(cell), column, text_line, layout, run, painter);
+                    let text_line = ((run.y - area.y) % CHAR_HEIGHT) as usize;
+                    for under in layout.tracks_under(run.x, run.right()) {
+                        let line = state.cursor.line;
+                        if let Some(cell) = cell_at(pattern, line, area, run.y, under) {
+                            let column = layout.track_column(under);
+                            blend_text(&track_text(cell), column, text_line, layout, run, painter);
+                        }
                     }
                 }
             }
@@ -762,9 +760,22 @@ impl Layout {
         };
     }
 
-    // the scopes and the VU meters only go over the wide font
-    fn has_scopes(&self) -> bool {
-        return self.font == fonts::EDITOR;
+    // the tracks any part of `x..end` is over
+    fn tracks_under(&self, x: i32, end: i32) -> std::ops::Range<usize> {
+        let track = |x: i32| (self.column_at(x) - LINE_NUMBER_CHARS).div_euclid(TRACK_CHARS);
+        let first = track(x).max(0) as usize;
+        let end = (track(end - 1) + 1).clamp(0, self.tracks as i32) as usize;
+        return first.min(end)..end;
+    }
+
+    // how far into its track a meter starts, read off OctaMED's 4 and 16 track screens. Topaz is in
+    // between, which is a guess
+    fn meter_offset(&self) -> i32 {
+        return match self.glyph_width {
+            16 => 88,
+            8 => 41,
+            _ => 18,
+        };
     }
 
     // one pixel of the editor font, at least one on screen
@@ -964,18 +975,19 @@ fn instrument_text(instrument: u8) -> String {
     return base32::format(instrument as u32, 2, ' ');
 }
 
-fn scope_area(layout: &Layout, area: Rect, index: usize) -> Rect {
-    let x = layout.track_x(index) + SCOPE_OFFSET * layout.pixel();
+// where it goes for 4 tracks, whatever the block has
+fn scope_area(area: Rect, index: usize) -> Rect {
+    let wide = Layout::new(area, EDITOR_FONT_TRACKS);
+    let x = wide.track_x(index) + SCOPE_OFFSET * wide.pixel();
     let top = active_band(area, area.y + center_row(area) * CHAR_HEIGHT).y;
-    let width = SCOPE_SAMPLES as i32 * layout.pixel();
+    let width = SCOPE_SAMPLES as i32 * wide.pixel();
     return Rect::new(x, top, width, area.y + area.h - top);
 }
 
 fn meter_area(layout: &Layout, area: Rect, index: usize) -> Rect {
-    let x = layout.track_x(index) + METER_OFFSET * layout.pixel();
+    let x = layout.track_x(index) + layout.meter_offset();
     let top = area.h / 2;
-    let width = METER_WIDTH * layout.pixel();
-    return Rect::new(x, area.y + top, width, area.h - top);
+    return Rect::new(x, area.y + top, METER_WIDTH, area.h - top);
 }
 
 // None if `y` is above or below the block
@@ -1071,7 +1083,7 @@ mod tests {
         let area = Rect::new(0, 77, 640, 120);
         let layout = Layout::new(area, 4);
         // two pixels a sample, starting 4 pixels into the track, from the highlighted line down
-        assert_eq!(scope_area(&layout, area, 0), Rect::new(68, 132, 84, 65));
+        assert_eq!(scope_area(area, 0), Rect::new(68, 132, 84, 65));
         // 88 pixels in, from the editor's middle down
         assert_eq!(meter_area(&layout, area, 1), Rect::new(296, 137, 24, 60));
     }
@@ -1149,19 +1161,34 @@ mod tests {
         assert!(!editor.dragging_range);
     }
 
-    // OctaMED's 8 and 16 track screens have no scopes or meters
+    // read off OctaMED's 16 track screen, while it played
     #[test]
-    fn no_scopes_or_meters_past_four_tracks() {
-        let (mut editor, state) = (BlockEditor::new(), state());
+    fn scopes_and_meters_for_12_and_16_tracks() {
         let area = Rect::new(0, 77, 640, 120);
-        let pattern = state.active_pattern().unwrap().clone();
-        for count in [8, 12, 16] {
+        for count in [12, 16] {
             let layout = Layout::new(area, count);
-            let mut fills = Fills::default();
-            let mut painter = Painter::new(&mut fills, &state.palette);
-            editor.render_scopes(&state, &pattern, &layout, area, &mut painter);
-            assert!(fills.0.is_empty(), "{count}: {:?}", fills.0);
+            // 4 scopes where they go for 4 tracks, 144 apart
+            let scopes: Vec<i32> = (0..4).map(|index| scope_area(area, index).x).collect();
+            assert_eq!(scopes, [68, 212, 356, 500], "{count}");
+            // a meter in each of the first tracks, 36 apart, 24 wide
+            let meters: Vec<Rect> = (0..4)
+                .map(|index| meter_area(&layout, area, index))
+                .collect();
+            let at: Vec<i32> = meters.iter().map(|meter| meter.x).collect();
+            assert_eq!(at, [34, 70, 106, 142], "{count}");
+            assert!(meters.iter().all(|meter| meter.w == 24), "{count}");
         }
+    }
+
+    #[test]
+    fn scopes_blend_with_every_track_they_are_over() {
+        let layout = Layout::new(Rect::new(0, 77, 640, 120), 16);
+        let scope = scope_area(Rect::new(0, 77, 640, 120), 0);
+        // 68 to 152 is over the second track through the fourth
+        assert_eq!(layout.tracks_under(scope.x, scope.right()), 1..4);
+        assert_eq!(layout.tracks_under(0, 10), 0..0);
+        let wide = Layout::new(Rect::new(0, 77, 640, 120), 4);
+        assert_eq!(wide.tracks_under(68, 152), 0..1);
     }
 
     #[test]
