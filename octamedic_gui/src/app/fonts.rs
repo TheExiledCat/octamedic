@@ -50,6 +50,9 @@ pub const CONFIRM_LABEL: Font = Font::new(|| &CONFIRM_LABEL_FONT);
 // 16px wide block editor chars for blocks with few tracks, double width topaz otherwise
 pub const EDITOR: Font = Font::new(|| &EDITOR_FONT);
 
+// the Topaz OctaMED squeezes for 12 and 16 tracks, with a footed 1 and a flat topped dash
+pub const EDITOR_SMALL: Font = Font::new(|| &EDITOR_SMALL_FONT);
+
 // OctaMED's fatter slash between a position and a length, e.g. 0001/0022
 pub const POSITION_SLASH: char = '\u{2044}';
 
@@ -154,6 +157,13 @@ static EDITOR_FONT: LazyLock<BitmapFont> = LazyLock::new(|| {
         .space(2 * CHAR_WIDTH)
         .with_glyphs(EDITOR_GLYPHS)
         .with_fallback(Font::TOPAZ, Glyph::widened)
+});
+
+static EDITOR_SMALL_FONT: LazyLock<BitmapFont> = LazyLock::new(|| {
+    // its baseline is a line lower than the Topaz in rustuition
+    let outlines = include_bytes!("../../assets/fonts/amiga-topaz.otf");
+    return BitmapFont::from_outlines("editor small", outlines, -1)
+        .unwrap_or_else(|| panic!("the small editor font couldn't be read"));
 });
 
 static LABEL_FONT: LazyLock<BitmapFont> = LazyLock::new(|| label_font("label"));

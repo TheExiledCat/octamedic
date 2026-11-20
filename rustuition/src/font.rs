@@ -237,6 +237,19 @@ impl BitmapFont {
         };
     }
 
+    /// A font from an outline font that's really an 8 line bitmap font at double height, like the
+    /// Topaz ttfs, or `None` if it can't be read. `row_shift` moves every glyph down that many
+    /// lines (up if it's negative), for a font whose baseline sits somewhere else.
+    pub fn from_outlines(name: impl Into<String>, ttf: &[u8], row_shift: i32) -> Option<Self> {
+        return Some(Self {
+            name: name.into(),
+            glyphs: rasterize(ttf, row_shift)?,
+            height: CHAR_HEIGHT,
+            space: CHAR_WIDTH,
+            ..Default::default()
+        });
+    }
+
     /// Sets the blank pixels either side of every glyph.
     pub fn bearing(mut self, bearing: i32) -> Self {
         self.bearing = bearing;
@@ -303,17 +316,14 @@ impl BitmapFont {
 }
 
 // rasterized from the ttf up front so it doesn't blur
-static TOPAZ: LazyLock<BitmapFont> = LazyLock::new(|| BitmapFont {
-    name: "Topaz".to_owned(),
-    glyphs: rasterize(TOPAZ_TTF).unwrap_or_else(|| panic!("Topaz's TTF couldn't be read")),
-    height: CHAR_HEIGHT,
-    space: CHAR_WIDTH,
-    ..Default::default()
+static TOPAZ: LazyLock<BitmapFont> = LazyLock::new(|| {
+    BitmapFont::from_outlines("Topaz", TOPAZ_TTF, 0)
+        .unwrap_or_else(|| panic!("Topaz's TTF couldn't be read"))
 });
 
 // the topaz ttf is the 8 line bitmap font at double height with smoothing half lines in between,
 // so take the upper half of each line to get the real pixels back
-fn rasterize(ttf: &[u8]) -> Option<HashMap<char, Glyph>> {
+fn rasterize(ttf: &[u8], row_shift: i32) -> Option<HashMap<char, Glyph>> {
     let font = FontRef::try_from_slice(ttf).ok()?;
     let em = font.units_per_em()?;
     let pixel = em / (2 * CHAR_HEIGHT) as f32;
@@ -330,11 +340,13 @@ fn rasterize(ttf: &[u8]) -> Option<HashMap<char, Glyph>> {
             let corner = outline.px_bounds().min;
             outline.draw(|x, y, coverage| {
                 let (x, y) = (corner.x as i32 + x as i32, corner.y as i32 + y as i32);
+                let row = y.div_euclid(2) + row_shift;
                 let shown = (0..width.min(MAX_GLYPH_WIDTH as i32)).contains(&x)
+                    && (0..CHAR_HEIGHT).contains(&row)
                     && (0..2 * CHAR_HEIGHT).contains(&y)
                     && y % 2 == 0;
                 if shown && coverage >= 0.5 {
-                    lines[(y / 2) as usize] |= LEFT_PIXEL >> x;
+                    lines[row as usize] |= LEFT_PIXEL >> x;
                 }
             });
         }

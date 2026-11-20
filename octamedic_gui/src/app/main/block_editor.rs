@@ -15,7 +15,7 @@ use octamedic_util::base32;
 use rustuition::{
     clickable::{Click, Clickable},
     event::MouseButton,
-    font::scale_pixels,
+    font::{Font, scale_pixels},
     gadget::Gadget,
     painter::{CHAR_HEIGHT, CHAR_WIDTH, Painter, Pen},
     rect::{Point, Rect},
@@ -68,6 +68,9 @@ const FIRST_COMMAND_COLUMN: usize = 2;
 
 // track numbers end over the instrument's first digit
 const TRACK_NUMBER_END: i32 = NOTE_CHARS + 1;
+
+// blocks with up to this many tracks use the 4 channel editor font, more use the small one
+const EDITOR_FONT_TRACKS: usize = 8;
 
 const QUARTERS: usize = 4;
 
@@ -729,29 +732,44 @@ fn active_band(area: Rect, center_y: i32) -> Rect {
 // every block is drawn in the editor font, squeezed across so its tracks fill the width
 struct Layout {
     x: i32,
+    font: Font,
+    // a character cell at full size
+    glyph_width: i32,
     scale: f32,
     tracks: usize,
 }
 
 impl Layout {
     fn new(area: Rect, track_count: usize) -> Self {
+        let font = if track_count <= EDITOR_FONT_TRACKS {
+            fonts::EDITOR
+        } else {
+            fonts::EDITOR_SMALL
+        };
+        let glyph_width = font.advance('0');
         let columns = LINE_NUMBER_CHARS + track_count as i32 * TRACK_CHARS;
         return Self {
             x: area.x,
+            font,
+            glyph_width,
             // an area that hasn't been laid out yet is still a sane scale
-            scale: area.w.max(1) as f32 / (columns * Self::glyph_width()) as f32,
+            scale: area.w.max(1) as f32 / (columns * glyph_width) as f32,
             tracks: track_count,
         };
     }
 
-    // a character cell at full size
-    fn glyph_width() -> i32 {
-        return fonts::EDITOR.advance('0');
+    // the small font has no slash through its zero and OctaMED shows a capital O, which has none
+    fn shown(&self, character: char) -> char {
+        return if self.font == fonts::EDITOR_SMALL && character == '0' {
+            'O'
+        } else {
+            character
+        };
     }
 
     // one pixel of the font, at least one on screen
     fn pixel(&self) -> i32 {
-        return self.across(Self::glyph_width() / CHAR_WIDTH).max(1);
+        return self.across(self.glyph_width / CHAR_WIDTH).max(1);
     }
 
     fn across(&self, pixels: i32) -> i32 {
@@ -761,11 +779,11 @@ impl Layout {
     // where the cell for `column` starts. rounded from the left edge rather than added up, so the
     // cells stay on the same grid however far along they are
     fn column_x(&self, column: i32) -> i32 {
-        return self.x + self.across(column * Self::glyph_width());
+        return self.x + self.across(column * self.glyph_width);
     }
 
     fn column_at(&self, x: i32) -> i32 {
-        let width = Self::glyph_width() as f32 * self.scale;
+        let width = self.glyph_width as f32 * self.scale;
         let mut column = ((x - self.x) as f32 / width).floor() as i32;
         while self.column_x(column + 1) <= x {
             column += 1;
@@ -778,14 +796,14 @@ impl Layout {
 
     fn text(&self, painter: &mut Painter, column: i32, y: i32, text: &str, pen: Pen) {
         if self.scale == 1.0 {
-            painter.text_in_font(self.column_x(column), y, text, pen, fonts::EDITOR);
+            painter.text_in_font(self.column_x(column), y, text, pen, self.font);
             return;
         }
         for (index, character) in text.chars().enumerate() {
             let x = self.column_x(column + index as i32);
             let mut buffer = [0; 4];
-            let character: &str = character.encode_utf8(&mut buffer);
-            painter.text_in_font_scaled(x, y, character, pen, fonts::EDITOR, [self.scale, 1.0]);
+            let character: &str = self.shown(character).encode_utf8(&mut buffer);
+            painter.text_in_font_scaled(x, y, character, pen, self.font, [self.scale, 1.0]);
         }
     }
 
@@ -795,8 +813,8 @@ impl Layout {
         for (index, character) in text.chars().enumerate() {
             let x = self.column_x(column + index as i32);
             let mut buffer = [0; 4];
-            let character: &str = character.encode_utf8(&mut buffer);
-            let ink = fonts::EDITOR.scaled_ink(character, line, self.scale);
+            let character: &str = self.shown(character).encode_utf8(&mut buffer);
+            let ink = self.font.scaled_ink(character, line, self.scale);
             runs.extend(ink.map(|(start, width)| (x + start, width)));
         }
         return runs;
@@ -976,7 +994,7 @@ fn instrument_text(instrument: u8) -> String {
 
 // a length in Topaz pixels, scaled to the font the block is in
 fn scaled(layout: &Layout, pixels: i32) -> i32 {
-    return layout.across(pixels * Layout::glyph_width() / CHAR_WIDTH);
+    return layout.across(pixels * layout.glyph_width / CHAR_WIDTH);
 }
 
 fn scope_area(layout: &Layout, area: Rect, index: usize) -> Rect {
@@ -1708,7 +1726,42 @@ mod tests {
             assert_eq!(layout.track_at(layout.track_x(count - 1)), Some(count - 1));
         }
         assert_eq!(Layout::new(area, 4).scale, 1.0);
-        assert!(Layout::new(area, 16).scale < Layout::new(area, 8).scale);
+        let cell = |count| {
+            let layout = Layout::new(area, count);
+            return layout.column_x(1) - layout.column_x(0);
+        };
+        assert!(cell(4) > cell(8) && cell(8) > cell(12) && cell(12) > cell(16));
+    }
+
+    #[test]
+    fn small_font_from_nine_tracks_with_zero_as_o() {
+        let area = Rect::new(0, 0, 640, 200);
+        assert_eq!(Layout::new(area, 8).font, fonts::EDITOR);
+        for count in [12, 16] {
+            let layout = Layout::new(area, count);
+            assert_eq!(layout.font, fonts::EDITOR_SMALL, "{count}");
+            for line in 0..8 {
+                assert_eq!(layout.ink(0, "0", line), layout.ink(0, "O", line), "{line}");
+            }
+            assert_ne!(layout.ink(0, "0", 0), layout.ink(0, "1", 0));
+        }
+        let eight = Layout::new(area, 8);
+        // the slash through the zero is still there
+        assert!((0..8).any(|line| eight.ink(0, "0", line) != eight.ink(0, "O", line)));
+    }
+
+    #[test]
+    fn small_font_ones_have_a_foot() {
+        let one = fonts::EDITOR_SMALL.glyph('1').unwrap();
+        let foot = one.lines.iter().rposition(|&line| line != 0).unwrap();
+        assert_eq!(foot, 6);
+        assert!(one.lines[foot].count_ones() > one.lines[0].count_ones());
+        // digits sit on the same lines as Topaz's
+        let topaz = Font::TOPAZ.glyph('1').unwrap();
+        assert_eq!(
+            one.lines.iter().rposition(|&line| line != 0),
+            topaz.lines.iter().rposition(|&line| line != 0)
+        );
     }
 
     #[test]
