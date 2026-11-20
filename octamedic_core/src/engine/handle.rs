@@ -16,7 +16,10 @@ use cpal::{
 
 use super::engine::{OctamedicEngine, PlayMode};
 use crate::{
-    amiga::{clock::AmigaClock, paula::Scopes},
+    amiga::{
+        clock::AmigaClock,
+        paula::{PlayerMode, Scopes},
+    },
     data::{
         instrument::{InstrumentId, OctamedicInstrument, OctamedicSample},
         note::OctamedicNote,
@@ -54,6 +57,7 @@ pub enum EngineCommand {
     SetTempo(OctamedicTempo),
     SetMachine(AmigaClock),
     SetFilter(bool),
+    SetPlayerMode(PlayerMode),
     /// Whether volume commands are read as hex rather than two decimal digits.
     SetVolumesHex(bool),
     SetTrackVolume {
@@ -97,6 +101,7 @@ impl EngineCommand {
             EngineCommand::SetMasterVolume(song.master_volume.get()),
             EngineCommand::SetGlobalTranspose(song.global_transpose),
             EngineCommand::SetFilter(song.flags.filter_on),
+            EngineCommand::SetPlayerMode(song.flags.player_mode),
             EngineCommand::SetVolumesHex(song.flags.volumes_hex),
         ];
         for (track, volume) in song.track_volumes.iter().enumerate() {
@@ -385,6 +390,10 @@ impl EngineHandle {
 
     pub fn set_filter(&self, on: bool) {
         self.send(EngineCommand::SetFilter(on));
+    }
+
+    pub fn set_player_mode(&self, mode: PlayerMode) {
+        self.send(EngineCommand::SetPlayerMode(mode));
     }
 
     pub fn set_volumes_hex(&self, hex: bool) {

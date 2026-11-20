@@ -1,6 +1,8 @@
 use std::{fs, rc::Rc};
 
+use ggez::input::keyboard::KeyMods;
 use octamedic_core::{
+    amiga::paula::PlayerMode,
     data::instrument::{OctamedicInstrument, OctamedicSample},
     engine::period::note_period,
     import::{
@@ -89,6 +91,14 @@ fn place_loaded(state: &mut AppState, instrument: OctamedicInstrument) {
     if let Some(sample) = instrument.sample() {
         state.notify(loaded_message(sample));
     }
+    // the split channel player wants halved samples, Shift keeps them as they are
+    let halve = matches!(state.song().flags.player_mode, PlayerMode::Split { .. })
+        && !state.mouse_mods.contains(KeyMods::SHIFT);
+    let instrument = if halve {
+        instrument.halved()
+    } else {
+        instrument
+    };
     state.replace_instrument(state.active_instrument, instrument);
 }
 

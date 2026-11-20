@@ -8,7 +8,7 @@ use std::{
 use ggez::input::keyboard::KeyMods;
 use mmd::{mmd::module::SONG_TRACKS, utility::note::SEMITONES_PER_OCTAVE};
 use octamedic_core::{
-    amiga::clock::VideoStandard,
+    amiga::{clock::VideoStandard, paula::PlayerMode},
     data::{
         instrument::{InstrumentId, InstrumentKind, MAX_INSTRUMENTS, OctamedicInstrument},
         note::OctamedicNote,
@@ -998,6 +998,20 @@ impl AppState {
         self.engine.set_instrument(id, Some(instrument));
     }
 
+    /// Every sample in the song at half level, what the split channel player wants.
+    pub fn halve_samples(&mut self) {
+        let halved: Vec<_> = (0..MAX_INSTRUMENTS)
+            .filter_map(|index| {
+                let instrument = self.song().instruments[index].as_ref()?;
+                instrument.sample()?;
+                return Some((InstrumentId(index as u8 + 1), instrument.halved()));
+            })
+            .collect();
+        for (id, instrument) in halved {
+            self.replace_instrument(id, instrument);
+        }
+    }
+
     /// Changes the active instrument, putting an empty one in its slot first if there isn't one.
     pub fn edit_active_instrument(&mut self, edit: impl FnOnce(&mut OctamedicInstrument)) {
         let id = self.active_instrument;
@@ -1220,6 +1234,13 @@ impl AppState {
             self.song_mut().flags.filter_on = on;
         }
         self.engine.set_filter(on);
+    }
+
+    pub fn set_player_mode(&mut self, mode: PlayerMode) {
+        if self.song().flags.player_mode != mode {
+            self.song_mut().flags.player_mode = mode;
+        }
+        self.engine.set_player_mode(mode);
     }
 
     pub fn key_to_note(&self, key: char) -> Option<OctamedicNote> {

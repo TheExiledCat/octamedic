@@ -124,6 +124,15 @@ pub struct OctaveCopy {
 }
 
 impl OctamedicSample {
+    /// Half as loud, like OctaMED does for the split channel player so two tracks fit.
+    pub fn halved(&self) -> Self {
+        return Self {
+            data: self.data.iter().map(|byte| byte >> 1).collect(),
+            repeat: self.repeat,
+            octaves: self.octaves,
+        };
+    }
+
     /// A copy with `range` silenced. Like the rest of these, `range` has to be inside the sample.
     pub fn cleared(&self, range: Range<usize>) -> Self {
         let mut data = self.data.clone();
@@ -424,6 +433,15 @@ impl OctamedicInstrument {
     }
 
     // the engine only plays plain samples so far
+    /// With its sample halved, see `OctamedicSample::halved`. Only plain samples have one.
+    pub fn halved(&self) -> Self {
+        let mut instrument = self.clone();
+        if let InstrumentKind::Sample(sample) = &self.kind {
+            instrument.kind = InstrumentKind::Sample(Arc::new(sample.halved()));
+        }
+        return instrument;
+    }
+
     pub fn sample(&self) -> Option<&Arc<OctamedicSample>> {
         return match &self.kind {
             InstrumentKind::Sample(sample) => Some(sample),
@@ -592,5 +610,17 @@ mod tests {
         let mut sample = ramp();
         sample.repeat = Some((4, 8));
         assert_eq!(sample.resampled(4, 1).repeat, None);
+    }
+
+    #[test]
+    fn halved_sample_keeps_its_loop() {
+        let sample = OctamedicSample {
+            data: vec![100, -100, 127, -128, 1, -1],
+            repeat: Some((2, 4)),
+            octaves: SampleOctaves::One,
+        };
+        let halved = sample.halved();
+        assert_eq!(halved.data, [50, -50, 63, -64, 0, -1]);
+        assert_eq!(halved.repeat, Some((2, 4)));
     }
 }
