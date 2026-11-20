@@ -84,6 +84,21 @@ impl Font {
         });
     }
 
+    /// `ink`, scaled across by `scale` the way [`Painter::text_scaled`] draws it.
+    ///
+    /// [`Painter::text_scaled`]: crate::painter::Painter::text_scaled
+    pub fn scaled_ink(
+        self,
+        text: &str,
+        line: usize,
+        scale: f32,
+    ) -> impl Iterator<Item = (i32, i32)> + '_ {
+        return self.ink(text, line).map(move |(start, width)| {
+            let left = scale_pixels(start, scale);
+            return (left, scale_pixels(start + width, scale) - left);
+        });
+    }
+
     /// The font this is a handle to.
     pub fn bitmap(self) -> &'static BitmapFont {
         return (self.0)();
@@ -168,6 +183,12 @@ impl Glyph {
     pub fn is_set(&self, x: u32, y: usize) -> bool {
         return self.lines.get(y).is_some_and(|&line| is_set(line, x));
     }
+}
+
+/// `pixels` scaled and rounded to a whole pixel. Scaled text rounds the start and the end of each
+/// run, so at half size a one pixel gap between two strokes is gone, the way it is on the Amiga.
+pub fn scale_pixels(pixels: i32, scale: f32) -> i32 {
+    return (pixels as f32 * scale).round() as i32;
 }
 
 /// `(start, length)` runs of ink on one glyph line.

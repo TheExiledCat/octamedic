@@ -219,7 +219,7 @@ impl<'a> Painter<'a> {
 
     // rounds to whole pixels so scaled text stays sharp
     fn glyphs(&mut self, x: i32, y: i32, text: &str, pen: Pen, font: Font, scale: [f32; 2]) {
-        let scaled = |pixels: i32, axis: usize| (pixels as f32 * scale[axis]).round() as i32;
+        let scaled = |pixels: i32, axis: usize| font::scale_pixels(pixels, scale[axis]);
         let mut advance = 0;
         for c in text.chars() {
             if let Some(glyph) = font.glyph(c) {

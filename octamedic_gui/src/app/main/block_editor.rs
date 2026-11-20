@@ -15,7 +15,7 @@ use octamedic_util::base32;
 use rustuition::{
     clickable::{Click, Clickable},
     event::MouseButton,
-    font::Font,
+    font::{Font, scale_pixels},
     gadget::Gadget,
     painter::{CHAR_HEIGHT, CHAR_WIDTH, Painter, Pen},
     rect::{Point, Rect},
@@ -69,8 +69,11 @@ const FIRST_COMMAND_COLUMN: usize = 2;
 // track numbers end over the instrument's first digit
 const TRACK_NUMBER_END: i32 = NOTE_CHARS + 1;
 
-// blocks with up to this many tracks use the wide font
+// blocks with up to this many tracks use the wide font, up to NORMAL_TRACKS Topaz, and the rest
+// the compact one so all of them fit
 const WIDE_TRACKS: usize = 4;
+const NORMAL_TRACKS: usize = 8;
+const COMPACT_SCALE: f32 = 0.5;
 
 const QUARTERS: usize = 4;
 
@@ -97,8 +100,6 @@ pub enum EditorAction {
     LastLine,
     TrackLeft,
     TrackRight,
-    ScreenLeft,
-    ScreenRight,
     // no note, just the instrument, which keeps a held note going
     Hold,
     Highlight,
@@ -129,9 +130,6 @@ impl Action for EditorAction {}
 
 pub struct BlockEditor {
     keys: Keymap<EditorAction>,
-    first_track: usize,
-    // as of the last render
-    visible_tracks: usize,
     oscilloscopes: [Oscilloscope; SCOPE_CHANNELS],
     meters: [VuMeter; SCOPE_CHANNELS],
     clickable: Clickable,
@@ -154,8 +152,6 @@ impl BlockEditor {
             .bind(Key::plain(KeyCode::F10), LastLine, "Last line")
             .bind(Key::alt(KeyCode::Left), TrackLeft, "Track left")
             .bind(Key::alt(KeyCode::Right), TrackRight, "Track right")
-            .bind(Key::ctrl(KeyCode::Left), ScreenLeft, "Screen left")
-            .bind(Key::ctrl(KeyCode::Right), ScreenRight, "Screen right")
             .bind(Key::plain(KeyCode::Return), Hold, "Hold")
             .bind(Key::plain(KeyCode::NumpadEnter), Hold, "Hold")
             .bind(Key::plain(KeyCode::Tab), Highlight, "Highlight")
@@ -199,8 +195,6 @@ impl BlockEditor {
             );
         return Self {
             keys,
-            first_track: 0,
-            visible_tracks: 1,
             oscilloscopes: array::from_fn(|_| Oscilloscope::new(SCOPE_SAMPLES)),
             meters: array::from_fn(|_| VuMeter::default()),
             clickable: Clickable::default(),
@@ -223,7 +217,7 @@ impl BlockEditor {
                 .active_pattern()
                 .map(|pattern| Layout::new(self.area, pattern.track_count()));
             if let Some(index) = layout.and_then(|layout| layout.track_at(x)) {
-                state.toggle_track_mute(self.first_track + index);
+                state.toggle_track_mute(index);
             }
         }
         return click.handled();
@@ -285,7 +279,7 @@ impl BlockEditor {
             return None;
         }
         return Some(Cell {
-            track: self.first_track + index.clamp(0, last_index) as usize,
+            track: index.clamp(0, last_index) as usize,
             line: line.clamp(0, last_line) as usize,
         });
     }
@@ -303,15 +297,13 @@ impl BlockEditor {
         let Some(range) = state.active_range() else {
             return;
         };
-        // the range's tracks that are showing, as indices into the visible ones
         let tracks = range.tracks();
-        let first = tracks.start.max(self.first_track) - self.first_track;
-        let end = tracks.end.min(self.first_track + layout.tracks);
-        if self.first_track + first >= end {
+        let (first, end) = (tracks.start, tracks.end.min(layout.tracks));
+        if first >= end {
             return;
         }
         let x = layout.track_x(first);
-        let width = (end - self.first_track - first) as i32 * TRACK_CHARS * layout.char_width;
+        let width = (end - first) as i32 * TRACK_CHARS * layout.char_width;
         for row in 0..area.h / CHAR_HEIGHT {
             let line = line_at(state.cursor.line, row, area);
             if !line.is_some_and(|line| range.lines().contains(&line)) {
@@ -330,15 +322,6 @@ impl BlockEditor {
         }
     }
 
-    fn scroll_to(&mut self, track: usize, tracks: usize, visible: usize) {
-        if track < self.first_track {
-            self.first_track = track;
-        } else if track >= self.first_track + visible {
-            self.first_track = track + 1 - visible;
-        }
-        self.first_track = self.first_track.min(tracks.saturating_sub(visible));
-    }
-
     fn render_line(
         &self,
         pattern: &OctamedicPattern,
@@ -350,10 +333,10 @@ impl BlockEditor {
     ) {
         let text = |painter: &mut Painter, column: i32, text: &str| {
             let x = layout.x + column * layout.char_width;
-            painter.text_in_font(x, y, text, pen, layout.font);
+            layout.text(painter, x, y, text, pen);
         };
         text(painter, 0, &format!("{line:03}"));
-        let cells = pattern.lines[line].tracks.iter().skip(self.first_track);
+        let cells = pattern.lines[line].tracks.iter();
         for (index, cell) in cells.take(layout.tracks).enumerate() {
             text(painter, layout.track_column(index), &track_text(cell));
         }
@@ -373,19 +356,21 @@ impl BlockEditor {
             painter.text_in_font(x, y, &text, pens::PINK, fonts::INTERFACE);
         };
         for index in 0..layout.tracks {
-            let number = self.first_track + index;
             label(
-                number.to_string(),
+                format!("{index:X}"),
                 layout.track_column(index) + TRACK_NUMBER_END,
                 y,
             );
         }
-        let count = TrackCount::holding(pattern.track_count());
-        label(
-            count.tracks().to_string(),
-            LINE_NUMBER_CHARS,
-            y + CHAR_HEIGHT,
-        );
+        // two digits are stacked, the first one level with the track numbers
+        let count = TrackCount::holding(pattern.track_count())
+            .tracks()
+            .to_string();
+        let rows = count.len() as i32;
+        for (row, digit) in count.chars().enumerate() {
+            let y = y + (row as i32 + 2 - rows) * CHAR_HEIGHT;
+            label(digit.to_string(), LINE_NUMBER_CHARS, y);
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -412,7 +397,7 @@ impl BlockEditor {
     // kept clear of the field's text: a line above and below the band, the right side just past
     // the field
     fn cursor_box(&self, cursor: &EditCursor, layout: &Layout, band: Rect) -> Option<CursorBox> {
-        let index = cursor.track.checked_sub(self.first_track)?;
+        let index = cursor.track;
         let (offset, width) = match cursor.column {
             0 => (0, NOTE_CHARS),
             digit => (NOTE_CHARS + digit as i32, 1),
@@ -477,7 +462,7 @@ impl BlockEditor {
         painter: &mut Painter,
     ) {
         for index in 0..layout.tracks {
-            let track = self.first_track + index;
+            let track = index;
             if track >= SCOPE_CHANNELS {
                 break;
             }
@@ -488,7 +473,7 @@ impl BlockEditor {
                     painter.fill(run, pens::PINK);
                     if let Some(cell) = cell_at(pattern, state.cursor.line, area, run.y, track) {
                         let text_line = ((run.y - area.y) % CHAR_HEIGHT) as usize;
-                        blend_text(&track_text(cell), x, text_line, layout.font, run, painter);
+                        blend_text(&track_text(cell), x, text_line, layout, run, painter);
                     }
                 }
             }
@@ -511,7 +496,6 @@ impl KeyActions for BlockEditor {
         let (lines, tracks) = state.active_pattern().map_or((0, 0), |pattern| {
             (pattern.line_count(), pattern.track_count())
         });
-        let screen = self.visible_tracks as isize;
         let step = state.line_step() as isize;
         let line_before = state.cursor.line;
         let cursor = &mut state.cursor;
@@ -527,8 +511,6 @@ impl KeyActions for BlockEditor {
             LastLine => cursor.set_line(lines.saturating_sub(1), lines),
             TrackLeft => cursor.move_tracks(-1, tracks),
             TrackRight => cursor.move_tracks(1, tracks),
-            ScreenLeft => cursor.move_tracks_clamped(-screen, tracks),
-            ScreenRight => cursor.move_tracks_clamped(screen, tracks),
             Hold => enter_hold(state),
             Highlight => state.toggle_highlight(state.cursor.line),
             DeleteNote => delete(state, false),
@@ -586,8 +568,6 @@ impl KeyActions for BlockEditor {
             LastLine => "Go to the last line of the block",
             TrackLeft => "One track left",
             TrackRight => "One track right",
-            ScreenLeft => "One screen left",
-            ScreenRight => "One screen right",
             Hold => "Enter a hold: no note, just the instrument",
             Highlight => "Highlight the line, or take its highlight off",
             DeleteNote => "Delete the note, or the digit under the cursor",
@@ -675,8 +655,6 @@ impl Gadget<AppState, Event> for BlockEditor {
         };
         let cursor = state.cursor;
         let layout = Layout::new(area, pattern.track_count());
-        self.visible_tracks = layout.fits;
-        self.scroll_to(cursor.track, pattern.track_count(), layout.tracks);
         let center_y = area.y + center_row(area) * CHAR_HEIGHT;
         let band = active_band(area, center_y);
         painter.fill(band, Pen::SHADOW);
@@ -758,28 +736,49 @@ fn active_band(area: Rect, center_y: i32) -> Rect {
 struct Layout {
     x: i32,
     font: Font,
+    // across, the font is drawn at this size
+    scale: f32,
     char_width: i32,
     tracks: usize,
-    fits: usize,
 }
 
 impl Layout {
     fn new(area: Rect, track_count: usize) -> Self {
         let font = if track_count <= WIDE_TRACKS {
             fonts::EDITOR
+        } else if track_count <= NORMAL_TRACKS {
+            Font::TOPAZ
         } else {
             Font::TOPAZ
         };
-        let char_width = font.advance('0');
+        // 12 and 16 tracks are Topaz squeezed to half the width
+        let scale = if track_count > NORMAL_TRACKS {
+            COMPACT_SCALE
+        } else {
+            1.0
+        };
+        let char_width = scale_pixels(font.advance('0'), scale);
         let columns = area.w / char_width - LINE_NUMBER_CHARS;
         let fits = (columns / TRACK_CHARS).max(1) as usize;
         return Self {
             x: area.x,
             font,
+            scale,
             char_width,
             tracks: track_count.min(fits),
-            fits,
         };
+    }
+
+    fn text(&self, painter: &mut Painter, x: i32, y: i32, text: &str, pen: Pen) {
+        if self.scale == 1.0 {
+            painter.text_in_font(x, y, text, pen, self.font);
+        } else {
+            painter.text_scaled(x, y, text, pen, [self.scale, 1.0]);
+        }
+    }
+
+    fn ink<'a>(&self, text: &'a str, line: usize) -> impl Iterator<Item = (i32, i32)> + 'a {
+        return self.font.scaled_ink(text, line, self.scale);
     }
 
     fn track_column(&self, track: usize) -> i32 {
@@ -954,18 +953,23 @@ fn instrument_text(instrument: u8) -> String {
     return base32::format(instrument as u32, 2, ' ');
 }
 
+// a length in Topaz pixels, scaled to the font the block is in
+fn scaled(layout: &Layout, pixels: i32) -> i32 {
+    return pixels * layout.char_width / CHAR_WIDTH;
+}
+
 fn scope_area(layout: &Layout, area: Rect, index: usize) -> Rect {
-    let pixel = layout.char_width / CHAR_WIDTH;
-    let x = layout.track_x(index) + SCOPE_OFFSET * pixel;
+    let x = layout.track_x(index) + scaled(layout, SCOPE_OFFSET);
     let top = active_band(area, area.y + center_row(area) * CHAR_HEIGHT).y;
-    return Rect::new(x, top, SCOPE_SAMPLES as i32 * pixel, area.y + area.h - top);
+    let width = scaled(layout, SCOPE_SAMPLES as i32);
+    return Rect::new(x, top, width, area.y + area.h - top);
 }
 
 fn meter_area(layout: &Layout, area: Rect, index: usize) -> Rect {
-    let pixel = layout.char_width / CHAR_WIDTH;
-    let x = layout.track_x(index) + METER_OFFSET * pixel;
+    let x = layout.track_x(index) + scaled(layout, METER_OFFSET);
     let top = area.h / 2;
-    return Rect::new(x, area.y + top, METER_WIDTH * pixel, area.h - top);
+    let width = scaled(layout, METER_WIDTH);
+    return Rect::new(x, area.y + top, width, area.h - top);
 }
 
 // None if `y` is above or below the block
@@ -983,8 +987,8 @@ fn cell_at(
 
 // OctaMED ORs the scope bitplanes into the screen, dots over text go the paler pink like the
 // cursor
-fn blend_text(text: &str, x: i32, line: usize, font: Font, run: Rect, painter: &mut Painter) {
-    for (start, width) in font.ink(text, line) {
+fn blend_text(text: &str, x: i32, line: usize, layout: &Layout, run: Rect, painter: &mut Painter) {
+    for (start, width) in layout.ink(text, line) {
         let left = (x + start).max(run.x);
         let right = (x + start + width).min(run.x + run.w);
         if left < right {
@@ -1150,12 +1154,13 @@ mod tests {
         let mut fills = Fills::default();
         let palette = screen_palette(&OctamedicProject::new().palette());
         let mut painter = Painter::new(&mut fills, &palette);
+        let layout = Layout::new(Rect::new(0, 0, 640, 100), 4);
         let ink: Vec<(i32, i32)> = fonts::EDITOR.ink("0", 0).collect();
         blend_text(
             "0",
             100,
             0,
-            fonts::EDITOR,
+            &layout,
             Rect::new(100, 50, 16, 1),
             &mut painter,
         );
@@ -1476,20 +1481,6 @@ mod tests {
         assert_eq!((state.cursor.track, state.cursor.column), (3, 5));
         press(&mut editor, &mut state, KeyCode::Right, KeyMods::ALT);
         assert_eq!((state.cursor.track, state.cursor.column), (0, 5));
-        editor.visible_tracks = 4;
-        press(&mut editor, &mut state, KeyCode::Right, KeyMods::CTRL);
-        assert_eq!(state.cursor.track, 3);
-    }
-
-    #[test]
-    fn view_follows_cursor() {
-        let mut editor = BlockEditor::new();
-        editor.scroll_to(10, 16, 8);
-        assert_eq!(editor.first_track, 3);
-        editor.scroll_to(1, 16, 8);
-        assert_eq!(editor.first_track, 1);
-        editor.scroll_to(15, 16, 8);
-        assert_eq!(editor.first_track, 8);
     }
 
     #[test]
@@ -1685,5 +1676,34 @@ mod tests {
             .map(|line| cell_at(&state, line, 0).command_value)
             .collect();
         assert_eq!(arguments, [0x60, 0x50, 0x40, 0x30, 0x20]);
+    }
+
+    #[test]
+    fn twelve_and_sixteen_tracks_all_show_at_half_width() {
+        let area = Rect::new(0, 0, 640, 200);
+        for (count, font, scale) in [
+            (4, fonts::EDITOR, 1.0),
+            (8, Font::TOPAZ, 1.0),
+            (12, Font::TOPAZ, 0.5),
+            (16, Font::TOPAZ, 0.5),
+        ] {
+            let layout = Layout::new(area, count);
+            assert_eq!((layout.font, layout.scale), (font, scale), "{count}");
+            assert_eq!(layout.tracks, count, "{count}");
+            let end = layout.track_x(count - 1) + TRACK_CHARS * layout.char_width;
+            assert!(end <= area.w, "{count}: {end}");
+        }
+        assert_eq!(Layout::new(area, 16).char_width, CHAR_WIDTH / 2);
+    }
+
+    #[test]
+    fn half_width_runs_merge_like_the_amiga() {
+        // Topaz's 0 has a one pixel gap in its slash that halving closes up
+        let layout = Layout::new(Rect::new(0, 0, 640, 100), 16);
+        let full: Vec<_> = Font::TOPAZ.ink("0", 2).collect();
+        let half: Vec<_> = layout.ink("0", 2).collect();
+        assert_eq!(full.len(), 2);
+        assert_eq!(half.len(), 2);
+        assert_eq!(half[0].0 + half[0].1, half[1].0);
     }
 }

@@ -131,7 +131,6 @@ pub struct Block {
 
 impl Block {
     pub fn new() -> Self {
-        let unhooked = |button: Button| button.enabled(false);
         let label = |words: Words| Button::new(placed(fonts::LABEL, words));
         let narrow = |words: Words| Button::new(placed(fonts::NARROW_LABEL, words));
         let number_box = |padding| {
@@ -153,9 +152,8 @@ impl Block {
 
             ins_track: narrow(&[(6, "INS.TRK")]),
             del_track: narrow(&[(5, "DEL.TRK")]),
-            // 5-8 channel mode (8/12/16 tracks) isn't supported yet, so there's nothing to pick
             track_counts: TRACK_COUNT_LABELS
-                .map(|digits| unhooked(Button::new(placed_at(fonts::TRACKS_BOLD, 2, digits)))),
+                .map(|digits| Button::new(placed_at(fonts::TRACKS_BOLD, 2, digits))),
 
             lines_box: number_box(LINES_PADDING),
             lines_box_was_focused: false,
@@ -646,10 +644,24 @@ mod tests {
     }
 
     #[test]
-    fn track_count_buttons_are_disabled() {
-        // 5-8 channel mode isn't supported yet
-        let block = Block::new();
-        assert!(block.track_counts.iter().all(|button| !button.is_enabled()));
+    fn track_count_buttons_set_the_block_tracks() {
+        let mut block = Block::new();
+        let mut state = new_state();
+        assert!(block.track_counts.iter().all(|button| button.is_enabled()));
+        for (rect, count) in [
+            (TRK_COUNT_16, 16),
+            (TRK_COUNT_8, 8),
+            (TRK_COUNT_12, 12),
+            (TRK_COUNT_4, 4),
+        ] {
+            click(&mut block, &mut state, rect);
+            assert_eq!(state.active_pattern().unwrap().track_count(), count);
+            // the highlight follows the count a frame later
+            block.update(&mut state);
+            let shown = TRACK_COUNTS.iter().position(|&tracks| tracks == count);
+            let toggled = block.track_counts.iter().position(|b| b.is_toggled());
+            assert_eq!(toggled, shown);
+        }
     }
 
     #[test]
