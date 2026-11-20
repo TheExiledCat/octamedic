@@ -101,7 +101,20 @@ impl<'a> Painter<'a> {
 
     /// Draws Topaz `text` scaled, rounded to whole pixels.
     pub fn text_scaled(&mut self, x: i32, y: i32, text: &str, pen: Pen, scale: [f32; 2]) {
-        self.glyphs(x, y, text, pen, Font::TOPAZ, scale);
+        self.text_in_font_scaled(x, y, text, pen, Font::TOPAZ, scale);
+    }
+
+    /// Draws `text` in `font` scaled, rounded to whole pixels.
+    pub fn text_in_font_scaled(
+        &mut self,
+        x: i32,
+        y: i32,
+        text: &str,
+        pen: Pen,
+        font: Font,
+        scale: [f32; 2],
+    ) {
+        self.glyphs(x, y, text, pen, font, scale);
     }
 
     /// Draws a line cut to fit `rect` and lined up in it.

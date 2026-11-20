@@ -15,7 +15,7 @@ use octamedic_util::base32;
 use rustuition::{
     clickable::{Click, Clickable},
     event::MouseButton,
-    font::{Font, scale_pixels},
+    font::scale_pixels,
     gadget::Gadget,
     painter::{CHAR_HEIGHT, CHAR_WIDTH, Painter, Pen},
     rect::{Point, Rect},
@@ -68,12 +68,6 @@ const FIRST_COMMAND_COLUMN: usize = 2;
 
 // track numbers end over the instrument's first digit
 const TRACK_NUMBER_END: i32 = NOTE_CHARS + 1;
-
-// blocks with up to this many tracks use the wide font, up to NORMAL_TRACKS Topaz, and the rest
-// the compact one so all of them fit
-const WIDE_TRACKS: usize = 4;
-const NORMAL_TRACKS: usize = 8;
-const COMPACT_SCALE: f32 = 0.5;
 
 const QUARTERS: usize = 4;
 
@@ -268,7 +262,7 @@ impl BlockEditor {
         let layout = Layout::new(self.area, pattern.track_count());
         let row = (pos.y - self.area.y).div_euclid(CHAR_HEIGHT);
         let line = state.cursor.line as i32 + row - center_row(self.area);
-        let column = (pos.x - layout.x).div_euclid(layout.char_width) - LINE_NUMBER_CHARS;
+        let column = layout.column_at(pos.x) - LINE_NUMBER_CHARS;
         let index = column.div_euclid(TRACK_CHARS);
         let last_line = pattern.line_count() as i32 - 1;
         let last_index = layout.tracks as i32 - 1;
@@ -303,7 +297,7 @@ impl BlockEditor {
             return;
         }
         let x = layout.track_x(first);
-        let width = (end - first) as i32 * TRACK_CHARS * layout.char_width;
+        let width = layout.track_x(end) - x;
         for row in 0..area.h / CHAR_HEIGHT {
             let line = line_at(state.cursor.line, row, area);
             if !line.is_some_and(|line| range.lines().contains(&line)) {
@@ -332,8 +326,7 @@ impl BlockEditor {
         painter: &mut Painter,
     ) {
         let text = |painter: &mut Painter, column: i32, text: &str| {
-            let x = layout.x + column * layout.char_width;
-            layout.text(painter, x, y, text, pen);
+            layout.text(painter, column, y, text, pen);
         };
         text(painter, 0, &format!("{line:03}"));
         let cells = pattern.lines[line].tracks.iter();
@@ -351,7 +344,7 @@ impl BlockEditor {
         painter: &mut Painter,
     ) {
         let mut label = |text: String, end_column: i32, y: i32| {
-            let end = layout.x + end_column * layout.char_width;
+            let end = layout.column_x(end_column);
             let x = end - fonts::INTERFACE.width(&text);
             painter.text_in_font(x, y, &text, pens::PINK, fonts::INTERFACE);
         };
@@ -402,8 +395,9 @@ impl BlockEditor {
             0 => (0, NOTE_CHARS),
             digit => (NOTE_CHARS + digit as i32, 1),
         };
-        let x = layout.x + (layout.track_column(index) + offset) * layout.char_width;
-        let width = width * layout.char_width;
+        let column = layout.track_column(index) + offset;
+        let x = layout.column_x(column);
+        let width = layout.column_x(column + width) - x;
         return Some(CursorBox {
             top: Rect::new(x, band.y - 1, width + 1, 1),
             bottom: Rect::new(x, band.bottom(), width + 1, 1),
@@ -467,13 +461,13 @@ impl BlockEditor {
                 break;
             }
             if state.is_playing() && state.active_meters().scopes {
-                let x = layout.track_x(index);
+                let column = layout.track_column(index);
                 let scope = scope_area(layout, area, index);
                 for run in self.oscilloscopes[track].runs(scope) {
                     painter.fill(run, pens::PINK);
                     if let Some(cell) = cell_at(pattern, state.cursor.line, area, run.y, track) {
                         let text_line = ((run.y - area.y) % CHAR_HEIGHT) as usize;
-                        blend_text(&track_text(cell), x, text_line, layout, run, painter);
+                        blend_text(&track_text(cell), column, text_line, layout, run, painter);
                     }
                 }
             }
@@ -682,8 +676,7 @@ impl Gadget<AppState, Event> for BlockEditor {
             self.render_row(pattern, cursor.line, row, &layout, area, pen, painter);
         }
         self.render_range(state, pattern, &layout, area, &highlighted, painter);
-        // one font pixel wide
-        let width = layout.char_width / CHAR_WIDTH;
+        let width = layout.pixel();
         for track in 1..layout.tracks {
             let x = layout.track_x(track) - 1;
             painter.fill(Rect::new(x, area.y, width, area.h), pens::PINK);
@@ -733,52 +726,80 @@ fn active_band(area: Rect, center_y: i32) -> Rect {
     return Rect::new(area.x, center_y - 1, area.w, CHAR_HEIGHT + 1);
 }
 
+// every block is drawn in the editor font, squeezed across so its tracks fill the width
 struct Layout {
     x: i32,
-    font: Font,
-    // across, the font is drawn at this size
     scale: f32,
-    char_width: i32,
     tracks: usize,
 }
 
 impl Layout {
     fn new(area: Rect, track_count: usize) -> Self {
-        let font = if track_count <= WIDE_TRACKS {
-            fonts::EDITOR
-        } else if track_count <= NORMAL_TRACKS {
-            Font::TOPAZ
-        } else {
-            Font::TOPAZ
-        };
-        // 12 and 16 tracks are Topaz squeezed to half the width
-        let scale = if track_count > NORMAL_TRACKS {
-            COMPACT_SCALE
-        } else {
-            1.0
-        };
-        let char_width = scale_pixels(font.advance('0'), scale);
-        let columns = area.w / char_width - LINE_NUMBER_CHARS;
-        let fits = (columns / TRACK_CHARS).max(1) as usize;
+        let columns = LINE_NUMBER_CHARS + track_count as i32 * TRACK_CHARS;
         return Self {
             x: area.x,
-            font,
-            scale,
-            char_width,
-            tracks: track_count.min(fits),
+            // an area that hasn't been laid out yet is still a sane scale
+            scale: area.w.max(1) as f32 / (columns * Self::glyph_width()) as f32,
+            tracks: track_count,
         };
     }
 
-    fn text(&self, painter: &mut Painter, x: i32, y: i32, text: &str, pen: Pen) {
+    // a character cell at full size
+    fn glyph_width() -> i32 {
+        return fonts::EDITOR.advance('0');
+    }
+
+    // one pixel of the font, at least one on screen
+    fn pixel(&self) -> i32 {
+        return self.across(Self::glyph_width() / CHAR_WIDTH).max(1);
+    }
+
+    fn across(&self, pixels: i32) -> i32 {
+        return scale_pixels(pixels, self.scale);
+    }
+
+    // where the cell for `column` starts. rounded from the left edge rather than added up, so the
+    // cells stay on the same grid however far along they are
+    fn column_x(&self, column: i32) -> i32 {
+        return self.x + self.across(column * Self::glyph_width());
+    }
+
+    fn column_at(&self, x: i32) -> i32 {
+        let width = Self::glyph_width() as f32 * self.scale;
+        let mut column = ((x - self.x) as f32 / width).floor() as i32;
+        while self.column_x(column + 1) <= x {
+            column += 1;
+        }
+        while self.column_x(column) > x {
+            column -= 1;
+        }
+        return column;
+    }
+
+    fn text(&self, painter: &mut Painter, column: i32, y: i32, text: &str, pen: Pen) {
         if self.scale == 1.0 {
-            painter.text_in_font(x, y, text, pen, self.font);
-        } else {
-            painter.text_scaled(x, y, text, pen, [self.scale, 1.0]);
+            painter.text_in_font(self.column_x(column), y, text, pen, fonts::EDITOR);
+            return;
+        }
+        for (index, character) in text.chars().enumerate() {
+            let x = self.column_x(column + index as i32);
+            let mut buffer = [0; 4];
+            let character: &str = character.encode_utf8(&mut buffer);
+            painter.text_in_font_scaled(x, y, character, pen, fonts::EDITOR, [self.scale, 1.0]);
         }
     }
 
-    fn ink<'a>(&self, text: &'a str, line: usize) -> impl Iterator<Item = (i32, i32)> + 'a {
-        return self.font.scaled_ink(text, line, self.scale);
+    // `(start, length)` of the ink on `line`, on the screen
+    fn ink(&self, column: i32, text: &str, line: usize) -> Vec<(i32, i32)> {
+        let mut runs = Vec::new();
+        for (index, character) in text.chars().enumerate() {
+            let x = self.column_x(column + index as i32);
+            let mut buffer = [0; 4];
+            let character: &str = character.encode_utf8(&mut buffer);
+            let ink = fonts::EDITOR.scaled_ink(character, line, self.scale);
+            runs.extend(ink.map(|(start, width)| (x + start, width)));
+        }
+        return runs;
     }
 
     fn track_column(&self, track: usize) -> i32 {
@@ -786,11 +807,11 @@ impl Layout {
     }
 
     fn track_x(&self, track: usize) -> i32 {
-        return self.x + self.track_column(track) * self.char_width;
+        return self.column_x(self.track_column(track));
     }
 
     fn track_at(&self, x: i32) -> Option<usize> {
-        let column = (x - self.x) / self.char_width - LINE_NUMBER_CHARS;
+        let column = self.column_at(x) - LINE_NUMBER_CHARS;
         let track = usize::try_from(column / TRACK_CHARS).ok()?;
         return (column >= 0 && track < self.tracks).then_some(track);
     }
@@ -955,7 +976,7 @@ fn instrument_text(instrument: u8) -> String {
 
 // a length in Topaz pixels, scaled to the font the block is in
 fn scaled(layout: &Layout, pixels: i32) -> i32 {
-    return pixels * layout.char_width / CHAR_WIDTH;
+    return layout.across(pixels * Layout::glyph_width() / CHAR_WIDTH);
 }
 
 fn scope_area(layout: &Layout, area: Rect, index: usize) -> Rect {
@@ -987,10 +1008,17 @@ fn cell_at(
 
 // OctaMED ORs the scope bitplanes into the screen, dots over text go the paler pink like the
 // cursor
-fn blend_text(text: &str, x: i32, line: usize, layout: &Layout, run: Rect, painter: &mut Painter) {
-    for (start, width) in layout.ink(text, line) {
-        let left = (x + start).max(run.x);
-        let right = (x + start + width).min(run.x + run.w);
+fn blend_text(
+    text: &str,
+    column: i32,
+    line: usize,
+    layout: &Layout,
+    run: Rect,
+    painter: &mut Painter,
+) {
+    for (start, width) in layout.ink(column, text, line) {
+        let left = start.max(run.x);
+        let right = (start + width).min(run.x + run.w);
         if left < right {
             painter.fill(Rect::new(left, run.y, right - left, run.h), pens::BLUSH);
         }
@@ -1156,18 +1184,8 @@ mod tests {
         let mut painter = Painter::new(&mut fills, &palette);
         let layout = Layout::new(Rect::new(0, 0, 640, 100), 4);
         let ink: Vec<(i32, i32)> = fonts::EDITOR.ink("0", 0).collect();
-        blend_text(
-            "0",
-            100,
-            0,
-            &layout,
-            Rect::new(100, 50, 16, 1),
-            &mut painter,
-        );
-        let expected: Vec<Rect> = ink
-            .iter()
-            .map(|&(x, w)| Rect::new(100 + x, 50, w, 1))
-            .collect();
+        blend_text("0", 0, 0, &layout, Rect::new(0, 50, 16, 1), &mut painter);
+        let expected: Vec<Rect> = ink.iter().map(|&(x, w)| Rect::new(x, 50, w, 1)).collect();
         assert!(!expected.is_empty());
         assert_eq!(fills.0, expected);
     }
@@ -1679,31 +1697,38 @@ mod tests {
     }
 
     #[test]
-    fn twelve_and_sixteen_tracks_all_show_at_half_width() {
+    fn every_track_count_fills_the_width() {
         let area = Rect::new(0, 0, 640, 200);
-        for (count, font, scale) in [
-            (4, fonts::EDITOR, 1.0),
-            (8, Font::TOPAZ, 1.0),
-            (12, Font::TOPAZ, 0.5),
-            (16, Font::TOPAZ, 0.5),
-        ] {
+        for count in [4, 8, 12, 16] {
             let layout = Layout::new(area, count);
-            assert_eq!((layout.font, layout.scale), (font, scale), "{count}");
             assert_eq!(layout.tracks, count, "{count}");
-            let end = layout.track_x(count - 1) + TRACK_CHARS * layout.char_width;
-            assert!(end <= area.w, "{count}: {end}");
+            let end = layout.track_x(count);
+            assert_eq!(end, area.w, "{count}");
+            assert_eq!(layout.track_at(end - 1), Some(count - 1), "{count}");
+            assert_eq!(layout.track_at(layout.track_x(count - 1)), Some(count - 1));
         }
-        assert_eq!(Layout::new(area, 16).char_width, CHAR_WIDTH / 2);
+        assert_eq!(Layout::new(area, 4).scale, 1.0);
+        assert!(Layout::new(area, 16).scale < Layout::new(area, 8).scale);
     }
 
     #[test]
-    fn half_width_runs_merge_like_the_amiga() {
-        // Topaz's 0 has a one pixel gap in its slash that halving closes up
-        let layout = Layout::new(Rect::new(0, 0, 640, 100), 16);
-        let full: Vec<_> = Font::TOPAZ.ink("0", 2).collect();
-        let half: Vec<_> = layout.ink("0", 2).collect();
-        assert_eq!(full.len(), 2);
-        assert_eq!(half.len(), 2);
-        assert_eq!(half[0].0 + half[0].1, half[1].0);
+    fn columns_stay_on_one_grid() {
+        let layout = Layout::new(Rect::new(0, 0, 640, 200), 16);
+        for column in 0..150 {
+            assert_eq!(layout.column_at(layout.column_x(column)), column);
+            assert_eq!(layout.column_at(layout.column_x(column + 1) - 1), column);
+        }
+    }
+
+    #[test]
+    fn dashes_stay_apart_in_every_track_count() {
+        for count in [4, 8, 12, 16] {
+            let layout = Layout::new(Rect::new(0, 0, 640, 200), count);
+            let dashes = layout.ink(0, "---", 3);
+            assert_eq!(dashes.len(), 3, "{count}: {dashes:?}");
+            for pair in dashes.windows(2) {
+                assert!(pair[0].0 + pair[0].1 < pair[1].0, "{count}: {dashes:?}");
+            }
+        }
     }
 }
