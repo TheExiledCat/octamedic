@@ -340,7 +340,8 @@ impl BlockEditor {
         }
     }
 
-    // drawn over the top two rows, whatever lines are there
+    // drawn over the top two rows, whatever lines are there, in plain Topaz at every size: its 1 is a
+    // stem with a flag, not the interface font's with a base
     fn render_labels(
         &self,
         pattern: &OctamedicPattern,
@@ -350,8 +351,8 @@ impl BlockEditor {
     ) {
         let mut label = |text: String, end_column: i32, y: i32| {
             let end = layout.column_x(end_column);
-            let x = end - fonts::INTERFACE.width(&text);
-            painter.text_in_font(x, y, &text, pens::PINK, fonts::INTERFACE);
+            let x = end - Font::TOPAZ.width(&text);
+            painter.text_in_font(x, y, &text, pens::PINK, Font::TOPAZ);
         };
         for index in 0..layout.tracks {
             label(
@@ -1189,6 +1190,29 @@ mod tests {
         assert_eq!(layout.tracks_under(0, 10), 0..0);
         let wide = Layout::new(Rect::new(0, 77, 640, 120), 4);
         assert_eq!(wide.tracks_under(68, 152), 0..1);
+    }
+
+    // OctaMED's track numbers are Topaz, so the 1 has a flag and no base
+    #[test]
+    fn track_numbers_are_topaz() {
+        let state = state();
+        let area = Rect::new(0, 77, 640, 120);
+        let pattern = state.active_pattern().unwrap().clone();
+        for count in [4, 16] {
+            let layout = Layout::new(area, count);
+            let mut fills = Fills::default();
+            let mut painter = Painter::new(&mut fills, &state.palette);
+            BlockEditor::new().render_labels(&pattern, &layout, 0, &mut painter);
+            // the last line of track 1's number, where a base would be wider than the stem
+            let end = layout.column_x(layout.track_column(1) + TRACK_NUMBER_END);
+            let base: Vec<&Rect> = fills
+                .0
+                .iter()
+                .filter(|fill| fill.y == 6 && fill.x >= end - 8 && fill.right() <= end)
+                .collect();
+            assert_eq!(base.len(), 1, "{count}: {:?}", fills.0);
+            assert_eq!(base[0].w, 2, "{count}");
+        }
     }
 
     #[test]
